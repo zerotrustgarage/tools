@@ -40,14 +40,14 @@ type capture struct {
 }
 
 type manifest struct {
-	Schema     int               `json:"schema"`
-	CapturedAt time.Time         `json:"captured_at"`
-	Engine     string            `json:"engine"`
-	SHA256     string            `json:"sha256"`
-	Options    []string          `json:"options"`
-	Cases      []capture         `json:"cases"`
-	Checks     map[string]bool   `json:"checks"`
-	Notes      []string          `json:"notes"`
+	Schema     int             `json:"schema"`
+	CapturedAt time.Time       `json:"captured_at"`
+	Engine     string          `json:"engine"`
+	SHA256     string          `json:"sha256"`
+	Options    []string        `json:"options"`
+	Cases      []capture       `json:"cases"`
+	Checks     map[string]bool `json:"checks"`
+	Notes      []string        `json:"notes"`
 }
 
 type observer struct {

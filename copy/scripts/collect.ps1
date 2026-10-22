@@ -7,6 +7,11 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if (-not $IsWindows) { throw 'Real Windows is required.' }
+function Read-OptionalProperty($Object, [string]$Name) {
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -ne $property) { return $property.Value }
+    return $null
+}
 $parent = Split-Path -Parent ([IO.Path]::GetFullPath($Output))
 [IO.Directory]::CreateDirectory($parent) | Out-Null
 if (Test-Path -LiteralPath $Output) { throw 'Output folder already exists; preserve earlier evidence.' }
@@ -21,7 +26,7 @@ if (Test-Path -LiteralPath $Output) {
         schema = 1
         captured_at = [DateTime]::UtcNow.ToString('o')
         os_description = [Runtime.InteropServices.RuntimeInformation]::OSDescription
-        display_version = $windows.DisplayVersion
+        display_version = (Read-OptionalProperty $windows 'DisplayVersion')
         build = $windows.CurrentBuildNumber
         revision = $windows.UBR
         culture = [Globalization.CultureInfo]::CurrentCulture.Name
@@ -36,4 +41,6 @@ if (Test-Path -LiteralPath $Output) {
         spike_exit = $spikeExit
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $Output 'environment.json') -Encoding utf8
 }
+$manifestPath = Join-Path $Output 'manifest.json'
+if (Test-Path -LiteralPath $manifestPath) { Get-Content -LiteralPath $manifestPath }
 if ($spikeExit -ne 0) { throw "RC0 observations need investigation (spike exit $spikeExit)." }
