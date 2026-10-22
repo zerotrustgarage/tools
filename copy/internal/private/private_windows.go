@@ -7,10 +7,10 @@ import (
 )
 
 var (
-	advapi = syscall.NewLazyDLL("advapi32.dll")
-	convertSD = advapi.NewProc("ConvertStringSecurityDescriptorToSecurityDescriptorW")
+	advapi      = syscall.NewLazyDLL("advapi32.dll")
+	convertSD   = advapi.NewProc("ConvertStringSecurityDescriptorToSecurityDescriptorW")
 	setSecurity = advapi.NewProc("SetFileSecurityW")
-	localFree = syscall.NewLazyDLL("kernel32.dll").NewProc("LocalFree")
+	localFree   = syscall.NewLazyDLL("kernel32.dll").NewProc("LocalFree")
 )
 
 func protect(name string, directory bool) error {

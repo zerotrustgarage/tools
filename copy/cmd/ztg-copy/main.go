@@ -154,7 +154,7 @@ func explain(j job.Job, out io.Writer, asJSON bool) error {
 			Job     job.Job           `json:"job"`
 			Command string            `json:"direct_process_command"`
 			Options []explainedOption `json:"options"`
-			Issues  []job.Issue        `json:"issues"`
+			Issues  []job.Issue       `json:"issues"`
 		}{j, command, options, issues})
 	}
 	fmt.Fprintf(out, "Source: %s\nDestination: %s\nDirect Windows process command:\n%s\n", j.Source, j.Destination, command)
