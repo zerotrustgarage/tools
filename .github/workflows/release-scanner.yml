@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   build:
+    timeout-minutes: 30
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     outputs:
@@ -78,6 +79,7 @@ jobs:
           retention-days: 3
 
   sign:
+    timeout-minutes: 20
     needs: build
     runs-on: ubuntu-24.04
     environment: tools-signing
@@ -129,6 +131,7 @@ jobs:
           retention-days: 7
 
   windows-test:
+    timeout-minutes: 15
     needs: [build, sign]
     runs-on: windows-2025
     steps:
@@ -151,6 +154,7 @@ jobs:
           -Version $env:VERSION -RequireSignatures
 
   publish:
+    timeout-minutes: 10
     needs: [build, sign, windows-test]
     runs-on: ubuntu-24.04
     permissions:

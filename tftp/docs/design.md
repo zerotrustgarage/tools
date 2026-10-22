@@ -1,6 +1,6 @@
 # ZTG TFTP: design
 
-Status (October 22, 2026): proposed. Nothing is built. The market research behind it is in [research.md](research.md);
+Status (October 22, 2026): T1 and T2 implemented, pending review. Later slices remain proposed. The market research is in [research.md](research.md);
 section numbers below refer to that document as "R" (R5 is its list of gaps).
 
 ## 1. Purpose
@@ -223,14 +223,27 @@ them, and TFTP itself cannot meet SC.L2-3.13.8.
 
 | Slice | What | Status |
 | --- | --- | --- |
-| T1 | Protocol engine (section 3), read-only server, client `get` and `put`, scope guard, allowlist, limits, name policy, audit log, fuzzing, interop tests, CI workflow `tftp.yml` | Proposed |
-| T2 | Uploads: drop box, atomic commit, owner-only files, upload caps, findings on collected configs, change status | Proposed |
+| T1 | Protocol engine (section 3), read-only server, client `get` and `put`, scope guard, allowlist, limits, name policy, audit log, fuzzing, interop tests, CI workflow `tftp.yml` | Implemented, pending review |
+| T2 | Uploads: drop box, atomic commit, owner-only files, upload caps, findings on collected configs, change status | Implemented, pending review |
 | T3 | Windows desktop app (section 10) | Proposed |
 | T4 | Service mode: Windows service and systemd unit, JSON configuration file with reload, syslog (RFC 5424, TCP with TLS) and Windows Event Log forwarding, path remap rules, per-MAC templated files for phone provisioning | Proposed |
 | T5 | Packaging and trust: Authenticode signing through `scripts/signing/`, MSI with the scoped firewall rule, portable ZIP, SBOM, `release-tftp.yml` with provenance attestation | Proposed |
 | T6 | Candidates needing an owner decision: a read-only HTTP listener on the same root for iPXE and UEFI HTTP boot (faster than TFTP, same audit); proxyDHCP for PXE only (boot file options, never address assignment); a hash manifest that limits serving to approved images; pre-filling the allowlist from a ZTG Scanner export | Proposed |
 
 Each slice is reviewed before the next starts.
+
+T1 implementation notes: wildcard binds expand to individual addresses (IPv4 by default, IPv6 with `--bind ::`),
+so single-port replies use the destination interface without packet-info socket options. The configurable window
+cap is bounded at 64 blocks. Netascii does not negotiate octet-only `tsize`.
+The implementation follows the proposed name, own engine and 60-minute default; T6 and retention remain open.
+The README describes the implemented flags, limits and test coverage.
+
+T2 implementation notes: uploads are staged privately and published without replacement using `os.Root.Link`,
+before the final ACK. The layout is `<date>/<source>/<HHMMSS>-<random id>/payload/<requested name>` with a receipt
+beside the payload; this keeps long requested components within filesystem limits and prevents collisions. Receipt
+metadata and a private index provide change comparisons across restarts. A process lock serializes drop box ownership.
+Unix modes and a protected owner-only Windows DACL restrict collected files. Declared sizes (or the cap when absent)
+reserve free space across concurrent transfers. The findings parser is bounded and fuzzed; incomplete scans say so.
 
 ## 14. Not in scope
 

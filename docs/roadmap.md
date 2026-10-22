@@ -16,22 +16,22 @@ These need the repository owner; no code change can do them.
 | # | Action | Why | Status |
 | --- | --- | --- | --- |
 | O1 | Set the default branch to `main` (Settings, General, Default branch) | GitHub shows it on the front page, new clones start from it, and Dependabot reads its configuration only from the default branch | **Done** |
-| O2 | Create the Entra app registration and federated credential for signing (`docs/signing.md`, section "One-time owner setup") | No signed release can exist without it | Open |
-| O3 | Create the `tools-signing` environment (main only, required reviewers) with `AZURE_SIGNING_TENANT_ID` and `AZURE_SIGNING_CLIENT_ID` | Same | Open |
-| O4 | Approve accepting Microsoft's license for the CRT and Windows SDK files the cross-compile downloads (`XWIN_ACCEPT_LICENSE`) | It is accepted on the organization's behalf at every Windows build | Open |
+| O2 | Create the Entra app registration and federated credential for signing (`docs/signing.md`, section "One-time owner setup") | No signed release can exist without it | **Done** (client secret, `docs/signing.md` option C, instead of the federated credential; role scoped to the profile) |
+| O3 | Create the `tools-signing` environment (main only, required reviewers) with `AZURE_SIGNING_TENANT_ID`, `AZURE_SIGNING_CLIENT_ID` and the `AZURE_SIGNING_CLIENT_SECRET` secret | Same | **Done** |
+| O4 | Approve accepting Microsoft's license for the CRT and Windows SDK files the cross-compile downloads (`XWIN_ACCEPT_LICENSE`) | It is accepted on the organization's behalf at every Windows build | **Done** |
 | O5 | Build provenance attestations | Public repositories get them on every plan, so every release is attested; the `ATTEST_PROVENANCE` switch is gone | **Done** (repository made public) |
-| O6 | Enable Dependabot security updates (Settings, Code security) | Version updates are configured; security updates are a separate switch and are not held by the 14-day cooldown | Open |
-| O7 | Test both apps on real Windows (Windows Sandbox is enough) | CI covers installation, launch and uninstall for Readout (R8) and Scanner (SC1). Interactive title bar behavior, drag and drop from Explorer and both themes still need a person | Open |
-| O8 | Keep the organization's self-hosted runner group (`proxmox-ci`) closed to public repositories (Organization settings, Actions, Runner groups: "Allow public repositories" off) | The repository is public, so anyone can open a pull request whose workflow would run on those runners, inside the organization's network and behind the egress IP that infrasec's deploy tokens trust. CI here runs on GitHub-hosted runners instead | Open (verify) |
-| O9 | Require approval for workflows from outside contributors (Settings, Actions, General, "Fork pull request workflows from outside collaborators": all outside collaborators) | Fork pull requests then run only after a maintainer has read them | Open |
-| O10 | Enable secret scanning with push protection and private vulnerability reporting (Settings, Code security) | Free on public repositories; push protection stops a credential from being committed in the first place | Open |
-| O11 | Protect `main`: require pull requests and the CI checks (Settings, Branches or Rules) | Free on public repositories; see R1 | Open |
+| O6 | Enable Dependabot security updates (Settings, Code security) | Version updates are configured; security updates are a separate switch and are not held by the 14-day cooldown | **Done** |
+| O7 | Test both apps on real Windows (Windows Sandbox is enough) | CI now installs, launches and uninstalls Readout on a real Windows runner (R8); what still needs a person is the interactive side: dragging the title bar, drag and drop from Explorer, the look of both themes, and all of Scanner | **Done** |
+| O8 | Keep the organization's self-hosted runner group (`proxmox-ci`) closed to public repositories (Organization settings, Actions, Runner groups: "Allow public repositories" off) | The repository is public, so anyone can open a pull request whose workflow would run on those runners, inside the organization's network and behind the egress IP that infrasec's deploy tokens trust. CI here runs on GitHub-hosted runners instead | **Done** |
+| O9 | Require approval for workflows from outside contributors (Settings, Actions, General, "Fork pull request workflows from outside collaborators": all outside collaborators) | Fork pull requests then run only after a maintainer has read them | **Done** |
+| O10 | Enable secret scanning with push protection and private vulnerability reporting (Settings, Code security) | Free on public repositories; push protection stops a credential from being committed in the first place | **Done** |
+| O11 | Protect `main`: require pull requests and the CI checks (Settings, Branches or Rules) | Free on public repositories; see R1 | **Done** |
 
 ## 2. Repository and CI
 
 | # | Item | Priority | Status |
 | --- | --- | --- | --- |
-| R1 | Pull requests, branch protection and required CI on `main`. Two sessions push straight to `main` with no review. These tools are not CUI systems, but change control in the spirit of CMMC CM.L2-3.4.3 is good practice and clients ask how tools are shipped | High | Open |
+| R1 | Pull requests, branch protection and required CI on `main`. Two sessions push straight to `main` with no review. These tools are not CUI systems, but change control in the spirit of CMMC CM.L2-3.4.3 is good practice and clients ask how tools are shipped | High | **Done** (O11: `main` requires pull requests) |
 | R2 | Downloads page on ztg.sh with the signed installers, checksums and the browser version of Readout. This was the original goal and is not built | High | Open |
 | R3 | One look: both tools use the ZTG palette from `design-tokens.json`; `scripts/ci/check-palette.mjs` fails CI on drift | Medium | **Done** |
 | R4 | Automated dependency updates with the 14-day cooldown (`.github/dependabot.yml`: npm, Cargo, Go modules, Actions) | Medium | **Done** (needs O1 to take effect) |
@@ -46,8 +46,8 @@ These need the repository owner; no code change can do them.
 
 | # | Item | Priority |
 | --- | --- | --- |
-| RD1 | Interactive checks on real Windows by a person: title bar dragging and shadow, drag and drop from Explorer, the folder context menu, both themes (O7). Installing, launching and opening a file run in CI (R8) | High |
-| RD2 | No signed release yet (O2 to O4) | High |
+| RD1 | Done by the owner (O7): interactive checks on real Windows by a person (title bar dragging and shadow, drag and drop from Explorer, the folder context menu, both themes). Installing, launching and opening a file run in CI (R8) | High |
+| RD2 | No signed release yet. The owner setup (O2 to O4) is done; what remains is the first run of the release workflow, which also proves the credential and the publisher pin | High |
 | RD3 | The MSI is not in the release workflow and is not signed; it has been tested under Wine only, not through Intune or Group Policy | High |
 | RD4 | THIRD-PARTY-NOTICES.txt lacks the license text for six Rust crates (`alloc-stdlib`, `selectors`, `tauri-plugin`, `webview2-com`, `webview2-com-macros`, `webview2-com-sys`); it names their licenses only. Add standard SPDX license texts as a fallback in `scripts/notices.mjs` | High |
 | RD5 | Browser-driven checks (drag and drop, dividers, folder mode, title bar) ran as one-off scripts. Commit them as a `uitest/` suite in CI, as Scanner has | Medium |
@@ -111,15 +111,15 @@ is what makes Scanner easy to approve in client and CMMC environments.
 
 ## 5. ZTG TFTP
 
-Proposed; design only. The research behind it (Tftpd64, SolarWinds TFTP Server, tftpd-hpa, atftpd,
+T1 and T2 implemented, pending review; later slices remain proposed. The research behind it (Tftpd64, SolarWinds TFTP Server, tftpd-hpa, atftpd,
 dnsmasq, Open TFTP Server, their CVE history and the gaps across them) is in
 `tftp/docs/research.md`, with its sources.
 
 | # | Item | Priority | Status |
 | --- | --- | --- | --- |
-| TF1 | Owner answers to the open questions in `tftp/docs/design.md` section 15: name, own protocol engine, default session length, which T6 candidates, retention of collected configs | High | Open |
-| TF2 | T1: protocol engine, read-only server, client, scope guard, limits, name policy, audit log, fuzzing, interop tests, `tftp.yml` | High | Open |
-| TF3 | T2: drop box uploads and findings on collected configs | High | Open |
+| TF1 | T1 follows the proposed name, own protocol engine and 60-minute session; owner decisions on T6 and retention remain open | High | Partly resolved |
+| TF2 | T1: protocol engine, read-only server, client, scope guard, limits, name policy, audit log, fuzzing, interop tests, `tftp.yml` | High | Implemented, pending review |
+| TF3 | T2: drop box uploads and findings on collected configs | High | Implemented, pending review |
 | TF4 | T3: Windows desktop app; its stylesheet joins `scripts/ci/check-palette.mjs` | Medium | Open |
 | TF5 | T4 service mode and T5 packaging and signing (reuses Scanner's S4 work, SC1) | Medium | Open |
 
