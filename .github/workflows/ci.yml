@@ -12,9 +12,11 @@ on:
 permissions:
   contents: read
 
+# Superseded pull request runs are cancelled; runs on main always finish, so every commit on
+# main gets a result even when several tools push in quick succession.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   web:
