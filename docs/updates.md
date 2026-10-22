@@ -13,6 +13,7 @@ implementation checks versions and opens official downloads for the user to inst
 | Readout | **Check for updates** in the status bar, in desktop and browser builds | Implemented |
 | TFTP | `ztg-tftp check-updates [--json]` | Implemented; desktop action required in T3 |
 | Copy | Shared checker accepts `copy`; application action required when RC1/desktop ships | Copy is currently an RC0 capture harness, not an end-user app |
+| AD Admin (working name) | `ztg-adadmin check-updates` from A1, **Check for updates** in the desktop app from A2; tag prefix `adadmin-v` added to the shared checker with the first package (A8) | Planned (`adadmin/docs/design.md`) |
 
 The shared standalone checker also supports all four products, including Copy before its app
 exists. From `scripts/updates/`, with the pinned Go toolchain:
