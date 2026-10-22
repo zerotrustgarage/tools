@@ -64,22 +64,23 @@ jobs:
       - run: npm ci
       - run: scripts/ci/build-windows.sh readout
       - run: scripts/ci/check-pe.sh readout/src-tauri/target/x86_64-pc-windows-msvc/release/ztg-readout.exe gui amd64
-      # The same installers the release builds, unsigned, for the Windows job below.
+      # The same installers the release builds, unsigned, for the Windows job below. They are staged
+      # in out/, not a dot directory: upload-artifact skips hidden paths.
       - run: scripts/ci/apt-install.sh nsis wixl msitools
       - name: Unsigned installers
         run: |
           set -eu
-          mkdir -p .release
+          mkdir -p out
           exe=readout/src-tauri/target/x86_64-pc-windows-msvc/release/ztg-readout.exe
-          cp "$exe" .release/
-          node scripts/notices.mjs readout .release/THIRD-PARTY-NOTICES.txt
-          makensis -V2 -DVERSION=0.0.0 "-DAPP_EXE=$PWD/$exe" "-DNOTICES=$PWD/.release/THIRD-PARTY-NOTICES.txt" \
-            "-DOUTFILE=$PWD/.release/ZTG-Readout-Setup.exe" readout/installer/ztg-readout.nsi
-          readout/installer/build-msi.sh "$exe" .release/THIRD-PARTY-NOTICES.txt 0.0.0 .release/ZTG-Readout.msi
+          cp "$exe" out/
+          node scripts/notices.mjs readout out/THIRD-PARTY-NOTICES.txt
+          makensis -V2 -DVERSION=0.0.0 "-DAPP_EXE=$PWD/$exe" "-DNOTICES=$PWD/out/THIRD-PARTY-NOTICES.txt" \
+            "-DOUTFILE=$PWD/out/ZTG-Readout-Setup.exe" readout/installer/ztg-readout.nsi
+          readout/installer/build-msi.sh "$exe" out/THIRD-PARTY-NOTICES.txt 0.0.0 out/ZTG-Readout.msi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: readout-windows-unsigned
-          path: .release/
+          path: out/
           if-no-files-found: error
           retention-days: 3
 

@@ -53,14 +53,14 @@ jobs:
       - name: Collect the unsigned build and its notices
         run: |
           set -euo pipefail
-          mkdir -p .release
-          cp readout/src-tauri/target/x86_64-pc-windows-msvc/release/ztg-readout.exe .release/
-          node scripts/notices.mjs readout .release/THIRD-PARTY-NOTICES.txt
-          (cd .release && sha256sum ztg-readout.exe THIRD-PARTY-NOTICES.txt > build.sha256)
+          mkdir -p out
+          cp readout/src-tauri/target/x86_64-pc-windows-msvc/release/ztg-readout.exe out/
+          node scripts/notices.mjs readout out/THIRD-PARTY-NOTICES.txt
+          (cd out && sha256sum ztg-readout.exe THIRD-PARTY-NOTICES.txt > build.sha256)
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: readout-unsigned
-          path: .release/
+          path: out/
           if-no-files-found: error
           retention-days: 3
 
@@ -79,9 +79,9 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: readout-unsigned
-          path: .release
+          path: out
       - name: Check the build output against the build job's digests
-        run: cd .release && sha256sum --check --strict build.sha256
+        run: cd out && sha256sum --check --strict build.sha256
       # osslsigncode and openssl verify; Java runs jsign, which sign.mjs downloads and checks
       # against a pinned SHA-256. makensis packages. All from Ubuntu's signed archive.
       - run: scripts/ci/apt-install.sh nsis osslsigncode openjdk-17-jre-headless
@@ -98,12 +98,12 @@ jobs:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
-          node scripts/signing/sign.mjs sign .release/ztg-readout.exe
+          node scripts/signing/sign.mjs sign out/ztg-readout.exe
           mkdir -p dist
           makensis -V2 \
             "-DVERSION=$VERSION" \
-            "-DAPP_EXE=$GITHUB_WORKSPACE/.release/ztg-readout.exe" \
-            "-DNOTICES=$GITHUB_WORKSPACE/.release/THIRD-PARTY-NOTICES.txt" \
+            "-DAPP_EXE=$GITHUB_WORKSPACE/out/ztg-readout.exe" \
+            "-DNOTICES=$GITHUB_WORKSPACE/out/THIRD-PARTY-NOTICES.txt" \
             "-DOUTFILE=$GITHUB_WORKSPACE/dist/ZTG-Readout-$VERSION-Setup.exe" \
             "-DSIGN_SCRIPT=$GITHUB_WORKSPACE/scripts/signing/sign-file.sh" \
             readout/installer/ztg-readout.nsi
@@ -112,10 +112,10 @@ jobs:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
-          node scripts/signing/sign.mjs verify .release/ztg-readout.exe
+          node scripts/signing/sign.mjs verify out/ztg-readout.exe
           node scripts/signing/sign.mjs verify "dist/ZTG-Readout-$VERSION-Setup.exe"
-          cp .release/ztg-readout.exe "dist/ztg-readout-$VERSION.exe"
-          cp .release/THIRD-PARTY-NOTICES.txt dist/
+          cp out/ztg-readout.exe "dist/ztg-readout-$VERSION.exe"
+          cp out/THIRD-PARTY-NOTICES.txt dist/
           (cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
