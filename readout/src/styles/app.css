@@ -16,6 +16,13 @@
   --warn: #90540b;
   --focus: #245c9a;
   --cm-mark: #8a99ab;
+  --titlebar-bg: #e8edf2;
+  --dim2: #607084;
+  --active-line: rgba(36, 92, 154, 0.06);
+  --selection: rgba(36, 92, 154, 0.22);
+  --selection-match: rgba(36, 92, 154, 0.12);
+  --caption-hover: rgba(16, 32, 51, 0.08);
+  --caption-press: rgba(16, 32, 51, 0.14);
   color-scheme: light;
 }
 :root[data-theme='dark'] {
@@ -33,6 +40,13 @@
   --warn: #fbbf24;
   --focus: #00ff41;
   --cm-mark: #64748b;
+  --titlebar-bg: #020c1b;
+  --dim2: #64748b;
+  --active-line: rgba(255, 255, 255, 0.04);
+  --selection: rgba(0, 255, 65, 0.18);
+  --selection-match: rgba(0, 255, 65, 0.09);
+  --caption-hover: rgba(255, 255, 255, 0.08);
+  --caption-press: rgba(255, 255, 255, 0.14);
   color-scheme: dark;
 }
 
@@ -48,6 +62,53 @@ body {
 [hidden] { display: none !important; }
 
 .app { display: flex; flex-direction: column; height: 100%; }
+
+/* Desktop title bar (the native frame is off). One step darker than the toolbar beneath it. */
+.titlebar {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  flex: none;
+  padding-left: 12px;
+  gap: 8px;
+  background: var(--titlebar-bg);
+  color: var(--dim);
+  font-size: 12px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.titlebar-mark, .titlebar-name, .titlebar-fill { pointer-events: none; }
+.titlebar-mark {
+  font: 700 10px/1 ui-monospace, Consolas, monospace;
+  color: #00ff41;
+  background: #020c1b;
+  border: 1px solid rgba(0, 255, 65, 0.35);
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.titlebar-name { color: var(--text); letter-spacing: 0.01em; }
+.titlebar-fill { flex: 1; align-self: stretch; }
+.captions { display: flex; align-self: stretch; }
+.caption {
+  width: 46px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--text);
+  background: transparent;
+}
+.caption:hover { background: var(--caption-hover); border-color: transparent; }
+.caption:active { background: var(--caption-press); }
+.caption-close:hover { background: #c42b1c; color: #ffffff; }
+.caption-close:active { background: #b22a1b; color: #ffffff; }
+.caption:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.caption-glyph { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1; shape-rendering: crispEdges; }
+.caption-close .caption-glyph { shape-rendering: geometricPrecision; }
+/* With the title bar showing the product, the toolbar does not repeat it. */
+.has-titlebar .top-bar .brand { display: none; }
 
 .top-bar {
   display: flex;
@@ -232,19 +293,9 @@ body.resizing .pane, body.resizing .sidebar { pointer-events: none; }
 .sidebar-count { padding: 6px 12px; font-size: 11px; color: var(--dim); border-top: 1px solid var(--line); }
 .icon-button:disabled { opacity: 0.35; cursor: default; background: transparent; border-color: transparent; }
 
-/* CodeMirror */
-.cm-editor { flex: 1; height: 100%; background: var(--panel); color: var(--text); font-size: 14px; }
-.cm-editor.cm-focused { outline: none; }
-.cm-scroller { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace; line-height: 1.6; }
-.cm-content { padding: 16px 0; caret-color: var(--acc); }
-.cm-line { padding: 0 16px; }
-.cm-gutters { background: var(--panel); color: var(--dim); border-right: 1px solid var(--line); }
-.cm-activeLine, .cm-activeLineGutter { background: color-mix(in srgb, var(--panel2) 70%, transparent); }
-.cm-selectionBackground, .cm-focused .cm-selectionBackground { background: color-mix(in srgb, var(--focus) 28%, transparent) !important; }
-.cm-cursor { border-left-color: var(--acc); }
-.cm-panels { background: var(--panel2); color: var(--text); border-color: var(--line); }
-.cm-panel input, .cm-panel button { color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; }
-.cm-searchMatch { background: color-mix(in srgb, var(--warn) 30%, transparent); }
+/* CodeMirror chrome (gutter, active line, selection, panels) is styled by the editor theme in
+   src/ui/editor.ts: CodeMirror's own base theme outranks plain selectors here. Only the
+   syntax token classes, which no base theme styles, live in this file. */
 .cm-md-h1 { font-weight: 700; font-size: 1.3em; color: var(--bright); }
 .cm-md-h2 { font-weight: 700; font-size: 1.15em; color: var(--bright); }
 .cm-md-h { font-weight: 700; color: var(--bright); }
@@ -289,7 +340,7 @@ body.resizing .pane, body.resizing .sidebar { pointer-events: none; }
 @media print {
   body { overflow: visible; background: #fff; }
   .app, .workspace, .pane { display: block !important; height: auto; overflow: visible; }
-  .app .top-bar, .app .format-bar, .app .banner, .app .status-bar, .workspace .editor-pane, .workspace .sidebar, .workspace .splitter, .workspace .drop-overlay { display: none !important; }
+  .app .titlebar, .app .top-bar, .app .format-bar, .app .banner, .app .status-bar, .workspace .editor-pane, .workspace .sidebar, .workspace .splitter, .workspace .drop-overlay { display: none !important; }
   .panes { display: block !important; }
   .preview-pane .markdown-body { padding: 0; max-width: none; }
 }

@@ -40,6 +40,16 @@ export interface Arrival {
   listing?: Listing;
 }
 
+/** The desktop window's own caption buttons (the native frame is off). */
+export interface WindowControls {
+  minimize(): Promise<void>;
+  toggleMaximize(): Promise<void>;
+  /** Asks to close; the close-requested handler can still keep the window open. */
+  close(): Promise<void>;
+  /** Called now and whenever the window is maximized or restored. */
+  onMaximizedChange(handler: (maximized: boolean) => void): void;
+}
+
 export interface DropHandlers {
   dragging(active: boolean): void;
   open(arrival: Arrival): void;
@@ -49,6 +59,8 @@ export interface DropHandlers {
 
 export interface Platform {
   kind: 'desktop' | 'web';
+  /** Present when the app draws its own title bar. */
+  window?: WindowControls;
   /** Shows an open dialog. Resolves null when cancelled. */
   open(): Promise<OpenedFile | null>;
   /** Shows a folder dialog and lists its Markdown files. */

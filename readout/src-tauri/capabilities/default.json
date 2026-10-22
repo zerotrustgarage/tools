@@ -1,12 +1,20 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window may call the app's own narrow commands, listen for events, set its title and close. It has no file system, dialog, shell or opener permission of its own.",
-  "windows": ["main"],
+  "description": "The main window may call the app's own narrow commands, listen for events, set its title, and minimize, maximize, move and close itself (it draws its own title bar). It has no file system, dialog, shell or opener permission of its own.",
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:event:default",
     "core:window:allow-set-title",
     "core:window:allow-destroy",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
+    "core:window:allow-is-maximized",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-minimize",
     "allow-choose-document",
     "allow-choose-folder",
     "allow-list-folder",

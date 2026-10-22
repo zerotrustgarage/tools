@@ -39,6 +39,10 @@ returns along the links you followed.
   and the widths are remembered. The editor's share is kept as a proportion, so it scales with
   the window.
 - The reading-width button switches the preview between a comfortable column and the full pane.
+- On the desktop the app draws its own title bar in the current theme (the native frame is off):
+  drag it to move the window, double-click it to maximize. Windows 11's snap layout flyout,
+  which appears when hovering a native maximize button, is not available on it; Win+Z and
+  Win+arrow keys still snap the window.
 
 ## Fidelity
 
