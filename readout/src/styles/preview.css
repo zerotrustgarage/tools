@@ -145,23 +145,45 @@
 .markdown-body table.front-matter td { vertical-align: top; color: var(--md-muted); }
 .markdown-body a.wikilink { text-decoration-style: dotted; }
 
-/* GitHub alerts */
+/* GitHub alerts, Obsidian callouts, MkDocs and Docusaurus admonitions (plugins/callouts.ts) */
 .markdown-body .markdown-alert { padding: 8px 16px; border-left: 4px solid var(--alert); color: inherit; }
 .markdown-body .markdown-alert > :last-child { margin-bottom: 0; }
-.markdown-body .markdown-alert-title { display: flex; gap: 8px; align-items: center; font-weight: 600; color: var(--alert); margin-bottom: 4px; }
+/* Block, not flex: a custom title can hold inline formatting, which flex would space apart. */
+.markdown-body .markdown-alert-title { display: block; font-weight: 600; color: var(--alert); margin: 0 0 4px; }
 .markdown-body .markdown-alert-title::before {
   content: '';
+  display: inline-block;
+  vertical-align: -2px;
   width: 16px;
   height: 16px;
+  margin-right: 8px;
   border-radius: 50%;
   border: 2px solid currentColor;
   box-sizing: border-box;
 }
+.markdown-body .markdown-alert-title strong { color: inherit; }
+.markdown-body summary.markdown-alert-title { cursor: pointer; list-style: none; }
+.markdown-body summary.markdown-alert-title::-webkit-details-marker { display: none; }
+.markdown-body summary.markdown-alert-title::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 10px;
+  vertical-align: 2px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.12s;
+}
+.markdown-body details.markdown-alert[open] > summary.markdown-alert-title::after { transform: rotate(45deg); }
+.markdown-body details.markdown-alert:not([open]) > summary.markdown-alert-title { margin-bottom: 0; }
 .markdown-body .markdown-alert-note { --alert: var(--md-note); }
 .markdown-body .markdown-alert-tip { --alert: var(--md-tip); }
 .markdown-body .markdown-alert-important { --alert: var(--md-important); }
 .markdown-body .markdown-alert-warning { --alert: var(--md-warning); }
 .markdown-body .markdown-alert-caution { --alert: var(--md-caution); }
+.markdown-body .markdown-alert-quote { --alert: var(--md-muted); }
 
 /* Footnotes */
 .markdown-body .footnotes { font-size: 0.875em; color: var(--md-muted); border-top: 1px solid var(--md-line); padding-top: 1em; margin-top: 2em; }

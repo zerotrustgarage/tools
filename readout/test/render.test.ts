@@ -104,6 +104,110 @@ describe('rendering what AI tools produce', () => {
   });
 });
 
+describe('callouts and admonitions', () => {
+  const callout = (md: string) => dom(renderMarkdown(md)).querySelector<HTMLElement>('.markdown-alert')!;
+  const title = (el: Element) => el.querySelector('.markdown-alert-title')!.textContent;
+  const body = (el: Element) =>
+    [...el.children]
+      .filter((c) => !c.classList.contains('markdown-alert-title'))
+      .map((c) => c.textContent)
+      .join('|');
+
+  it('renders Obsidian callouts with their type, alias colour and custom title', () => {
+    const c = callout('> [!danger] Do **not** reboot\n> The cluster is draining.\n');
+    expect(c.tagName).toBe('DIV');
+    expect(c.className).toBe('markdown-alert markdown-alert-caution');
+    expect(c.dataset.callout).toBe('danger');
+    expect(title(c)).toBe('Do not reboot');
+    expect(c.querySelector('.markdown-alert-title strong')!.textContent).toBe('not');
+    expect(body(c)).toBe('The cluster is draining.');
+    expect(c.textContent).not.toContain('[!danger]');
+  });
+
+  it('gives an untitled callout its type as the title and an unknown type the note style', () => {
+    expect(title(callout('> [!TLDR]\n> Short.\n'))).toBe('Tldr');
+    const custom = callout('> [!runbook-step]\n> Text\n');
+    expect(custom.className).toBe('markdown-alert markdown-alert-note');
+    expect(custom.dataset.callout).toBe('runbook-step');
+    expect(callout('> [!quote]\n> Words\n').className).toContain('markdown-alert-quote');
+  });
+
+  it('folds Obsidian callouts marked + or -', () => {
+    const closed = callout('> [!faq]- Why is the VPN slow?\n> Split tunnelling is off.\n');
+    expect(closed.tagName).toBe('DETAILS');
+    expect(closed.hasAttribute('open')).toBe(false);
+    expect(closed.querySelector('summary.markdown-alert-title')!.textContent).toBe('Why is the VPN slow?');
+    expect(body(closed)).toBe('Split tunnelling is off.');
+    const open = callout('> [!tip]+\n> Shown\n');
+    expect(open.tagName).toBe('DETAILS');
+    expect(open.hasAttribute('open')).toBe(true);
+    expect(title(open)).toBe('Tip');
+  });
+
+  it('nests callouts', () => {
+    const outer = callout('> [!note] Outer\n> > [!warning] Inner\n> > Careful\n');
+    const inner = outer.querySelector<HTMLElement>('.markdown-alert')!;
+    expect(inner.dataset.callout).toBe('warning');
+    expect(title(inner)).toBe('Inner');
+  });
+
+  it('renders MkDocs admonitions with an indented body', () => {
+    const r = dom(renderMarkdown('!!! warning "Change window"\n    Saturday **only**.\n\n    - one\n    - two\n\nAfter\n'));
+    const c = r.querySelector<HTMLElement>('.markdown-alert')!;
+    expect(c.className).toBe('markdown-alert markdown-alert-warning');
+    expect(title(c)).toBe('Change window');
+    expect(c.querySelector('p:not(.markdown-alert-title) strong')!.textContent).toBe('only');
+    expect(c.querySelectorAll('li')).toHaveLength(2);
+    expect(c.getAttribute('data-line')).toBe('0');
+    expect(r.lastElementChild!.textContent).toBe('After');
+    expect(r.lastElementChild!.closest('.markdown-alert')).toBeNull();
+  });
+
+  it('folds MkDocs ??? admonitions and honours an empty title', () => {
+    const closed = callout('??? note\n    Hidden\n');
+    expect(closed.tagName).toBe('DETAILS');
+    expect(closed.hasAttribute('open')).toBe(false);
+    expect(title(closed)).toBe('Note');
+    expect(callout('???+ example\n    Shown\n').hasAttribute('open')).toBe(true);
+    const bare = callout('!!! info ""\n    No title bar\n');
+    expect(bare.querySelector('.markdown-alert-title')).toBeNull();
+    expect(bare.textContent!.trim()).toBe('No title bar');
+  });
+
+  it('keeps indentation rules: a deeper indent is code, and !!! cannot interrupt a paragraph', () => {
+    expect(callout('!!! note\n        code here\n').querySelector('pre code')!.textContent).toBe('code here\n');
+    expect(dom(renderMarkdown('Text\n!!! note\n    body\n')).querySelector('.markdown-alert')).toBeNull();
+  });
+
+  it('renders Docusaurus admonitions in both title forms, nested with more colons', () => {
+    const c = callout(':::tip[Pro tip]\nUse **SSO**.\n:::\n');
+    expect(c.className).toBe('markdown-alert markdown-alert-tip');
+    expect(title(c)).toBe('Pro tip');
+    expect(body(c)).toBe('Use SSO.');
+    expect(title(callout(':::danger Take care\nBody\n:::\n'))).toBe('Take care');
+    expect(title(callout(':::info\nBody\n:::\n'))).toBe('Info');
+
+    const r = dom(renderMarkdown('::::note Outer\n:::warning\nInner\n:::\nStill outer\n::::\n\nAfter\n'));
+    const outer = r.querySelector<HTMLElement>('.markdown-alert')!;
+    expect(outer.querySelector<HTMLElement>('.markdown-alert')!.dataset.callout).toBe('warning');
+    expect(body(outer)).toContain('Still outer');
+    expect(r.lastElementChild!.textContent).toBe('After');
+  });
+
+  it('leaves other ::: blocks alone', () => {
+    const r = dom(renderMarkdown('::: columns\nText\n:::\n'));
+    expect(r.querySelector('.markdown-alert')).toBeNull();
+    expect(r.textContent).toContain('::: columns');
+  });
+
+  it('keeps callout titles inert', () => {
+    const c = callout('> [!note] <img src=x onerror=alert(1)> title\n> body\n');
+    expect(c.querySelector('img')!.hasAttribute('onerror')).toBe(false);
+    const m = callout('!!! note "<script>alert(1)</script>"\n    body\n');
+    expect(m.querySelector('script')).toBeNull();
+  });
+});
+
 describe('docs folders and vaults', () => {
   it('shows front matter as a table instead of a rule and heading', () => {
     const r = dom(renderMarkdown('---\ntitle: "Firewall standard"\ntags:\n  - network\n  - cmmc\nowner: SecOps\n---\n\n# Body\n'));

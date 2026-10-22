@@ -56,7 +56,7 @@ These need the repository owner; no code change can do them.
 
 | # | Improvement | Priority | Reference |
 | --- | --- | --- | --- |
-| RD6 | Obsidian callouts (all types, custom titles, foldable `+`/`-`), MkDocs `!!!` admonitions and Docusaurus `:::` blocks. Today only the five GitHub alerts render, so a vault note with `> [!warning] Title` shows as a plain quote | High | Obsidian, MkDocs |
+| RD6 | Obsidian callouts (all types and aliases, custom titles, foldable `+`/`-`, nested), MkDocs `!!!`/`???` admonitions and Docusaurus `:::` blocks render as one callout element (`src/core/plugins/callouts.ts`); folds the reader opens survive live re-renders and print open | **Done** | Obsidian, MkDocs |
 | RD7 | Reload when the open file changes on disk (git pull, an AI agent rewriting it), asking first if there are unsaved edits; refresh the folder tree | High | VS Code, Typora |
 | RD8 | Outline panel: the heading tree, click to jump | High | Typora, MarkText |
 | RD9 | Search across the open folder, with results that jump to the line | High | Obsidian, VS Code |
