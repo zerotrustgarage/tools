@@ -151,6 +151,13 @@ func runCase(ctx context.Context, engine, output, name string, args []string, wa
 			}
 			select {
 			case <-done:
+				if handle != 0 {
+					var count counters
+					ok, _, _ := getIOCounters.Call(uintptr(handle), uintptr(unsafe.Pointer(&count)))
+					if ok != 0 {
+						o.event(map[string]any{"kind": "io", "counters": count, "final": true})
+					}
+				}
 				return
 			case <-ticker.C:
 			}

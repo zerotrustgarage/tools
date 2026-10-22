@@ -41,6 +41,10 @@ if (Test-Path -LiteralPath $Output) {
         spike_exit = $spikeExit
     } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $Output 'environment.json') -Encoding utf8
 }
+$environmentPath = Join-Path $Output 'environment.json'
+if (Test-Path -LiteralPath $environmentPath) {
+    Write-Output ('RC0_ENVIRONMENT ' + (Get-Content -Raw -LiteralPath $environmentPath | ConvertFrom-Json | ConvertTo-Json -Compress))
+}
 $manifestPath = Join-Path $Output 'manifest.json'
 if (Test-Path -LiteralPath $manifestPath) { Get-Content -LiteralPath $manifestPath }
 foreach ($name in @('help-default', 'help-unicode', 'serial-copy', 'mt8-copy', 'long-extended-trailing-argument')) {

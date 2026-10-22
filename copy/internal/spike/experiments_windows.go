@@ -214,6 +214,8 @@ func runLocalExperiments(ctx context.Context, engine, root, output string, execu
 		if variant == "extended-trailing" {
 			sourceArg += "\\"
 		}
+		probeData, probeErr := os.ReadFile(filepath.Join(sourceArg, longName))
+		m.Checks[variant+"-argument-windows-readable"] = probeErr == nil && bytes.Equal(probeData, longData)
 		destArg := filepath.Join(root, variant+" argument destination")
 		result, err := run("long-"+variant+"-argument", sourceArg, destArg, "/E", "/XJ")
 		if err != nil {
@@ -221,7 +223,7 @@ func runLocalExperiments(ctx context.Context, engine, root, output string, execu
 		}
 		actual, readErr := os.ReadFile(filepath.Join(destArg, longName))
 		preserved := result.NativeExit < 8 && readErr == nil && bytes.Equal(actual, longData)
-		if variant != "extended-trailing" {
+		if variant == "absolute" {
 			m.Checks[variant+"-argument-content"] = preserved
 		}
 		m.Notes = append(m.Notes, fmt.Sprintf("Long %s argument: content preserved %t; native exit %d", variant, preserved, result.NativeExit))
@@ -352,6 +354,7 @@ func analyzeTiming(path string) (map[string]any, error) {
 	}
 	defer file.Close()
 	firstLine, firstTail := int64(-1), int64(-1)
+	var maxRead, maxWrite uint64
 	pipe := []byte{}
 	wideName := []byte{}
 	for _, char := range "slow.bin" {
@@ -388,6 +391,14 @@ func analyzeTiming(path string) (map[string]any, error) {
 				}
 			}
 		}
+		if kind == "io" {
+			var count counters
+			if err := json.Unmarshal(event["counters"], &count); err != nil {
+				return nil, err
+			}
+			maxRead = max(maxRead, count.ReadBytes)
+			maxWrite = max(maxWrite, count.WriteBytes)
+		}
 		if kind == "destination" {
 			var matches bool
 			if err := json.Unmarshal(event["tail_matches"], &matches); err != nil {
@@ -407,5 +418,7 @@ func analyzeTiming(path string) (map[string]any, error) {
 	timing["filename_before_matching_tail"] = firstLine >= 0 && firstTail > firstLine
 	timing["matching_tail_proves_full_completion"] = false
 	timing["sampling_interval_ms"] = 100
+	timing["max_process_read_bytes"] = maxRead
+	timing["max_process_write_bytes"] = maxWrite
 	return timing, nil
 }
