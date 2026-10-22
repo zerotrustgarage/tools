@@ -50,6 +50,7 @@
         </Component>
       </Directory>
     </Directory>
+    <!-- build-msi.sh converts these to directory-source actions; wixl lacks that attribute. -->
     <CustomAction Id="FirewallInstall" FileKey="TFTPCLI" ExeCommand="firewall install" Execute="deferred" Impersonate="no" Return="check" />
     <CustomAction Id="FirewallRemove" FileKey="TFTPCLI" ExeCommand="firewall remove" Execute="deferred" Impersonate="no" Return="check" />
     <CustomAction Id="FirewallRollback" FileKey="TFTPCLI" ExeCommand="firewall remove" Execute="rollback" Impersonate="no" Return="ignore" />

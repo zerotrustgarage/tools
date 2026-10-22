@@ -27,5 +27,7 @@ msiinfo export "$out" LaunchCondition | grep -q WEBVIEW2_VERSION
 # wixl moves RemoveExistingProducts after custom actions unless its compiled
 # sequence is pinned explicitly. MSI requires it before script-generating actions.
 msiinfo export "$out" InstallExecuteSequence > "$work/InstallExecuteSequence.idt"
-python3 "$here/sequence.py" "$work/InstallExecuteSequence.idt"
+msiinfo export "$out" CustomAction > "$work/CustomAction.idt"
+python3 "$here/sequence.py" "$work/InstallExecuteSequence.idt" "$work/CustomAction.idt"
 msibuild "$out" -i "$work/InstallExecuteSequence.idt"
+msibuild "$out" -i "$work/CustomAction.idt"
