@@ -91,7 +91,7 @@ import { showUpdateDialog } from "./updates.js";
 
   // ---------- theme and window ----------
 
-  // "auto" follows the Windows setting; "light" and "dark" are the user's choice and persist.
+  // System follows Windows; explicit Light/Dark choices persist across upgrades.
   const THEMES = ["auto", "light", "dark"];
   function applyTheme(choice) {
     const theme = THEMES.includes(choice) ? choice : "auto";
@@ -103,22 +103,21 @@ import { showUpdateDialog } from "./updates.js";
       const [r, g, b] = (getComputedStyle(document.documentElement).getPropertyValue("--bg").trim().match(/[0-9a-f]{2}/gi) || ["02", "0c", "1b"]).map((h) => parseInt(h, 16));
       rt.WindowSetBackgroundColour(r, g, b, 255);
     }
-    const btn = $("theme-btn");
-    if (btn) {
-      btn.dataset.choice = theme;
-      const label = `Theme: ${theme} (click to change)`;
-      btn.title = label;
-      btn.setAttribute("aria-label", label);
-    }
+    const nativeTheme = theme === "dark" ? rt?.WindowSetDarkTheme : theme === "light" ? rt?.WindowSetLightTheme : rt?.WindowSetSystemDefaultTheme;
+    nativeTheme?.();
+    $("theme").value = theme;
     return theme;
   }
   applyTheme(store.get("theme", "auto"));
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    if ($("theme").value === "auto") applyTheme("auto");
+  });
 
   // The desktop window has no native frame (main_windows.go); these are its caption buttons.
   function initTitlebar() {
     if (!rt || !rt.WindowMinimise) return; // browser preview: the browser has its own frame
     document.body.classList.add("has-titlebar");
-    $("titlebar").hidden = false;
+    $("window-controls").hidden = false;
     const max = $("win-max");
     const showState = async () => {
       const maximized = Boolean(await rt.WindowIsMaximised());
@@ -134,6 +133,11 @@ import { showUpdateDialog } from "./updates.js";
     });
     $("win-close").addEventListener("click", () => rt.Quit());
     window.addEventListener("resize", showState);
+    $("titlebar").addEventListener("dblclick", async (event) => {
+      if (getComputedStyle(event.target).getPropertyValue("--wails-draggable").trim() !== "drag") return;
+      await rt.WindowToggleMaximise();
+      showState();
+    });
     showState();
   }
 
@@ -819,10 +823,7 @@ import { showUpdateDialog } from "./updates.js";
 
   async function init() {
     initTitlebar();
-    $("theme-btn").addEventListener("click", () => {
-      const current = $("theme-btn").dataset.choice || "auto";
-      store.set("theme", applyTheme(THEMES[(THEMES.indexOf(current) + 1) % THEMES.length]));
-    });
+    $("theme").addEventListener("change", () => store.set("theme", applyTheme($("theme").value)));
     state.layout = loadLayout();
     renderHead();
     renderColumnMenu();
@@ -984,6 +985,8 @@ import { showUpdateDialog } from "./updates.js";
 
     const [version, defaults, suggestions] = await Promise.all([api.Version(), api.Defaults(), api.Suggestions()]);
     document.title = "ZTG Scanner " + version;
+    $("build-version").textContent = "v" + version;
+    $("build-version").title = "Build v" + version;
     $("check-updates").addEventListener("click", () => showUpdateDialog({
       tool: "scanner", current: version, openExternal: (url) => rt.BrowserOpenURL(url),
     }));

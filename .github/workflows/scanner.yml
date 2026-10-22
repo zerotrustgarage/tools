@@ -83,7 +83,10 @@ jobs:
           ../../scripts/ci/apt-install.sh wixl msitools osslsigncode zip unzip
           SCANNER_PAYLOAD="$PWD/dist" node --test ../ci/packaging.test.mjs
           ../installer/build-msi.sh dist 0.0.0 dist/ZTG-Scanner.msi
-          ../installer/build-msi.sh dist 0.0.1 dist/ZTG-Scanner-upgrade.msi
+          ./build-windows.sh 0.0.1-ci amd64 "$RUNNER_TEMP/scanner-upgrade"
+          node ../ci/metadata.mjs "$RUNNER_TEMP/scanner-upgrade" 0.0.1
+          cp ../installer/README.txt "$RUNNER_TEMP/scanner-upgrade/"
+          ../installer/build-msi.sh "$RUNNER_TEMP/scanner-upgrade" 0.0.1 dist/ZTG-Scanner-upgrade.msi
           ../installer/portable.sh dist dist/ZTG-Scanner-portable.zip
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -98,15 +101,29 @@ jobs:
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - run: npm install --global --ignore-scripts playwright-core@1.56.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: scanner-windows-unsigned
           path: dist
       - shell: pwsh
+        env:
+          ZTG_SCANNER_DESKTOP_CHECK: '1'
         run: >-
           ./scanner/ci/test-windows.ps1 -Msi dist/ZTG-Scanner.msi
           -UpgradeMsi dist/ZTG-Scanner-upgrade.msi
+          -UpgradeVersion 0.0.1-ci
           -Portable dist/ZTG-Scanner-portable.zip -Version 0.0.0-ci
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scanner-desktop-themes
+          path: ${{ runner.temp }}/scanner-shots/
+          if-no-files-found: ignore
+          retention-days: 7
 
   ui:
     name: Scanner desktop UI (headless Chromium, binding mock)

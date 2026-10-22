@@ -24,7 +24,7 @@
   color-scheme: dark;
 }
 
-/* Theme: data-theme="light" or "dark" is the user's choice (theme button); without it the
+/* Theme: data-theme="light" or "dark" is the user's choice (Theme selector); without it the
    Windows setting decides. The light palette is written twice because CSS cannot share one
    block between a media query and an attribute selector. */
 @media (prefers-color-scheme: light) {
@@ -79,7 +79,7 @@ body {
   color: var(--text);
   font: 13px/1.4 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   display: grid;
-  grid-template-rows: auto auto auto auto 1fr;
+  grid-template-rows: auto auto auto auto auto 1fr;
   overflow: hidden;
 }
 button, input, select, textarea { font: inherit; color: inherit; }
@@ -87,25 +87,24 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
 
-/* Desktop title bar (the native frame is off). Wails moves the window when a press lands on
-   an element whose --wails-draggable is "drag"; the property inherits, so the caption buttons
-   opt out. Windows 11 caption metrics: 46 by 32 pixels, close turns red on hover. */
-body.has-titlebar { grid-template-rows: auto auto auto auto auto 1fr; }
+/* Unified app/title bar. Wails moves the empty regions; all interactive controls opt out. */
 .titlebar {
   --wails-draggable: drag;
   display: flex; align-items: center; gap: 8px;
-  height: 32px; padding-left: 12px;
-  background: var(--titlebar-bg); color: var(--muted);
+  height: 48px; padding-left: 12px;
+  background: var(--panel); color: var(--muted);
+  border-bottom: 1px solid var(--line); min-width: 0;
   font-size: 12px; user-select: none;
 }
-.titlebar[hidden] { display: none; }
-.titlebar-mark {
-  font: 700 10px/1 var(--mono); color: #00ff41; background: #020c1b;
-  border: 1px solid rgba(0, 255, 65, 0.35); padding: 2px 4px; border-radius: 3px;
-}
-.titlebar-name { color: var(--text); }
-.titlebar-fill { flex: 1; align-self: stretch; }
+.titlebar-icon { flex: none; }
+.titlebar-name { color: var(--text); white-space: nowrap; font-weight: 600; }
+.build-version { font: 11px var(--mono); max-width: 175px; min-width: 50px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.titlebar-fill { flex: 1; min-width: 24px; align-self: stretch; }
+.titlebar .actions { --wails-draggable: no-drag; align-items: center; flex: none; }
+.theme-control { display: flex; gap: 6px; align-items: center; color: var(--text); }
+.theme-control select { height: 30px; padding: 0 6px; }
 .captions { display: flex; align-self: stretch; }
+.captions[hidden] { display: none; }
 .caption {
   --wails-draggable: no-drag;
   width: 46px; height: 100%; display: grid; place-items: center;
@@ -120,15 +119,6 @@ body.has-titlebar { grid-template-rows: auto auto auto auto auto 1fr; }
 .caption-close svg { shape-rendering: geometricPrecision; }
 #win-max .glyph-restore, #win-max.maximized .glyph-max { display: none; }
 #win-max.maximized .glyph-restore { display: block; }
-/* The title bar names the product, so the toolbar does not repeat it. */
-body.has-titlebar .topbar .brand { display: none; }
-
-/* Theme button: one icon per choice. */
-button.icon { display: inline-grid; place-items: center; padding: 0; width: 32px; }
-button.icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-#theme-btn svg { display: none; }
-#theme-btn[data-choice="auto"] .theme-auto, #theme-btn[data-choice="light"] .theme-light, #theme-btn[data-choice="dark"] .theme-dark { display: block; }
-
 .topbar {
   display: flex; align-items: center; gap: 16px;
   padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line);

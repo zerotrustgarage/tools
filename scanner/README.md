@@ -79,9 +79,10 @@ NODE_PATH=$(npm root -g) node uitest/run.mjs    # UI in headless Chromium (needs
 
 It needs the Microsoft Edge WebView2 runtime, which Windows 10 and 11 include.
 
-The window draws its own title bar in the app's theme (Wails frameless mode): drag it to move the window,
-double-click it to maximize. The theme button beside Settings switches between Auto (the Windows setting), Light
-and Dark, and the choice is remembered.
+The unified app/title bar contains the build number, Theme selector, Settings, update checks, exports and
+window controls. Drag its empty space to move the window or double-click to maximize. Choose **Theme: Dark**
+or **Light** explicitly; **System** follows Windows. The choice is remembered, and native window styling follows
+it too. Version 0.5.1 upgrades the earlier 0.5.0 test installer so Windows replaces the versioned executables.
 
 ## Site inventories and device actions
 
@@ -158,6 +159,9 @@ and verifies both EXEs before embedding them in the MSI, then signs and verifies
 signatures and launch both installed and portable apps before publication. Downloads include `SHA256SUMS.txt`, the
 SBOM and notices, with provenance attested for every asset. See [../docs/signing.md](../docs/signing.md) for setup
 and verification. PR CI uses unsigned packages and also checks MSI upgrades and downgrade refusal on `windows-2025`.
+The upgrade test builds different old/new executable versions and verifies replacement. Windows CI and the
+release test inspect the real WebView2 page for the unified bar, visible build and explicit light/dark themes;
+the debug port used for that inspection is enabled only by the test runner.
 
 ## Building
 
