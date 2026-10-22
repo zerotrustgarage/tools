@@ -1,7 +1,8 @@
 # ZTG Scanner: design
 
 Status (October 22, 2026): slices S1 (engine and CLI), S2 (desktop app), S3 (SNMPv3 inventory) and S4 (packaging
-and release pipeline) are built. S4's first signed release awaits owner setup. S5 onward are planned.
+and release pipeline), and S5 (actions, local inventories and comparison) are built. S4's first signed release
+awaits owner setup. S6 is planned.
 
 ## 1. Purpose
 
@@ -148,10 +149,29 @@ directive.
 | S2    | Desktop app (Wails v2, WebView2 on Windows): range picker from local interfaces, live results grid, detail pane, filters, export | Built   |
 | S3    | SNMPv3 inventory, opt-in per scan: authPriv only, GET and GETNEXT only, model, serial, firmware, location, interfaces | Built   |
 | S4    | Packaging and trust: Authenticode signing, MSI (WiX) and a portable ZIP, reproducible unsigned executable builds, SBOM, release workflow with provenance attestation | Built; first signed release awaits owner setup |
-| S5    | Actions from results: open in browser, SSH, RDP, copy, Wake-on-LAN, ping and traceroute; saved favorites; compare two scans (new and missing devices) | Planned |
+| S5    | Actions from results: browser, SSH, RDP, copy, Wake-on-LAN, ping and traceroute; site inventories, notes, tags and favorites; compare scans | Built |
 | S6    | macOS build (ARP through the routing socket), IPv6 neighbor discovery on the local link                                                     | Planned |
 
 Each slice is reviewed before the next starts.
+
+### S5 boundaries
+
+Site inventories are explicit local JSON files, with bounded parsing and atomic replacement. They contain no
+scan request credentials or executable command templates. Loading data starts no scan and grants no public-range
+authorization. Unknown JSON fields are refused. Annotations use address/MAC pairs; they follow a move only when
+that stable MAC is unique in consecutive scans. Historical MACs on unresponsive hosts are labeled separately.
+
+Comparison matches unique stable MACs first, then addresses, and ignores timing and technician annotations.
+Only a visited, unresponsive address in a completed scan can be called missing. Canceled scans, unvisited ranges
+and ambiguous matches are not assessed. Observed name, type, vendor, MAC, services, model, serial and firmware
+changes are reported with their before/after evidence. The result is an observation comparison, not an assertion
+of unauthorized change or removal.
+
+SSH and RDP hand off to installed Windows clients; Scanner bundles no remote access software. Only numeric result
+addresses reach fixed executables in the Windows system directory, without a shell. SSH/RDP require an observed
+standard service port; imported public addresses require a fresh authorization. Diagnostics have a 30-second limit.
+Wake-on-LAN is a separate, explicitly confirmed action: one magic packet to the most specific directly connected
+internal IPv4 network's broadcast address, never a forwarded or arbitrary broadcast. No credentials are persisted.
 
 ## 10. Not in scope
 

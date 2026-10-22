@@ -68,6 +68,7 @@ type Config struct {
 
 // Host is everything learned about one address.
 type Host struct {
+	Annotation
 	IP            string             `json:"ip"`
 	Status        string             `json:"status"` // "up" or "down"
 	Self          bool               `json:"self,omitempty"`
@@ -76,6 +77,7 @@ type Host struct {
 	TTL           int                `json:"ttl,omitempty"`
 	OSHint        string             `json:"os_hint,omitempty"`
 	MAC           string             `json:"mac,omitempty"`
+	LastKnownMAC  string             `json:"last_known_mac,omitempty"` // historical inventory only; never fresh probe evidence
 	Vendor        string             `json:"vendor,omitempty"`
 	MACRandomized bool               `json:"mac_randomized,omitempty"`
 	Name          string             `json:"name,omitempty"`
@@ -89,6 +91,13 @@ type Host struct {
 	TypeReason    string             `json:"type_reason,omitempty"`
 	Findings      []classify.Finding `json:"findings,omitempty"`
 	ScannedAt     time.Time          `json:"scanned_at"`
+}
+
+// Annotation is supplied by the technician, never by a probe.
+type Annotation struct {
+	Notes    string   `json:"notes,omitempty"`
+	Tags     []string `json:"tags,omitempty"`
+	Favorite bool     `json:"favorite,omitempty"`
 }
 
 // Summary describes a finished scan.

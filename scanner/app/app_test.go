@@ -39,6 +39,11 @@ func (f *fakePlatform) Emit(event string, data any) {
 }
 func (f *fakePlatform) SaveFile(string, string, string) (string, error) { return f.saveTo, nil }
 func (f *fakePlatform) OpenURL(u string)                                { f.opened = append(f.opened, u) }
+func (f *fakePlatform) OpenFile(string, string, string) (string, error) { return f.saveTo, nil }
+func (f *fakePlatform) Launch(action, ip string) (string, error) {
+	f.opened = append(f.opened, action+":"+ip)
+	return "launched", nil
+}
 
 func webServer(t *testing.T) (*httptest.Server, string) {
 	t.Helper()

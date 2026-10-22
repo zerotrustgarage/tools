@@ -3,16 +3,23 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"embed"
+	"fmt"
 	"io/fs"
 	"log"
+	"os/exec"
+	"path/filepath"
+	"syscall"
+	"time"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+	winapi "golang.org/x/sys/windows"
 )
 
 //go:embed all:frontend
@@ -32,6 +39,46 @@ func (p wailsPlatform) SaveFile(defaultName, filterName, pattern string) (string
 }
 
 func (p wailsPlatform) OpenURL(url string) { runtime.BrowserOpenURL(p.ctx, url) }
+
+func (p wailsPlatform) OpenFile(title, filterName, pattern string) (string, error) {
+	return runtime.OpenFileDialog(p.ctx, runtime.OpenDialogOptions{Title: title, Filters: []runtime.FileFilter{{DisplayName: filterName, Pattern: pattern}}})
+}
+
+func (p wailsPlatform) Launch(action, ip string) (string, error) {
+	program, args, err := actionCommand(action, ip)
+	if err != nil {
+		return "", err
+	}
+	dir, err := winapi.GetSystemDirectory()
+	if err != nil {
+		return "", err
+	}
+	if action == "ssh" {
+		program = filepath.Join(dir, "OpenSSH", program)
+	} else {
+		program = filepath.Join(dir, program)
+	}
+	if action == "ssh" || action == "rdp" {
+		cmd := exec.Command(program, args...)
+		cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x00000010} // CREATE_NEW_CONSOLE; no command shell
+		if err := cmd.Start(); err != nil {
+			return "", fmt.Errorf("could not launch the installed %s client: %w", action, err)
+		}
+		go func() { _ = cmd.Wait() }()
+		return "Opened the installed " + action + " client for " + ip, nil
+	}
+	ctx, cancel := context.WithTimeout(p.ctx, 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, program, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	var output bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &output, &output
+	err = cmd.Run()
+	if err != nil {
+		return "", fmt.Errorf("%s: %w\n%s", action, err, output.String())
+	}
+	return output.String(), nil
+}
 
 func main() {
 	app := NewApp()
@@ -59,7 +106,17 @@ func main() {
 			app.setPlatform(ctx, wailsPlatform{ctx: ctx})
 		},
 		OnShutdown: func(context.Context) { app.StopScan() },
-		Bind:       []interface{}{app},
+		OnBeforeClose: func(ctx context.Context) bool {
+			if !app.UnsavedChanges() {
+				return false
+			}
+			choice, err := runtime.MessageDialog(ctx, runtime.MessageDialogOptions{
+				Type: runtime.WarningDialog, Title: "Unsaved scan", Message: "This scan has unsaved changes. Close without saving?",
+				Buttons: []string{"Cancel", "Close without saving"}, DefaultButton: "Cancel", CancelButton: "Cancel",
+			})
+			return err != nil || choice != "Close without saving"
+		},
+		Bind: []interface{}{app},
 		Windows: &windows.Options{
 			Theme:               windows.SystemDefault,
 			DisableWindowIcon:   false,

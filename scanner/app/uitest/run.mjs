@@ -258,6 +258,75 @@ try {
     assert.equal(await page.getAttribute("html", "data-theme"), null);
     assert.equal(await bg(), scheme === "dark" ? "rgb(2, 12, 27)" : "rgb(245, 247, 249)");
 
+    // Site inventories: device annotations are applied, searchable, and saved
+    // in the scan rather than in browser settings.
+    await page.click("#scan-btn");
+    await page.waitForFunction(() => document.getElementById("status-text").textContent.startsWith("Done:"));
+    await page.fill("#site", "Clinic");
+    await page.click('#rows tr[data-ip="192.168.50.20"]');
+    await page.fill("#device-notes", '<img src=x onerror="window.__pwned=1">Owner Alice');
+    await page.fill("#device-tags", "owner:Alice, location:MDF, cui:inside");
+    await page.check("#device-favorite");
+    await page.click("#apply-notes");
+    await page.waitForFunction(() => window.__calls.some(c => c[0] === "SetAnnotation"));
+    await page.check("#favorites-only");
+    assert.equal(await page.locator("#rows tr").count(), 1);
+    await page.uncheck("#favorites-only");
+    await page.fill("#filter", "cui:inside");
+    assert.equal(await page.locator("#rows tr").count(), 1);
+    await page.fill("#filter", "");
+    await page.click("#save-scan");
+    await page.waitForFunction(() => window.__savedScan?.site === "Clinic");
+    const savedScan = await page.evaluate(() => window.__savedScan);
+    assert.equal(savedScan.hosts.find(h => h.ip === "192.168.50.20").favorite, true);
+    assert.equal(savedScan.hosts.length, 6, "save must include unresponsive addresses even when hidden");
+    assert.ok(!JSON.stringify(savedScan).includes("secret"), "scan persisted a credential");
+
+    // Fixed actions use the selected address. Diagnostic output remains text.
+    await page.click('#detail button[data-action="rdp"]');
+    await page.click('#detail button[data-action="ping"]');
+    await page.waitForFunction(() => document.getElementById("diagnostics-output").textContent.includes("Reply from"));
+    assert.equal(await page.locator("#diagnostics img").count(), 0);
+    assert.deepEqual((await page.evaluate(() => window.__calls)).filter(c => c[0] === "DeviceAction").at(-1), ["DeviceAction", "ping", "192.168.50.20", false]);
+    await page.click("#diagnostics-close");
+    await page.click('#detail button[data-action="wake"]');
+    await page.click("#modal-cancel");
+    assert.equal((await page.evaluate(() => window.__calls)).filter(c => c[0] === "WakeOnLAN").length, 0);
+    await page.click('#detail button[data-action="wake"]');
+    await page.click("#modal-ok");
+    await page.waitForFunction(() => window.__calls.some(c => c[0] === "WakeOnLAN"));
+
+    // Compare changes, address moves, missing hosts and unvisited addresses.
+    await page.click("#compare-scan");
+    await page.waitForSelector('#comparison:not([hidden])');
+    assert.match(await page.textContent("#comparison-counts"), /1 new.*1 missing.*1 changed.*1 unchanged.*1 not assessed/);
+    assert.match(await page.textContent("#comparison-list"), /Previous address: 192.168.50.19/);
+    assert.equal(await page.locator("#comparison img").count(), 0);
+    await page.selectOption("#change-filter", "missing");
+    assert.equal(await page.locator("#comparison-list li").count(), 1);
+    assert.match(await page.textContent("#comparison-list"), /<img src=x/);
+    assert.equal(await page.evaluate(() => window.__pwned), undefined);
+    if (shots) await page.screenshot({ path: join(shots, `ui-comparison-${scheme}.png`) });
+    await page.click("#comparison-close");
+
+    // A separate site clears annotations; opening the saved file restores them.
+    await page.click("#new-site");
+    await page.waitForFunction(() => document.querySelectorAll("#rows tr").length === 0);
+    await page.click("#load-scan");
+    await page.waitForFunction(() => document.getElementById("site").value === "Clinic");
+    await page.click('#rows tr[data-ip="192.168.50.20"]');
+    assert.equal(await page.isChecked("#device-favorite"), true);
+    assert.match(await page.inputValue("#device-notes"), /Owner Alice/);
+    await page.fill("#site", "Unsaved rename");
+    await page.click("#new-site");
+    await page.waitForSelector("#modal:not([hidden])");
+    await page.click("#modal-cancel");
+    assert.equal(await page.inputValue("#site"), "Unsaved rename");
+
+    await page.setViewportSize({ width: 960, height: 640 });
+    const clippedControls = await page.$$eval(".inventory-bar button, .filters button, .filters select", nodes => nodes.filter(n => n.getBoundingClientRect().right > innerWidth).map(n => n.id));
+    assert.deepEqual(clippedControls, [], "inventory controls outside the minimum window");
+
     assert.deepEqual(errors, [], "page errors");
     console.log(`ok  ${scheme} scheme`);
     await page.close();

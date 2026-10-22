@@ -10,13 +10,13 @@ import (
 	"io"
 	"net"
 	"net/netip"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/zerotrustgarage/tools/scanner/internal/inventory"
 	"github.com/zerotrustgarage/tools/scanner/internal/probe"
 	"github.com/zerotrustgarage/tools/scanner/internal/report"
 	"github.com/zerotrustgarage/tools/scanner/internal/scan"
@@ -39,6 +39,8 @@ type Platform interface {
 	Emit(event string, data any)
 	SaveFile(defaultName, filterName, pattern string) (string, error)
 	OpenURL(url string)
+	OpenFile(title, filterName, pattern string) (string, error)
+	Launch(action, ip string) (string, error)
 }
 
 // App is bound to the UI: its exported methods are callable from JavaScript.
@@ -46,17 +48,26 @@ type App struct {
 	ctx      context.Context
 	platform Platform
 
-	mu       sync.Mutex
-	running  bool
-	cancel   context.CancelFunc
-	hosts    []scan.Host
-	summary  *scan.Summary
-	lastReq  []string
-	allowPub bool
+	mu            sync.Mutex
+	running       bool
+	cancel        context.CancelFunc
+	hosts         []scan.Host
+	summary       *scan.Summary
+	lastReq       []string
+	allowPub      bool
+	site          string
+	annotations   map[string]scan.Annotation
+	previous      []scan.Host
+	wake          func(string, string) error
+	revision      uint64
+	savedRevision uint64
+	filename      string
 }
 
 // NewApp returns an App; startup supplies the platform.
-func NewApp() *App { return &App{ctx: context.Background()} }
+func NewApp() *App {
+	return &App{ctx: context.Background(), annotations: map[string]scan.Annotation{}, wake: sendWake}
+}
 
 func (a *App) setPlatform(ctx context.Context, p Platform) {
 	a.ctx = ctx
@@ -233,7 +244,9 @@ func (a *App) StartScan(req ScanRequest) (int, error) {
 		return 0, errors.New("a scan is already running")
 	}
 	a.running = true
+	a.revision++
 	a.cancel = cancel
+	a.previous = a.hosts
 	a.hosts = nil
 	a.summary = nil
 	a.lastReq = specs
@@ -246,6 +259,8 @@ func (a *App) StartScan(req ScanRequest) (int, error) {
 		sum := scan.Run(ctx, cfg, obs)
 		obs.flushProgress(true)
 		a.mu.Lock()
+		inventory.ApplyAnnotations(a.previous, a.hosts, a.annotations)
+		a.previous = nil
 		a.running = false
 		a.cancel = nil
 		a.summary = &sum
@@ -269,6 +284,10 @@ type Snapshot struct {
 	Running bool          `json:"running"`
 	Hosts   []scan.Host   `json:"hosts"`
 	Summary *scan.Summary `json:"summary,omitempty"`
+	Site    string        `json:"site"`
+	Targets []string      `json:"targets"`
+	File    string        `json:"file"`
+	Dirty   bool          `json:"dirty"`
 }
 
 // Results returns every host from the current or last scan. Unresponsive
@@ -283,7 +302,7 @@ func (a *App) Results(all bool) Snapshot {
 		}
 	}
 	report.SortHosts(hosts)
-	return Snapshot{Running: a.running, Hosts: hosts, Summary: a.summary}
+	return Snapshot{Running: a.running, Hosts: hosts, Summary: a.summary, Site: a.site, Targets: append([]string(nil), a.lastReq...), File: a.filename, Dirty: a.revision != a.savedRevision}
 }
 
 // Export writes the results to a file the user picks. format is "csv"
@@ -310,26 +329,17 @@ func (a *App) Export(format string, all bool) (string, error) {
 	if err != nil || path == "" {
 		return "", err
 	}
-	f, err := os.Create(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	if format == "csv" {
-		err = report.CSV(f, snap.Hosts)
-	} else {
-		a.mu.Lock()
-		doc := report.Document{Tool: "ztg-scanner-desktop", Version: version, Targets: a.lastReq, Hosts: snap.Hosts}
-		if a.summary != nil {
-			doc.Summary = *a.summary
+	doc := a.document(all)
+	err = report.WriteFile(path, func(w io.Writer) error {
+		if format == "csv" {
+			return report.CSV(w, doc.Hosts)
 		}
-		a.mu.Unlock()
-		err = report.JSON(f, doc)
-	}
+		return report.JSON(w, doc)
+	})
 	if err != nil {
 		return "", err
 	}
-	return path, f.Close()
+	return path, nil
 }
 
 // ExportTable writes the grid as the user sees it (visible columns,
@@ -351,15 +361,10 @@ func (a *App) ExportTable(headers []string, rows [][]string) (string, error) {
 	if err != nil || path == "" {
 		return "", err
 	}
-	f, err := os.Create(path)
-	if err != nil {
+	if err := report.WriteFile(path, func(w io.Writer) error { return report.CSVTable(w, headers, rows) }); err != nil {
 		return "", err
 	}
-	defer f.Close()
-	if err := report.CSVTable(f, headers, rows); err != nil {
-		return "", err
-	}
-	return path, f.Close()
+	return path, nil
 }
 
 // OpenWeb opens http(s)://ip:port/ in the default browser. Only a port
@@ -408,6 +413,7 @@ type uiObserver struct {
 
 func (o *uiObserver) Host(h scan.Host) {
 	o.app.mu.Lock()
+	h.Annotation = o.app.annotations[inventory.AnnotationKey(h)]
 	o.app.hosts = append(o.app.hosts, h)
 	o.app.mu.Unlock()
 	if h.Status == "up" {
