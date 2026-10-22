@@ -125,15 +125,15 @@ dnsmasq, Open TFTP Server, their CVE history and the gaps across them) is in
 | TF4 | T3: Windows desktop app; its stylesheet joins `scripts/ci/check-palette.mjs` | Medium | Open |
 | TF5 | T4 service mode and T5 packaging and signing (reuses Scanner's S4 work, SC1) | Medium | Open |
 
-## 6. ZTG AD Admin
+## 6. ZTG Directory
 
-Proposal only (slice A0). The ideas, with priorities and slices, are in `adadmin/docs/runbook.md`; slices A1 to A8
-and the owner's open questions (Q1 to Q8) are in `adadmin/docs/design.md`.
+Plan only (slice D0). The workflows and ideas, with priorities and slices, are in `directory/docs/runbook.md`;
+slices D1 to D7 and the owner's open questions (Q1 to Q9) are in `directory/docs/design.md`.
 
 | # | Item | Priority | Status |
 | --- | --- | --- | --- |
-| AD1 | Owner decisions Q1 to Q8 (name, stack, Graph app registration, Exchange Online method, record location, GCC High clients, release timing, test estate) | High | Open |
-| AD2 | A1, read-only engine and CLI with signed and sealed LDAP | High | Open, waits on AD1 |
+| DR1 | Owner decisions Q1 to Q9 (host, stack, Exchange Online method, approvals, console location, RADIUS, certificate storage, test estate, release timing) | High | Open |
+| DR2 | D1, read-only engine and CLI with signed and sealed LDAP | High | Open, waits on DR1 |
 
 ## 7. Questions answered
 
