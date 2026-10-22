@@ -9,6 +9,8 @@
     <Media Id="1" Cabinet="tftp.cab" EmbedCab="yes" />
     <!-- build-msi.sh fixes the upgrade sequence; wixl lacks MajorUpgrade.Schedule. -->
     <MajorUpgrade DowngradeErrorMessage="A newer version of ZTG TFTP is already installed." />
+    <!-- Early removal must recopy files even when their version is unchanged. -->
+    <Property Id="REINSTALLMODE" Value="amus" />
     <Property Id="WEBVIEW2_VERSION">
       <RegistrySearch Id="WebView2Machine" Root="HKLM" Win64="no" Type="raw" Name="pv"
                       Key="SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" />

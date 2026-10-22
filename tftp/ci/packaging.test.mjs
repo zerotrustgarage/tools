@@ -45,6 +45,7 @@ test('packages preserve the binaries, ZIP is reproducible and MSI is signable', 
     assert.match(actions, /firewall remove/);
     assert.match(actions, /FirewallRestore/);
     assert.match(actions, /FirewallInstall\t3106\tINSTALLDIR\t"\[INSTALLDIR\]ztg-tftp\.exe" firewall install/);
+    assert.match(run('msiinfo', ['export', msi, 'Property']), /REINSTALLMODE\tamus/);
     const sequence = run('msiinfo', ['export', msi, 'InstallExecuteSequence']);
     const rows = new Map(sequence.trim().split(/\r?\n/).slice(3).map(line => { const fields=line.split('\t'); return [fields[0],Number(fields[2])]; }));
     assert.ok(rows.get('RemoveExistingProducts') < rows.get('InstallFiles'), 'remove old firewall rules before installing new ones');
