@@ -19,6 +19,8 @@ param(
   [string] $Shots = ''
 )
 $ErrorActionPreference = 'Stop'
+# Full Windows paths: msiexec rejects a relative path written with forward slashes (1619).
+$Setup, $Msi, $Sample = $Setup, $Msi, $Sample | ForEach-Object { (Resolve-Path -LiteralPath $_).ProviderPath }
 $installDir = Join-Path $env:ProgramFiles 'ZTG Readout'
 $exe = Join-Path $installDir 'ztg-readout.exe'
 $shortcut = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\ZTG Readout.lnk'
