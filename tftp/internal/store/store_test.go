@@ -58,9 +58,21 @@ func TestContainment(t *testing.T) {
 			t.Fatalf("escaped via %s", n)
 		}
 	}
-	if e := os.WriteFile(filepath.Join(root, "image.bin"), nil, 0600); e != nil {
+	// Case-insensitive filesystems cannot contain an ambiguous pair. Exclusive
+	// creation detects that behavior without truncating the existing image.
+	alternate, e := os.OpenFile(filepath.Join(root, "image.bin"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if os.IsExist(e) {
+		file, e := s.Read("IMAGE.BIN")
+		if e != nil {
+			t.Fatal(e)
+		}
+		file.Close()
+		return
+	}
+	if e != nil {
 		t.Fatal(e)
 	}
+	alternate.Close()
 	if f, e := s.Read("IMAGE.BIN"); e == nil {
 		f.Close()
 		t.Fatal("ambiguous case accepted")
