@@ -16,25 +16,7 @@ import (
 )
 
 var idPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
-var fieldName = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}// Package template expands placeholders into individual arguments, never shell text.
-package template
-
-import (
-	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
-	"regexp"
-	"sort"
-	"strings"
-	"time"
-
-	"github.com/zerotrustgarage/tools/copy/internal/job"
-	"github.com/zerotrustgarage/tools/copy/internal/private"
-)
-
-var idPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
-)
+var fieldName = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 var placeholder = regexp.MustCompile(`\{([a-z][a-z0-9_-]{0,63})\}`)
 
 type Field struct {
