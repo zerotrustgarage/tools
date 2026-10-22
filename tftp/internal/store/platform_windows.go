@@ -45,12 +45,12 @@ func private(f *os.File, directory bool) error {
 		}
 		attrs := windows.OBJECT_ATTRIBUTES{RootDirectory: windows.Handle(f.Fd()), ObjectName: name, Attributes: windows.OBJ_DONT_REPARSE}
 		attrs.Length = uint32(unsafe.Sizeof(attrs))
-		err = windows.NtCreateFile(&h, windows.WRITE_DAC|windows.WRITE_OWNER|windows.SYNCHRONIZE, &attrs, &windows.IO_STATUS_BLOCK{}, nil, 0, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, windows.FILE_OPEN, windows.FILE_DIRECTORY_FILE|windows.FILE_OPEN_FOR_BACKUP_INTENT|windows.FILE_SYNCHRONOUS_IO_NONALERT, 0, 0)
+		err = windows.NtCreateFile(&h, windows.READ_CONTROL|windows.WRITE_DAC|windows.WRITE_OWNER|windows.SYNCHRONIZE, &attrs, &windows.IO_STATUS_BLOCK{}, nil, 0, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, windows.FILE_OPEN, windows.FILE_DIRECTORY_FILE|windows.FILE_OPEN_FOR_BACKUP_INTENT|windows.FILE_SYNCHRONOUS_IO_NONALERT, 0, 0)
 		if err != nil {
 			return fmt.Errorf("reopen directory permission handle: %w", err)
 		}
 	} else {
-		value, _, callErr := reopenFile.Call(f.Fd(), windows.WRITE_DAC|windows.WRITE_OWNER, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, 0)
+		value, _, callErr := reopenFile.Call(f.Fd(), windows.READ_CONTROL|windows.WRITE_DAC|windows.WRITE_OWNER, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, 0)
 		if windows.Handle(value) == windows.InvalidHandle {
 			return fmt.Errorf("reopen file permission handle: %w", callErr)
 		}
