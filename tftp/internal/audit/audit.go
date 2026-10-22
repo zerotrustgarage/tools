@@ -8,21 +8,26 @@ import (
 )
 
 type Record struct {
-	Time       time.Time         `json:"time"`
-	Session    string            `json:"session"`
-	Transfer   string            `json:"transfer"`
-	Op         string            `json:"op"`
-	Source     string            `json:"source"`
-	Local      string            `json:"local"`
-	Name       string            `json:"name"`
-	Options    map[string]string `json:"options,omitempty"`
-	Bytes      int64             `json:"bytes"`
-	SHA256     string            `json:"sha256,omitempty"`
-	DurationMS int64             `json:"duration_ms"`
-	Result     string            `json:"result"`
-	Reason     string            `json:"reason,omitempty"`
-	Suppressed int               `json:"suppressed,omitempty"`
-	Protocol   string            `json:"protocol"`
+	Time              time.Time         `json:"time"`
+	Session           string            `json:"session"`
+	Transfer          string            `json:"transfer"`
+	Op                string            `json:"op"`
+	Source            string            `json:"source"`
+	Local             string            `json:"local"`
+	Name              string            `json:"name"`
+	Options           map[string]string `json:"options,omitempty"`
+	Bytes             int64             `json:"bytes"`
+	SHA256            string            `json:"sha256,omitempty"`
+	DurationMS        int64             `json:"duration_ms"`
+	Result            string            `json:"result"`
+	Reason            string            `json:"reason,omitempty"`
+	Suppressed        int               `json:"suppressed,omitempty"`
+	Protocol          string            `json:"protocol"`
+	StoredAs          string            `json:"stored_as,omitempty"`
+	Findings          []string          `json:"findings,omitempty"`
+	FindingsTruncated bool              `json:"findings_truncated,omitempty"`
+	ChangedSince      string            `json:"changed_since,omitempty"`
+	Changed           *bool             `json:"changed,omitempty"`
 }
 
 type Log struct {

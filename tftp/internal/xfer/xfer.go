@@ -179,6 +179,12 @@ func Send(t Transport, c Clock, r io.Reader, p wire.Params, mode string) (stats 
 // Receive acknowledges only bytes committed to w. first is an already received
 // DATA packet (for peers declining options); initial is ACK 0 or an initial OACK.
 func Receive(t Transport, c Clock, w io.Writer, p wire.Params, mode string, first *wire.Packet, initial []byte) (stats Stats, err error) {
+	return ReceiveCommit(t, c, w, p, mode, first, initial, nil)
+}
+
+// ReceiveCommit lets a server validate and publish an upload before acknowledging
+// its final DATA. A failed commit is never reported to the peer as success.
+func ReceiveCommit(t Transport, c Clock, w io.Writer, p wire.Params, mode string, first *wire.Packet, initial []byte, commit func(Stats) error) (stats Stats, err error) {
 	if e := valid(p); e != nil {
 		return stats, e
 	}
@@ -272,6 +278,11 @@ func Receive(t Transport, c Clock, w io.Writer, p wire.Params, mode string, firs
 		final := len(packet.Data) < p.BlockSize
 		if final && ascii != nil && ascii.cr {
 			return stats, errors.New("truncated netascii escape")
+		}
+		if final && commit != nil {
+			if e := commit(Stats{Bytes: count.n, SHA256: hex.EncodeToString(h.Sum(nil))}); e != nil {
+				return stats, e
+			}
 		}
 		if inWindow == p.WindowSize || final {
 			lastReply = wire.Encode(wire.Packet{Op: wire.ACK, Block: packet.Block})

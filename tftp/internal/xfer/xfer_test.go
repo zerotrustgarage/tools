@@ -228,3 +228,38 @@ func FuzzNetascii(f *testing.F) {
 		}
 	})
 }
+
+func TestUploadCommitBeforeFinalACK(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		f := &fake{events: []event{data(1, "payload"), data(1, "payload")}}
+		calls := 0
+		failure := errors.New("commit failed")
+		_, e := ReceiveCommit(f, f, io.Discard, wire.Params{BlockSize: 8, WindowSize: 1, Timeout: 1}, "octet", nil, wire.Encode(wire.Packet{Op: wire.ACK, Block: 0}), func(stats Stats) error {
+			calls++
+			if stats.Bytes != 7 || stats.SHA256 == "" {
+				t.Fatal("incomplete commit stats", stats)
+			}
+			for _, p := range f.sent {
+				if p.Op == wire.ACK && p.Block == 1 {
+					t.Fatal("final ACK preceded commit")
+				}
+			}
+			if fail {
+				return failure
+			}
+			return nil
+		})
+		if calls != 1 || fail && !errors.Is(e, failure) || !fail && e != nil {
+			t.Fatalf("calls %d: %v", calls, e)
+		}
+		finalACKs := 0
+		for _, p := range f.sent {
+			if p.Op == wire.ACK && p.Block == 1 {
+				finalACKs++
+			}
+		}
+		if fail && finalACKs != 0 || !fail && finalACKs != 2 {
+			t.Fatal("incorrect final ACKs", finalACKs)
+		}
+	}
+}
