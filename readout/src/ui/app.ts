@@ -15,18 +15,32 @@ import { el, icon } from './dom';
 import { createEditor, documentText, scrollToLine } from './editor';
 import { runFormat, type FormatCommand } from './format';
 import { Sidebar } from './sidebar';
+import { splitter } from './splitter';
 
 type ViewMode = 'edit' | 'split' | 'preview';
 type ThemeChoice = 'auto' | 'light' | 'dark';
+type Measure = 'readable' | 'full';
 
 const APP_NAME = 'ZTG Readout';
 const PREVIEW_DELAY_MS = 120;
 const MAX_HISTORY = 50;
+const SIDEBAR_DEFAULT = 270;
+const SIDEBAR_MIN = 160;
+const EDITOR_FRACTION_DEFAULT = 0.5;
+const PANE_MIN = 220;
 
 function stored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {
     const value = localStorage.getItem(key) as T | null;
     return value && allowed.includes(value) ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function storedNumber(key: string, fallback: number): number {
+  try {
+    const value = Number(localStorage.getItem(key));
+    return Number.isFinite(value) && value > 0 ? value : fallback;
   } catch {
     return fallback;
   }
@@ -55,6 +69,10 @@ export class App {
   private pendingFragment: string | null = null;
   private mode: ViewMode = stored('ztg-readout-mode', ['edit', 'split', 'preview'], 'split');
   private theme: ThemeChoice = stored('ztg-readout-theme', ['auto', 'light', 'dark'], 'auto');
+  private measure: Measure = stored('ztg-readout-measure', ['readable', 'full'], 'readable');
+  private sidebarWidth = storedNumber('ztg-readout-sidebar-width', SIDEBAR_DEFAULT);
+  /** The editor's share of the editor and preview area in split view. */
+  private editorFraction = storedNumber('ztg-readout-editor-fraction', EDITOR_FRACTION_DEFAULT);
   private renderTimer: number | undefined;
   private renderGeneration = 0;
   private objectUrls: string[] = [];
@@ -67,6 +85,10 @@ export class App {
   private readonly editorHost = el('div', { class: 'pane editor-pane' });
   private readonly preview = el('article', { class: 'markdown-body', 'aria-label': 'Preview' });
   private readonly previewPane = el('div', { class: 'pane preview-pane' }, this.preview);
+  private readonly panes = el('div', { class: 'panes' });
+  private readonly workspace = el('main', { class: 'workspace' });
+  private readonly dropOverlay = el('div', { class: 'drop-overlay', hidden: '', 'aria-hidden': 'true' }, el('div', { class: 'drop-card' }, 'Drop a Markdown file or folder to open it'));
+  private readonly measureButton = el('button', { class: 'icon-button', type: 'button' });
   private readonly status = { cursor: el('span'), words: el('span'), encoding: el('span'), eol: el('span') };
   private readonly modeButtons = new Map<ViewMode, HTMLButtonElement>();
   private readonly formatBar = el('div', { class: 'format-bar', role: 'toolbar', 'aria-label': 'Formatting' });
@@ -84,7 +106,19 @@ export class App {
     this.applyTheme();
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => this.applyTheme());
     this.load(null, '', NEW_DOCUMENT_FORMAT);
-    this.platform.onDrop((arrival) => void this.arrive(arrival, false));
+    this.platform.onDrop({
+      dragging: (active) => {
+        this.dropOverlay.hidden = !active;
+      },
+      open: (arrival) => void this.arrive(arrival, false),
+      refused: (name, folder) =>
+        this.notify(
+          folder
+            ? `${name} is a folder. In the browser, open folders with Open folder (Ctrl+Shift+O).`
+            : `Only Markdown files (.md, .markdown, .txt) and folders open here${name ? `: ${name}` : '.'}`,
+        ),
+    });
+    window.addEventListener('resize', () => this.applySizes());
     this.platform.onCloseRequested(() => this.confirmDiscard());
     window.addEventListener('keydown', (event) => this.globalShortcut(event));
     this.preview.addEventListener('click', (event) => void this.previewClick(event));
@@ -145,6 +179,7 @@ export class App {
         el('span', { class: 'divider' }),
         button('Export', 'Export as HTML', () => void this.exportHtml(), 'export'),
         button('Print', 'Print or save as PDF (Ctrl+P)', () => void this.print(), 'print'),
+        this.measureButton,
         this.themeButton,
       ),
     );
@@ -174,9 +209,70 @@ export class App {
 
     const s = this.status;
     const statusBar = el('footer', { class: 'status-bar' }, s.cursor, s.words, el('span', { class: 'spacer' }), s.encoding, s.eol);
-    const main = el('main', { class: 'workspace' }, this.sidebar.element, this.editorHost, this.previewPane);
-    this.root.append(top, this.formatBar, this.banner, main, statusBar);
+    this.measureButton.addEventListener('click', () => {
+      this.measure = this.measure === 'readable' ? 'full' : 'readable';
+      store('ztg-readout-measure', this.measure);
+      this.applyMeasure();
+    });
+    this.applyMeasure();
+
+    // Dividers: one beside the folder sidebar, one between editor and preview (split view).
+    const sidebarSplitter = splitter({
+      label: 'Resize the file list',
+      current: () => this.sidebar.element.getBoundingClientRect().width,
+      apply: (px) => this.setSidebarWidth(px),
+      commit: () => store('ztg-readout-sidebar-width', String(Math.round(this.sidebarWidth))),
+      reset: () => this.setSidebarWidth(SIDEBAR_DEFAULT),
+    });
+    sidebarSplitter.classList.add('splitter-sidebar');
+    const paneSplitter = splitter({
+      label: 'Resize the editor and preview',
+      current: () => this.editorHost.getBoundingClientRect().width,
+      apply: (px) => this.setEditorWidth(px),
+      commit: () => store('ztg-readout-editor-fraction', this.editorFraction.toFixed(4)),
+      reset: () => this.setEditorWidth(this.panes.getBoundingClientRect().width * EDITOR_FRACTION_DEFAULT),
+    });
+    paneSplitter.classList.add('splitter-panes');
+    this.panes.append(this.editorHost, paneSplitter, this.previewPane);
+    this.workspace.append(this.sidebar.element, sidebarSplitter, this.panes, this.dropOverlay);
+    this.root.append(top, this.formatBar, this.banner, this.workspace, statusBar);
+    this.applySizes();
     return this.root;
+  }
+
+  // ---- pane sizes -----------------------------------------------------------------------
+
+  /** Clamps and applies the sidebar width; keeps room for the panes beside it. */
+  private setSidebarWidth(px: number): number {
+    const available = this.workspace.getBoundingClientRect().width || window.innerWidth;
+    const max = Math.max(SIDEBAR_MIN, Math.min(available * 0.6, available - 2 * PANE_MIN));
+    this.sidebarWidth = Math.min(Math.max(px, SIDEBAR_MIN), max);
+    this.root.style.setProperty('--sidebar-width', `${Math.round(this.sidebarWidth)}px`);
+    return this.sidebarWidth;
+  }
+
+  /** Clamps and applies the editor width in split view, stored as a share of the area. */
+  private setEditorWidth(px: number): number {
+    const available = this.panes.getBoundingClientRect().width;
+    if (available <= 0) return px;
+    const clamped = Math.min(Math.max(px, PANE_MIN), Math.max(PANE_MIN, available - PANE_MIN));
+    this.editorFraction = clamped / available;
+    this.root.style.setProperty('--editor-fraction', this.editorFraction.toFixed(4));
+    return clamped;
+  }
+
+  private applySizes(): void {
+    this.setSidebarWidth(this.sidebarWidth);
+    const fraction = Math.min(Math.max(this.editorFraction, 0.1), 0.9);
+    this.root.style.setProperty('--editor-fraction', fraction.toFixed(4));
+  }
+
+  private applyMeasure(): void {
+    this.root.dataset.measure = this.measure;
+    this.measureButton.replaceChildren(icon(this.measure === 'readable' ? 'width-readable' : 'width-full'));
+    this.measureButton.title =
+      this.measure === 'readable' ? 'Reading width: comfortable column (click for full width)' : 'Reading width: full pane (click for a comfortable column)';
+    this.measureButton.setAttribute('aria-label', this.measureButton.title);
   }
 
   private applyTheme(): void {

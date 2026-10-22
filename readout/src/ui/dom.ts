@@ -29,6 +29,8 @@ const ICONS: Record<string, string[]> = {
   close: ['M6 6l12 12', 'M18 6L6 18'],
   back: ['M15 6l-6 6 6 6'],
   sidebar: ['M4 5h16v14H4z', 'M9 5v14'],
+  'width-readable': ['M8 6h8', 'M8 10h8', 'M8 14h8', 'M8 18h5', 'M4 4v16', 'M20 4v16'],
+  'width-full': ['M3 6h18', 'M3 10h18', 'M3 14h18', 'M3 18h12', 'M7 9l-3 3 3 3', 'M17 9l3 3-3 3'],
 };
 
 export function icon(name: string): SVGSVGElement {

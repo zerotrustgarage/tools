@@ -316,6 +316,21 @@ fn document_in(path: PathBuf) -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
+/// The first dropped document or folder, canonical, or the name of what was refused.
+fn dropped_target(paths: &[PathBuf]) -> Result<(PathBuf, bool), String> {
+    paths
+        .iter()
+        .filter(|p| p.is_dir() || (p.is_file() && has_extension(p, DOCUMENT_EXTENSIONS)))
+        .find_map(|p| fs::canonicalize(p).ok().map(|c| (c, p.is_dir())))
+        .ok_or_else(|| {
+            paths
+                .first()
+                .and_then(|p| p.file_name())
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        })
+}
+
 fn startup_argument(args: impl Iterator<Item = String>) -> Option<(PathBuf, bool)> {
     args.map(PathBuf::from)
         .find(|p| p.is_dir() || (p.is_file() && has_extension(p, DOCUMENT_EXTENSIONS)))
@@ -516,27 +531,36 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {
-                let dropped = paths
-                    .iter()
-                    .filter(|p| p.is_dir() || has_extension(p, DOCUMENT_EXTENSIONS))
-                    .find_map(|p| fs::canonicalize(p).ok());
-                if let Some(path) = dropped {
-                    let granted = window.state::<Granted>();
-                    let folder = path.is_dir();
-                    if folder {
-                        granted.grant_root(&path);
-                    } else {
-                        granted.grant_file(&path);
-                    }
-                    let _ = window.emit(
-                        "document-dropped",
-                        Initial {
-                            path: path.to_string_lossy().into_owned(),
-                            folder,
-                        },
-                    );
+            let WindowEvent::DragDrop(drag) = event else { return };
+            match drag {
+                DragDropEvent::Enter { .. } => {
+                    let _ = window.emit("document-drag", true);
                 }
+                DragDropEvent::Leave => {
+                    let _ = window.emit("document-drag", false);
+                }
+                DragDropEvent::Drop { paths, .. } => {
+                    let _ = window.emit("document-drag", false);
+                    match dropped_target(paths) {
+                        Ok((path, folder)) => {
+                            let granted = window.state::<Granted>();
+                            if folder {
+                                granted.grant_root(&path);
+                            } else {
+                                granted.grant_file(&path);
+                            }
+                            let initial = Initial {
+                                path: path.to_string_lossy().into_owned(),
+                                folder,
+                            };
+                            let _ = window.emit("document-dropped", initial);
+                        }
+                        Err(name) => {
+                            let _ = window.emit("document-drop-refused", name);
+                        }
+                    }
+                }
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -718,6 +742,22 @@ mod tests {
         assert_eq!(suggested_name("..\\..\\Windows\\evil.md", "x.md"), "Windowsevil.md");
         assert_eq!(suggested_name("  ", "x.md"), "x.md");
         assert_eq!(suggested_name("report.md", "x.md"), "report.md");
+    }
+
+    #[test]
+    fn drops_open_documents_and_folders_and_name_anything_else() {
+        let dir = fixture("drop");
+        let doc = dir.join("repo/README.md");
+        assert_eq!(
+            dropped_target(&[dir.join("repo/src/main.rs"), doc.clone()]),
+            Ok((doc, false))
+        );
+        assert_eq!(dropped_target(&[dir.join("repo")]), Ok((dir.join("repo"), true)));
+        assert_eq!(
+            dropped_target(&[dir.join("repo/src/main.rs")]),
+            Err("main.rs".to_string())
+        );
+        assert_eq!(dropped_target(&[]), Err(String::new()));
     }
 
     #[test]

@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ZTG Readout MSI, built on Linux with wixl (msitools), a subset of WiX 3:
+    readout/installer/build-msi.sh <ztg-readout.exe> <THIRD-PARTY-NOTICES.txt> <version> <out.msi>
+
+  Per-machine install for Intune, Group Policy and RMM:
+    msiexec /i ZTG-Readout-<version>.msi /qn
+    msiexec /x ZTG-Readout-<version>.msi /qn
+
+  It installs what the NSIS installer installs (ztg-readout.nsi), with the same registry
+  entries. The UpgradeCode below is permanent: every later version upgrades the installed one
+  in place. Never change it.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*"
+           Name="ZTG Readout"
+           Language="1033"
+           Version="$(var.Version)"
+           Manufacturer="Proudlock Technology LLC"
+           UpgradeCode="231e4623-6212-429c-a15b-44729806918b">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine"
+             Description="ZTG Readout $(var.Version)" Comments="Source-faithful Markdown editor and viewer" />
+    <Media Id="1" Cabinet="readout.cab" EmbedCab="yes" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of ZTG Readout is already installed." />
+
+    <!-- The app runs on the Microsoft Edge WebView2 Runtime, which Windows 11 and current
+         Windows 10 include. It is checked, not bundled. -->
+    <Property Id="WEBVIEW2_VERSION">
+      <RegistrySearch Id="WebView2Machine" Root="HKLM" Win64="no" Type="raw" Name="pv"
+                      Key="SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" />
+    </Property>
+    <Property Id="WEBVIEW2_USER_VERSION">
+      <RegistrySearch Id="WebView2User" Root="HKCU" Type="raw" Name="pv"
+                      Key="Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" />
+    </Property>
+    <!-- wixl writes no launch conditions; build-msi.sh adds the WebView2 one to the
+         LaunchCondition table after wixl has built the package. -->
+
+    <Icon Id="ReadoutIcon" SourceFile="$(var.IconFile)" />
+    <Property Id="ARPPRODUCTICON" Value="ReadoutIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://ztg.sh" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLDIR" Name="ZTG Readout">
+          <Component Id="App" Guid="5b0a3c56-6c43-4f55-9d3c-3a1e7f0b2d41" Win64="yes">
+            <File Id="ReadoutExe" Name="ztg-readout.exe" Source="$(var.AppExe)" KeyPath="yes" />
+          </Component>
+          <Component Id="Notices" Guid="8e2f7d1a-0b9c-4c62-a5f4-6d3b2e9c1f07" Win64="yes">
+            <File Id="NoticesTxt" Name="THIRD-PARTY-NOTICES.txt" Source="$(var.Notices)" KeyPath="yes" />
+          </Component>
+          <!-- Open with: a ProgID offered for Markdown files without taking over the user's
+               default (Windows keeps that choice with the user). -->
+          <Component Id="FileTypes" Guid="c4a19e3b-27d5-4f80-b6e1-9f0d2a7c5e38" Win64="yes">
+            <RegistryValue Root="HKLM" Key="Software\Classes\ZTGReadout.Document" Value="Markdown document" Type="string" KeyPath="yes" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\ZTGReadout.Document\DefaultIcon" Value="&quot;[INSTALLDIR]ztg-readout.exe&quot;,0" Type="string" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\ZTGReadout.Document\shell\open\command" Value="&quot;[INSTALLDIR]ztg-readout.exe&quot; &quot;%1&quot;" Type="string" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\.md\OpenWithProgids" Name="ZTGReadout.Document" Value="" Type="string" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\.markdown\OpenWithProgids" Name="ZTGReadout.Document" Value="" Type="string" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\.mdown\OpenWithProgids" Name="ZTGReadout.Document" Value="" Type="string" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\.mkd\OpenWithProgids" Name="ZTGReadout.Document" Value="" Type="string" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\Applications\ztg-readout.exe" Name="FriendlyAppName" Value="ZTG Readout" Type="string" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\Applications\ztg-readout.exe\shell\open\command" Value="&quot;[INSTALLDIR]ztg-readout.exe&quot; &quot;%1&quot;" Type="string" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\Applications\ztg-readout.exe\SupportedTypes" Name=".md" Value="" Type="string" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\Applications\ztg-readout.exe\SupportedTypes" Name=".markdown" Value="" Type="string" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\Applications\ztg-readout.exe\SupportedTypes" Name=".mdown" Value="" Type="string" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\Applications\ztg-readout.exe\SupportedTypes" Name=".mkd" Value="" Type="string" />
+          </Component>
+          <!-- Folder context menu: open a repository or docs folder. -->
+          <Component Id="FolderMenu" Guid="e7d3b0c2-5a14-4b8e-9c27-1f6a8d4e3b95" Win64="yes">
+            <RegistryValue Root="HKLM" Key="Software\Classes\Directory\shell\ZTGReadout" Value="Open in ZTG Readout" Type="string" KeyPath="yes" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\Directory\shell\ZTGReadout" Name="Icon" Value="&quot;[INSTALLDIR]ztg-readout.exe&quot;,0" Type="string" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\Directory\shell\ZTGReadout\command" Value="&quot;[INSTALLDIR]ztg-readout.exe&quot; &quot;%1&quot;" Type="string" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\Directory\Background\shell\ZTGReadout" Value="Open in ZTG Readout" Type="string" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\Directory\Background\shell\ZTGReadout" Name="Icon" Value="&quot;[INSTALLDIR]ztg-readout.exe&quot;,0" Type="string" />
+            <RegistryValue Root="HKLM" Key="Software\Classes\Directory\Background\shell\ZTGReadout\command" Value="&quot;[INSTALLDIR]ztg-readout.exe&quot; &quot;%V&quot;" Type="string" />
+          </Component>
+        </Directory>
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Component Id="StartMenu" Guid="2c6f9a8d-4e3b-41d7-8f05-b9a7c1e2d630" Win64="yes">
+          <Shortcut Id="ReadoutShortcut" Name="ZTG Readout" Description="Source-faithful Markdown editor and viewer"
+                    Target="[INSTALLDIR]ztg-readout.exe" WorkingDirectory="INSTALLDIR" Icon="ReadoutIcon" />
+          <RegistryValue Root="HKLM" Key="Software\ZTG\Readout" Name="StartMenuShortcut" Value="1" Type="integer" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </Directory>
+
+    <Feature Id="Main" Title="ZTG Readout" Level="1">
+      <ComponentRef Id="App" />
+      <ComponentRef Id="Notices" />
+      <ComponentRef Id="FileTypes" />
+      <ComponentRef Id="FolderMenu" />
+      <ComponentRef Id="StartMenu" />
+    </Feature>
+  </Product>
+</Wix>

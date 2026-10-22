@@ -26,4 +26,5 @@ npm run check --workspace @ztg-tools/readout                  # typecheck and te
 cd src-tauri && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked
 scripts/ci/build-windows.sh readout                           # from the repository root
 scripts/ci/test-installer-wine.sh <Setup.exe>                 # installer under Wine
+installer/build-msi.sh <exe> <notices> <version> <out.msi>    # MSI; never change its UpgradeCode
 ```

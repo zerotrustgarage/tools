@@ -40,6 +40,13 @@ export interface Arrival {
   listing?: Listing;
 }
 
+export interface DropHandlers {
+  dragging(active: boolean): void;
+  open(arrival: Arrival): void;
+  /** A dropped item that cannot be opened; folder is set when a browser refuses a folder. */
+  refused(name: string, folder?: boolean): void;
+}
+
 export interface Platform {
   kind: 'desktop' | 'web';
   /** Shows an open dialog. Resolves null when cancelled. */
@@ -67,8 +74,11 @@ export interface Platform {
   loadLocalImage(ref: FileRef | null, relative: string, listing: Listing | null): Promise<string | null>;
   /** A file or folder the app was started with (file association or command line). */
   initial(): Promise<Arrival | null>;
-  /** Files or folders dropped onto the window. */
-  onDrop(handler: (arrival: Arrival) => void): void;
+  /**
+   * Drag and drop onto the window: dragging reports when files are over the window (for the
+   * drop overlay), open receives a Markdown file or folder, refused names anything else.
+   */
+  onDrop(handlers: DropHandlers): void;
   /** Called before the window closes; resolve false to keep it open. */
   onCloseRequested(handler: () => Promise<boolean>): void;
   setTitle(title: string): void;

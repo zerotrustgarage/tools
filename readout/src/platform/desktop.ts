@@ -128,10 +128,12 @@ export const desktopPlatform: Platform = {
     return arrival(await invoke<RustInitial | null>('initial_document'));
   },
 
-  onDrop(handler) {
+  onDrop(handlers) {
+    void listen<boolean>('document-drag', (event) => handlers.dragging(event.payload));
+    void listen<string>('document-drop-refused', (event) => handlers.refused(event.payload));
     void listen<RustInitial>('document-dropped', async (event) => {
       const arrived = await arrival(event.payload);
-      if (arrived) handler(arrived);
+      if (arrived) handlers.open(arrived);
     });
   },
 

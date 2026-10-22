@@ -30,6 +30,16 @@ Relative images load from the folder. The listing skips `.git`, `node_modules`, 
 other noise, keeps `.github`, and never follows symbolic links or junctions. Back (Alt+Left)
 returns along the links you followed.
 
+## Working with it
+
+- Drag a Markdown file or a folder onto the window to open it. Anything else is refused with a
+  note saying why, and in the browser a dropped file is never pasted into the open document.
+- Drag the dividers between the file list, the editor and the preview to set their widths. The
+  arrow keys move a focused divider (Shift for larger steps), Home or a double-click resets it,
+  and the widths are remembered. The editor's share is kept as a proportion, so it scales with
+  the window.
+- The reading-width button switches the preview between a comfortable column and the full pane.
+
 ## Fidelity
 
 The editor's text is the file. There is no document model in between, so opening and saving a
@@ -79,7 +89,14 @@ npm run check                # typecheck and tests
 ```bash
 scripts/ci/build-windows.sh readout                      # cross-compile on Linux
 scripts/ci/test-installer-wine.sh <ZTG-Readout-…-Setup.exe>   # installer checks under Wine
+readout/installer/build-msi.sh <exe> <notices> <version> <out.msi>   # MSI (needs wixl, msitools)
 ```
+
+The MSI (`installer/ztg-readout.wxs`) installs the same files and registry entries as the NSIS
+installer, per machine, for Intune, Group Policy and RMM: `msiexec /i ZTG-Readout-<version>.msi
+/qn` and `msiexec /x … /qn`. Its UpgradeCode is permanent, so a newer MSI upgrades the installed
+version in place. It refuses to install without the WebView2 Runtime (exit code 1603). Releases
+do not include the MSI yet.
 
 The UI itself needs a real Windows machine (WebView2 does not run under Wine).
 

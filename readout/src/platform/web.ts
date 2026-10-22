@@ -192,14 +192,49 @@ export const webPlatform: Platform = {
     return null;
   },
 
-  onDrop(handler) {
-    window.addEventListener('dragover', (event) => event.preventDefault());
-    window.addEventListener('drop', async (event) => {
+  onDrop(handlers) {
+    // Capture phase on the window runs before CodeMirror's own drop handling, which would
+    // otherwise paste a dropped file's text into the open document. Only drags that carry
+    // files are taken over; dragging selected text inside the editor still works.
+    const hasFiles = (event: DragEvent) => event.dataTransfer?.types.includes('Files') ?? false;
+    let depth = 0;
+    window.addEventListener('dragenter', (event) => {
+      if (!hasFiles(event)) return;
       event.preventDefault();
+      if (depth++ === 0) handlers.dragging(true);
+    }, true);
+    window.addEventListener('dragover', (event) => {
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    }, true);
+    window.addEventListener('dragleave', (event) => {
+      if (!hasFiles(event)) return;
+      if (--depth <= 0) {
+        depth = 0;
+        handlers.dragging(false);
+      }
+    }, true);
+    window.addEventListener('drop', async (event) => {
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      depth = 0;
+      handlers.dragging(false);
+      const item = event.dataTransfer?.items[0];
       const file = event.dataTransfer?.files[0];
       if (!file) return;
-      handler({ file: { ref: { name: file.name }, bytes: new Uint8Array(await file.arrayBuffer()) } });
-    });
+      if (item?.webkitGetAsEntry?.()?.isDirectory) {
+        handlers.refused(file.name, true);
+        return;
+      }
+      if (!/\.(md|markdown|mdown|mkd|mkdn|txt)$/i.test(file.name)) {
+        handlers.refused(file.name);
+        return;
+      }
+      handlers.open({ file: { ref: { name: file.name }, bytes: new Uint8Array(await file.arrayBuffer()) } });
+    }, true);
   },
 
   // A page cannot show its own dialog while unloading; the browser's prompt is used instead,
