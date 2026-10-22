@@ -59,5 +59,6 @@
     WindowToggleMaximise: async () => { maximised = !maximised; calls.push(["WindowToggleMaximise"]); },
     WindowIsMaximised: async () => maximised,
     Quit: () => calls.push(["Quit"]),
+    WindowSetBackgroundColour: (r, g, b, a) => calls.push(["WindowSetBackgroundColour", r, g, b, a]),
   };
 })();

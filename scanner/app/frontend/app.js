@@ -94,6 +94,12 @@
     const theme = THEMES.includes(choice) ? choice : "auto";
     if (theme === "auto") document.documentElement.removeAttribute("data-theme");
     else document.documentElement.setAttribute("data-theme", theme);
+    // The native window behind the page (shown while opening and resizing) takes the page's
+    // background, so a light theme never flashes dark.
+    if (rt && rt.WindowSetBackgroundColour) {
+      const [r, g, b] = (getComputedStyle(document.documentElement).getPropertyValue("--bg").trim().match(/[0-9a-f]{2}/gi) || ["02", "0c", "1b"]).map((h) => parseInt(h, 16));
+      rt.WindowSetBackgroundColour(r, g, b, 255);
+    }
     const btn = $("theme-btn");
     if (btn) {
       btn.dataset.choice = theme;

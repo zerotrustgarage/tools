@@ -54,7 +54,7 @@ func main() {
 		Frameless:        true,
 		CSSDragProperty:  "--wails-draggable",
 		CSSDragValue:     "drag",
-		BackgroundColour: &options.RGBA{R: 15, G: 17, B: 21, A: 255},
+		BackgroundColour: &options.RGBA{R: 2, G: 12, B: 27, A: 255}, // ZTG bg (#020C1B); the frontend switches it with the theme
 		OnStartup: func(ctx context.Context) {
 			app.setPlatform(ctx, wailsPlatform{ctx: ctx})
 		},

@@ -1,22 +1,24 @@
 :root {
-  --bg: #0f1115;
-  --panel: #161a21;
-  --panel-2: #1d222b;
-  --line: #2a303b;
-  --text: #e6e9ef;
-  --muted: #8b93a3;
-  --accent: #3fb6a8;
-  --accent-ink: #062521;
-  --up: #3fb950;
-  --down: #6e7681;
-  --high: #f85149;
-  --medium: #d29922;
-  --info: #58a6ff;
-  --row-hover: #1b2029;
-  --row-sel: #20303a;
+  /* ZTG palette (design-tokens.json at the repository root; scripts/ci/check-palette.mjs keeps
+     these equal to it). Row tints are derived and not part of the token set. */
+  --bg: #020C1B;
+  --panel: #0A192F;
+  --panel-2: #020C1B;
+  --line: rgba(255,255,255,.10);
+  --text: #cbd5e1;
+  --muted: #94a3b8;
+  --accent: #00FF41;
+  --accent-ink: #020C1B;
+  --up: #00FF41;
+  --down: #64748b;
+  --high: #f87171;
+  --medium: #fbbf24;
+  --info: #60a5fa;
+  --row-hover: #0f2240;
+  --row-sel: #0e2a2a;
   --radius: 6px;
   --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
-  --titlebar-bg: #0a0c0f;
+  --titlebar-bg: #020C1B;
   --caption-hover: rgba(255, 255, 255, 0.08);
   --caption-press: rgba(255, 255, 255, 0.14);
   color-scheme: dark;
@@ -27,36 +29,46 @@
    block between a media query and an attribute selector. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --bg: #f6f7f9;
+    --bg: #f5f7f9;
     --panel: #ffffff;
-    --panel-2: #f0f2f5;
-    --line: #d8dde5;
-    --text: #1b1f27;
-    --muted: #5d6675;
-    --accent: #0f7c70;
+    --panel-2: #eef2f6;
+    --line: #e0e6ed;
+    --text: #24354b;
+    --muted: #526377;
+    --accent: #176634;
     --accent-ink: #ffffff;
+    --up: #176634;
+    --down: #607084;
+    --high: #b42332;
+    --medium: #90540b;
+    --info: #245c9a;
     --row-hover: #f2f5f8;
-    --row-sel: #e2f1ef;
-    --titlebar-bg: #e8ebf0;
-    --caption-hover: rgba(27, 31, 39, 0.08);
-    --caption-press: rgba(27, 31, 39, 0.14);
+    --row-sel: #e3efe6;
+    --titlebar-bg: #e8edf2;
+    --caption-hover: rgba(16, 32, 51, 0.08);
+    --caption-press: rgba(16, 32, 51, 0.14);
     color-scheme: light;
   }
 }
 :root[data-theme="light"] {
-    --bg: #f6f7f9;
+    --bg: #f5f7f9;
   --panel: #ffffff;
-  --panel-2: #f0f2f5;
-  --line: #d8dde5;
-  --text: #1b1f27;
-  --muted: #5d6675;
-  --accent: #0f7c70;
+  --panel-2: #eef2f6;
+  --line: #e0e6ed;
+  --text: #24354b;
+  --muted: #526377;
+  --accent: #176634;
   --accent-ink: #ffffff;
+  --up: #176634;
+  --down: #607084;
+  --high: #b42332;
+  --medium: #90540b;
+  --info: #245c9a;
   --row-hover: #f2f5f8;
-  --row-sel: #e2f1ef;
-  --titlebar-bg: #e8ebf0;
-  --caption-hover: rgba(27, 31, 39, 0.08);
-  --caption-press: rgba(27, 31, 39, 0.14);
+  --row-sel: #e3efe6;
+  --titlebar-bg: #e8edf2;
+  --caption-hover: rgba(16, 32, 51, 0.08);
+  --caption-press: rgba(16, 32, 51, 0.14);
   color-scheme: light;
 }
 
