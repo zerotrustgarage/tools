@@ -64,6 +64,16 @@ jobs:
       # Coreutils only: the pool has no `file` command.
       - run: scripts/ci/check-pe.sh readout/src-tauri/target/x86_64-pc-windows-msvc/release/ztg-readout.exe gui amd64
 
+  palette:
+    name: ZTG palette (every tool matches design-tokens.json)
+    runs-on: [self-hosted, linux, ephemeral]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - run: node scripts/ci/check-palette.mjs
+
   signing:
     name: Signing and installer mechanics
     runs-on: [self-hosted, linux, ephemeral]

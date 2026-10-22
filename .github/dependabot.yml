@@ -1,0 +1,66 @@
+# Dependency update pull requests for every tool. Repository rule 3 applies: a new version is
+# proposed only after it has been public for 14 days (cooldown), so a malicious or broken release
+# is usually caught and pulled before it reaches us. Security fixes are the exception: Dependabot
+# security updates (Settings, Code security) are not held by the cooldown.
+#
+# Minor and patch updates arrive grouped, one pull request per ecosystem and week; major updates
+# arrive one by one so each can be reviewed. Every pull request runs CI like any other change.
+# Dependabot reads this file from the default branch only, so the default branch must be main.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 14
+    versioning-strategy: increase
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: build(deps)
+
+  - package-ecosystem: cargo
+    directory: /readout/src-tauri
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 14
+    open-pull-requests-limit: 5
+    groups:
+      cargo-minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: build(deps)
+
+  - package-ecosystem: gomod
+    directories: [/scanner, /scanner/app]
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 14
+    open-pull-requests-limit: 5
+    groups:
+      go-minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: build(deps)
+
+  # Actions are pinned by commit SHA; Dependabot updates the SHA and the version comment together.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 14
+    groups:
+      actions:
+        patterns: ['*']
+    commit-message:
+      prefix: ci(deps)

@@ -17,10 +17,12 @@ release workflow and `CLAUDE.md`. Read the tool's own file before changing it:
    cross-compiled. Actions are pinned by commit SHA.
 3. Dependencies: exact versions, lockfiles committed, new versions only after 14 days public
    unless they fix a published advisory, no install scripts, and each new dependency justified
-   in its commit message.
+   in its commit message. Dependabot (`.github/dependabot.yml`) applies the same cooldown.
 4. Windows binaries are signed only by a release workflow, through `scripts/signing/` and the
    `tools-signing` environment (`docs/signing.md`). That trust is deliberately shared with the
    Jackpoint agent in `zerotrustgarage/infrasec`: the settings and pinned roots are copies, and
-   a change there is copied here in a reviewed commit. Nothing else is shared with the platform
-   repositories.
+   a change there is copied here in a reviewed commit. Apart from the palette (rule 6), nothing
+   else is shared with the platform repositories.
 5. Writing style: no em dashes; plain, specific language. Conventional commits.
+6. One look: every tool uses the ZTG palette in `design-tokens.json`, enforced by
+   `scripts/ci/check-palette.mjs`. Open work and recommendations are tracked in `docs/roadmap.md`.
