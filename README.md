@@ -8,7 +8,7 @@ machine.
 | --- | --- | --- |
 | ZTG Readout | [readout/](readout) | Source-faithful Markdown editor and viewer for files and whole folders (git repositories, docs trees, Obsidian vaults) |
 | ZTG Scanner | [scanner/](scanner) | Network discovery and device inventory for technicians: CLI and Windows desktop app, ZTG's replacement for Advanced IP Scanner |
-| ZTG TFTP | [tftp/](tftp) | TFTP server and client for technicians, read-only and time-boxed by default, with audit records and checks on collected configs (proposed; design only) |
+| ZTG TFTP | [tftp/](tftp) | Read-only, time-boxed TFTP server and CLI client with transfer hashes and audit records (T1 implemented; later slices proposed) |
 
 ## Layout
 

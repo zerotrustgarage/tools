@@ -111,14 +111,14 @@ is what makes Scanner easy to approve in client and CMMC environments.
 
 ## 5. ZTG TFTP
 
-Proposed; design only. The research behind it (Tftpd64, SolarWinds TFTP Server, tftpd-hpa, atftpd,
+T1 implemented, pending review; later slices remain proposed. The research behind it (Tftpd64, SolarWinds TFTP Server, tftpd-hpa, atftpd,
 dnsmasq, Open TFTP Server, their CVE history and the gaps across them) is in
 `tftp/docs/research.md`, with its sources.
 
 | # | Item | Priority | Status |
 | --- | --- | --- | --- |
-| TF1 | Owner answers to the open questions in `tftp/docs/design.md` section 15: name, own protocol engine, default session length, which T6 candidates, retention of collected configs | High | Open |
-| TF2 | T1: protocol engine, read-only server, client, scope guard, limits, name policy, audit log, fuzzing, interop tests, `tftp.yml` | High | Open |
+| TF1 | T1 follows the proposed name, own protocol engine and 60-minute session; owner decisions on T6 and retention remain open | High | Partly resolved |
+| TF2 | T1: protocol engine, read-only server, client, scope guard, limits, name policy, audit log, fuzzing, interop tests, `tftp.yml` | High | Implemented, pending review |
 | TF3 | T2: drop box uploads and findings on collected configs | High | Open |
 | TF4 | T3: Windows desktop app; its stylesheet joins `scripts/ci/check-palette.mjs` | Medium | Open |
 | TF5 | T4 service mode and T5 packaging and signing (reuses Scanner's S4 work, SC1) | Medium | Open |
