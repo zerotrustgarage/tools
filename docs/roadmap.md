@@ -40,6 +40,7 @@ These actions were completed by the repository owner. New release workflows stil
 | R7 | Public repository: every workflow runs on GitHub-hosted runners (free for public repositories, isolated from the organization's network); none may use the self-hosted pool (O8) | High | **Done** |
 | R8 | Real Windows in CI: the `windows-install` job installs the NSIS installer and the MSI on `windows-2025`, checks files, shortcut and registry, launches Readout (the window title proves the UI loaded) and opens a file, then uninstalls (`scripts/ci/test-installer-windows.ps1`) | High | **Done** |
 | R9 | Distinct application and tray icon assets using the ZTG palette and wordmark cursor; transparent backgrounds | Medium | **Built** for Scanner, Copy, TFTP and Readout. Scanner and Readout consumers updated; Copy/TFTP desktop consumers remain in their future slices |
+| R10 | Every tool must support Check for updates; shared version/release checks, safe browser handoff and CLI JSON status | High | **Built** for Scanner/Readout UI and Scanner/TFTP CLI; shared Copy support ready, application action required when Copy ships. Automatic installation remains future work; `docs/updates.md` |
 
 ## 3. ZTG Readout
 
@@ -70,7 +71,7 @@ These actions were completed by the repository owner. New release workflows stil
 | RD16 | Links to non-Markdown files (PDF, scripts) open in the default app after a confirmation | Medium | VS Code |
 | RD17 | Focus and typewriter modes | Low | Typora |
 | RD18 | Two-way scroll sync (preview to editor) | Low | MarkText |
-| RD19 | Auto-update through a signed feed, as the Jackpoint agent has | Low | Typora, Obsidian |
+| RD19 | **Built**: explicit Check for updates through shared per-tool releases. Automatic installation through a verified signed feed remains future work | Medium | `docs/updates.md`; Typora, Obsidian |
 | RD20 | Accessibility pass: screen reader names, keyboard navigation of the file tree, light-theme contrast | Low | |
 | RD21 | Windows 11 Snap Layouts on the custom maximize button; neither Tauri nor Wails supports it yet | Low | |
 | RD22 | Folder mode in Firefox and Safari is an upload and read-only (no File System Access API) | Low | |

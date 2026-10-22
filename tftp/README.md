@@ -149,3 +149,10 @@ upload tests and checks the native owner-only DACLs, locking and atomic commits.
 
 T3 adds the Windows desktop app. T4 adds service configuration and log forwarding. T5 adds packaging, signing, SBOM
 and release provenance. These features are not present. Each slice is reviewed before the next starts.
+
+## Updates
+
+Run `ztg-tftp check-updates [--json]` to check published releases on request.
+Checks contact GitHub only when requested and open official release downloads without installing
+anything. Offline errors and unpublished releases are shown explicitly. See
+[../docs/updates.md](../docs/updates.md).

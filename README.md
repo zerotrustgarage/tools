@@ -21,6 +21,7 @@ machine.
 | `.github/workflows/ci.yml` | Checks on every pull request and push to main; no secrets |
 | `.github/workflows/scanner.yml` | ZTG Scanner checks (Go, packaging, portable/MSI lifecycle on Windows), path-filtered; no secrets |
 | `.github/workflows/release-<tool>.yml` | Manual release per tool: build, sign, package, attest, publish |
+| `docs/updates.md` | Supported update checks, per-tool release contract and future updater requirements |
 | `docs/signing.md` | Signing design and the one-time owner setup |
 | `docs/roadmap.md` | Open work and recommended improvements for every tool |
 | `assets/icons/` | Transparent application and tray icons for Scanner, Copy, TFTP and Readout; SVG sources and export instructions |
@@ -71,3 +72,10 @@ installers and shortcuts. Copy/TFTP desktop and tray consumers remain in their p
 - Dependabot (`.github/dependabot.yml`) proposes updates weekly for npm, Cargo, Go modules and
   Actions with the same 14-day cooldown; minor and patch updates arrive grouped. Each pull request
   runs CI like any other change.
+
+## Check for updates
+
+Scanner and Readout expose **Check for updates** in their interfaces. Scanner and TFTP also
+support `check-updates [--json]`. Checks are explicit, use the official per-tool releases, and
+open downloads without installing them. Copy support is included in the shared checker for its
+future application. See [docs/updates.md](docs/updates.md).

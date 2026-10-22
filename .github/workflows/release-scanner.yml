@@ -26,6 +26,7 @@ jobs:
         with:
           node-version: '22'
       - run: scanner/ci/install-go.sh
+      - run: node scripts/updates/sync.mjs --check
       - id: version
         shell: bash
         run: |

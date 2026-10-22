@@ -2,10 +2,10 @@ name: TFTP
 
 on:
   pull_request:
-    paths: ['tftp/**', '.github/workflows/tftp.yml', 'scripts/ci/install-go.sh']
+    paths: ['tftp/**', '.github/workflows/tftp.yml', 'scripts/ci/install-go.sh', 'scripts/updates/**']
   push:
     branches: [main]
-    paths: ['tftp/**', '.github/workflows/tftp.yml', 'scripts/ci/install-go.sh']
+    paths: ['tftp/**', '.github/workflows/tftp.yml', 'scripts/ci/install-go.sh', 'scripts/updates/**']
 
 permissions:
   contents: read

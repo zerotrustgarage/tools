@@ -23,6 +23,7 @@ import (
 	"github.com/zerotrustgarage/tools/scanner/internal/report"
 	"github.com/zerotrustgarage/tools/scanner/internal/scan"
 	"github.com/zerotrustgarage/tools/scanner/internal/targets"
+	"github.com/zerotrustgarage/tools/scanner/internal/update"
 	"golang.org/x/term"
 )
 
@@ -37,6 +38,8 @@ func main() {
 	}
 	var err error
 	switch os.Args[1] {
+	case "check-updates":
+		err = update.Command(context.Background(), "scanner", version, os.Args[2:], os.Stdout, os.Stderr)
 	case "scan":
 		err = cmdScan(os.Args[2:])
 	case "vendor":
@@ -63,6 +66,7 @@ Usage:
   ztg-scanner scan [flags] <target>...   scan addresses, ranges, CIDR blocks or hostnames
   ztg-scanner vendor <mac>...            look up the manufacturer of a MAC address
   ztg-scanner version
+  ztg-scanner check-updates [--json]    check published releases on request
 
 Targets: 192.168.1.0/24  10.0.0.1-50  10.0.0.1-10.0.1.20  10.0.0.7  printer.lan
 Only private, CGNAT, link-local and loopback space is scanned unless --allow-public is given.

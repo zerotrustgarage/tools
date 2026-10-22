@@ -1,0 +1,555 @@
+[
+  {
+    "name": "scanner update",
+    "tool": "scanner",
+    "current": "0.4.0",
+    "releases": [
+      {
+        "tag_name": "scanner-v0.5.0",
+        "draft": false,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "SHA256SUMS.txt",
+            "state": "uploaded",
+            "size": 100
+          },
+          {
+            "name": "ZTG-Scanner-0.5.0-x64.msi",
+            "state": "uploaded",
+            "size": 1234
+          }
+        ]
+      }
+    ],
+    "status": "available",
+    "latest": "0.5.0"
+  },
+  {
+    "name": "numeric version sorting",
+    "tool": "scanner",
+    "current": "1.9.0",
+    "releases": [
+      {
+        "tag_name": "scanner-v1.9.9",
+        "draft": false,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "SHA256SUMS.txt",
+            "state": "uploaded",
+            "size": 100
+          },
+          {
+            "name": "ZTG-Scanner-1.9.9-x64.msi",
+            "state": "uploaded",
+            "size": 1234
+          }
+        ]
+      },
+      {
+        "tag_name": "scanner-v1.10.0",
+        "draft": false,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "SHA256SUMS.txt",
+            "state": "uploaded",
+            "size": 100
+          },
+          {
+            "name": "ZTG-Scanner-1.10.0-x64.msi",
+            "state": "uploaded",
+            "size": 1234
+          }
+        ]
+      },
+      {
+        "tag_name": "scanner-v1.2.0",
+        "draft": false,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "SHA256SUMS.txt",
+            "state": "uploaded",
+            "size": 100
+          },
+          {
+            "name": "ZTG-Scanner-1.2.0-x64.msi",
+            "state": "uploaded",
+            "size": 1234
+          }
+        ]
+      }
+    ],
+    "status": "available",
+    "latest": "1.10.0"
+  },
+  {
+    "name": "metadata does not cause update",
+    "tool": "scanner",
+    "current": "1.0.0+abcdef",
+    "releases": [
+      {
+        "tag_name": "scanner-v1.0.0",
+        "draft": false,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "SHA256SUMS.txt",
+            "state": "uploaded",
+            "size": 100
+          },
+          {
+            "name": "ZTG-Scanner-1.0.0-x64.msi",
+            "state": "uploaded",
+            "size": 1234
+          }
+        ]
+      }
+    ],
+    "status": "current",
+    "latest": "1.0.0"
+  },
+  {
+    "name": "stable replaces prerelease",
+    "tool": "scanner",
+    "current": "1.0.0-rc.1",
+    "releases": [
+      {
+        "tag_name": "scanner-v1.0.0",
+        "draft": false,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "SHA256SUMS.txt",
+            "state": "uploaded",
+            "size": 100
+          },
+          {
+            "name": "ZTG-Scanner-1.0.0-x64.msi",
+            "state": "uploaded",
+            "size": 1234
+          }
+        ]
+      }
+    ],
+    "status": "available",
+    "latest": "1.0.0"
+  },
+  {
+    "name": "development build",
+    "tool": "scanner",
+    "current": "dev",
+    "releases": [
+      {
+        "tag_name": "scanner-v0.5.0",
+        "draft": false,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "SHA256SUMS.txt",
+            "state": "uploaded",
+            "size": 100
+          },
+          {
+            "name": "ZTG-Scanner-0.5.0-x64.msi",
+            "state": "uploaded",
+            "size": 1234
+          }
+        ]
+      }
+    ],
+    "status": "development",
+    "latest": "0.5.0"
+  },
+  {
+    "name": "newer build is not downgraded",
+    "tool": "readout",
+    "current": "2.0.0",
+    "releases": [
+      {
+        "tag_name": "readout-v1.0.0",
+        "draft": false,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "SHA256SUMS.txt",
+            "state": "uploaded",
+            "size": 100
+          },
+          {
+            "name": "ZTG-Readout-1.0.0-Setup.exe",
+            "state": "uploaded",
+            "size": 1234
+          }
+        ]
+      }
+    ],
+    "status": "newer",
+    "latest": "1.0.0"
+  },
+  {
+    "name": "readout asset naming",
+    "tool": "readout",
+    "current": "0.1.0",
+    "releases": [
+      {
+        "tag_name": "scanner-v9.0.0",
+        "draft": false,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "SHA256SUMS.txt",
+            "state": "uploaded",
+            "size": 100
+          },
+          {
+            "name": "ZTG-Scanner-9.0.0-x64.msi",
+            "state": "uploaded",
+            "size": 1234
+          }
+        ]
+      },
+      {
+        "tag_name": "readout-v0.1.0",
+        "draft": false,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "SHA256SUMS.txt",
+            "state": "uploaded",
+            "size": 100
+          },
+          {
+            "name": "ZTG-Readout-0.1.0-Setup.exe",
+            "state": "uploaded",
+            "size": 1234
+          }
+        ]
+      }
+    ],
+    "status": "current",
+    "latest": "0.1.0"
+  },
+  {
+    "name": "copy future release",
+    "tool": "copy",
+    "current": "0.1.0",
+    "releases": [
+      {
+        "tag_name": "copy-v0.2.0",
+        "draft": false,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "SHA256SUMS.txt",
+            "state": "uploaded",
+            "size": 100
+          },
+          {
+            "name": "ZTG-Copy-0.2.0-x64.msi",
+            "state": "uploaded",
+            "size": 1234
+          }
+        ]
+      }
+    ],
+    "status": "available",
+    "latest": "0.2.0"
+  },
+  {
+    "name": "tftp future release",
+    "tool": "tftp",
+    "current": "0.1.0",
+    "releases": [
+      {
+        "tag_name": "tftp-v0.2.0",
+        "draft": false,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "SHA256SUMS.txt",
+            "state": "uploaded",
+            "size": 100
+          },
+          {
+            "name": "ZTG-TFTP-0.2.0-x64.msi",
+            "state": "uploaded",
+            "size": 1234
+          }
+        ]
+      }
+    ],
+    "status": "available",
+    "latest": "0.2.0"
+  },
+  {
+    "name": "no published releases",
+    "tool": "copy",
+    "current": "dev",
+    "releases": [],
+    "status": "unreleased",
+    "latest": ""
+  },
+  {
+    "name": "drafts and prereleases ignored",
+    "tool": "scanner",
+    "current": "0.1.0",
+    "releases": [
+      {
+        "tag_name": "scanner-v2.0.0",
+        "draft": true,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "SHA256SUMS.txt",
+            "state": "uploaded",
+            "size": 100
+          },
+          {
+            "name": "ZTG-Scanner-2.0.0-x64.msi",
+            "state": "uploaded",
+            "size": 1234
+          }
+        ]
+      },
+      {
+        "tag_name": "scanner-v3.0.0",
+        "draft": false,
+        "prerelease": true,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "SHA256SUMS.txt",
+            "state": "uploaded",
+            "size": 100
+          },
+          {
+            "name": "ZTG-Scanner-3.0.0-x64.msi",
+            "state": "uploaded",
+            "size": 1234
+          }
+        ]
+      },
+      {
+        "tag_name": "scanner-v4.0.0-rc.1",
+        "draft": false,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "SHA256SUMS.txt",
+            "state": "uploaded",
+            "size": 100
+          },
+          {
+            "name": "ZTG-Scanner-4.0.0-rc.1-x64.msi",
+            "state": "uploaded",
+            "size": 1234
+          }
+        ]
+      },
+      {
+        "tag_name": "scanner-v1.0.0",
+        "draft": false,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "SHA256SUMS.txt",
+            "state": "uploaded",
+            "size": 100
+          },
+          {
+            "name": "ZTG-Scanner-1.0.0-x64.msi",
+            "state": "uploaded",
+            "size": 1234
+          }
+        ]
+      }
+    ],
+    "status": "available",
+    "latest": "1.0.0"
+  },
+  {
+    "name": "installer and checksums required",
+    "tool": "tftp",
+    "current": "0.1.0",
+    "releases": [
+      {
+        "tag_name": "tftp-v1.0.0",
+        "draft": false,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": []
+      },
+      {
+        "tag_name": "tftp-v2.0.0",
+        "draft": false,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "ZTG-TFTP-2.0.0-x64.msi",
+            "state": "uploaded",
+            "size": 200
+          }
+        ]
+      }
+    ],
+    "status": "unreleased",
+    "latest": ""
+  },
+  {
+    "name": "invalid tags ignored",
+    "tool": "scanner",
+    "current": "0.1.0",
+    "releases": [
+      {
+        "tag_name": "scanner-v1.0.0/../../evil",
+        "draft": false,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "SHA256SUMS.txt",
+            "state": "uploaded",
+            "size": 100
+          },
+          {
+            "name": "ZTG-Scanner-1.0.0/../../evil-x64.msi",
+            "state": "uploaded",
+            "size": 1234
+          }
+        ]
+      },
+      {
+        "tag_name": "scanner-v01.0.0",
+        "draft": false,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "SHA256SUMS.txt",
+            "state": "uploaded",
+            "size": 100
+          },
+          {
+            "name": "ZTG-Scanner-01.0.0-x64.msi",
+            "state": "uploaded",
+            "size": 1234
+          }
+        ]
+      },
+      {
+        "tag_name": "scanner-v1.0.0+build",
+        "draft": false,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "SHA256SUMS.txt",
+            "state": "uploaded",
+            "size": 100
+          },
+          {
+            "name": "ZTG-Scanner-1.0.0+build-x64.msi",
+            "state": "uploaded",
+            "size": 1234
+          }
+        ]
+      },
+      {
+        "tag_name": "scanner-v999999999999999999.0.0",
+        "draft": false,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "SHA256SUMS.txt",
+            "state": "uploaded",
+            "size": 100
+          },
+          {
+            "name": "ZTG-Scanner-999999999999999999.0.0-x64.msi",
+            "state": "uploaded",
+            "size": 1234
+          }
+        ]
+      }
+    ],
+    "status": "unreleased",
+    "latest": ""
+  },
+  {
+    "name": "response URLs never trusted",
+    "tool": "scanner",
+    "current": "0.1.0",
+    "releases": [
+      {
+        "tag_name": "scanner-v0.5.0",
+        "draft": false,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "SHA256SUMS.txt",
+            "state": "uploaded",
+            "size": 100,
+            "browser_download_url": "https://evil.example/installer.exe"
+          },
+          {
+            "name": "ZTG-Scanner-0.5.0-x64.msi",
+            "state": "uploaded",
+            "size": 1234,
+            "browser_download_url": "https://evil.example/installer.exe"
+          }
+        ],
+        "html_url": "https://evil.example"
+      }
+    ],
+    "status": "available",
+    "latest": "0.5.0"
+  },
+  {
+    "name": "unfinished assets ignored",
+    "tool": "scanner",
+    "current": "0.1.0",
+    "releases": [
+      {
+        "tag_name": "scanner-v0.5.0",
+        "draft": false,
+        "prerelease": false,
+        "published_at": "2026-10-22T12:00:00Z",
+        "assets": [
+          {
+            "name": "SHA256SUMS.txt",
+            "state": "new",
+            "size": 100
+          },
+          {
+            "name": "ZTG-Scanner-0.5.0-x64.msi",
+            "state": "new",
+            "size": 1234
+          }
+        ]
+      }
+    ],
+    "status": "unreleased",
+    "latest": ""
+  }
+]

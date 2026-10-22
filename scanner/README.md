@@ -176,3 +176,10 @@ Set the version with `-ldflags "-X main.version=1.0.0"`.
 
 The MAC vendor table is generated from the IEEE Registration Authority's public MA-L, MA-M, MA-S and IAB listings
 (`internal/oui/data/oui.txt.gz`). Review IEEE's terms before redistributing the generated table outside ZTG.
+
+## Updates
+
+The desktop toolbar offers **Check for updates**; the CLI supports `ztg-scanner check-updates [--json]`.
+Checks contact GitHub only when requested and open official release downloads without installing
+anything. Offline errors and unpublished releases are shown explicitly. See
+[../docs/updates.md](../docs/updates.md).

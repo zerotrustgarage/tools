@@ -113,3 +113,10 @@ Installer switches for RMM and Intune: `/S` installs silently per machine; unins
 `"%ProgramFiles%\ZTG Readout\uninstall.exe" /S`. Exit code 4 means the Microsoft Edge WebView2
 Runtime is missing (Windows 11 and current Windows 10 include it). Close the app before an
 upgrade; a running copy holds its executable open.
+
+## Updates
+
+Use **Check for updates** in the status bar of the desktop or browser app.
+Checks contact GitHub only when requested and open official release downloads without installing
+anything. Offline errors and unpublished releases are shown explicitly. See
+[../docs/updates.md](../docs/updates.md).

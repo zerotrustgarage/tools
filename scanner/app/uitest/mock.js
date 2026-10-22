@@ -73,6 +73,7 @@
   } } };
   let maximised = false;
   window.runtime = {
+    BrowserOpenURL: (url) => calls.push(["BrowserOpenURL", url]),
     EventsOn: (name, f) => (handlers[name] = handlers[name] || []).push(f),
     ClipboardSetText: async (t) => calls.push(["Clipboard", t]),
     WindowMinimise: () => calls.push(["WindowMinimise"]),

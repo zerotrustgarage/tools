@@ -48,6 +48,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - run: scripts/ci/apt-install.sh clang lld llvm
       - run: npm ci
+      - run: node scripts/updates/sync.mjs --check
       - run: npm run check --workspace @ztg-tools/readout
       - run: scripts/ci/build-windows.sh readout
       - name: Collect the unsigned build and its notices

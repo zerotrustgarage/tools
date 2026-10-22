@@ -28,3 +28,6 @@ release workflow and `CLAUDE.md`. Read the tool's own file before changing it:
 5. Writing style: no em dashes; plain, specific language. Conventional commits.
 6. One look: every tool uses the ZTG palette in `design-tokens.json`, enforced by
    `scripts/ci/check-palette.mjs`. Open work and recommendations are tracked in `docs/roadmap.md`.
+7. Every application must offer an explicit Check for updates action (or `check-updates` in a CLI).
+   Reuse `scripts/updates/` and its release contract in `docs/updates.md`. Do not introduce background
+   checks or automatic installation without an explicit product decision.
