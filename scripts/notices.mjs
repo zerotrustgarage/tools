@@ -33,9 +33,18 @@ function npmPackages(appDir) {
   const visit = (deps) => {
     for (const [name, info] of Object.entries(deps ?? {})) {
       const key = `${name}@${info.version}`;
-      if (seen.has(key) || !info.version || name.startsWith('@ztg-tools/')) continue;
-      // npm workspaces hoist to the repository root; look there as well as in the app.
-      const candidates = [join(appDir, 'node_modules', name), join(appDir, '..', '..', 'node_modules', name)];
+      // The tool itself is the root of the tree: list what it depends on, not the tool.
+      if (name.startsWith('@ztg-tools/')) {
+        visit(info.dependencies);
+        continue;
+      }
+      if (seen.has(key) || !info.version) continue;
+      // npm workspaces hoist packages towards the repository root, so look upwards.
+      const candidates = [];
+      for (let dir = appDir; ; dir = dirname(dir)) {
+        candidates.push(join(dir, 'node_modules', name));
+        if (dirname(dir) === dir) break;
+      }
       const dir = candidates.find((d) => existsSync(join(d, 'package.json')));
       const manifest = dir ? JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) : {};
       seen.set(key, {
@@ -89,6 +98,9 @@ if (!appArg || !outArg) {
 const appDir = resolve(appArg);
 const npm = npmPackages(appDir);
 const rust = rustCrates(appDir);
+if (npm.length === 0 || rust.length === 0) throw new Error('No npm packages or no crates were found; refusing to write an incomplete notices file');
+const unresolved = npm.filter((p) => p.license === 'see text' && p.texts.length === 0);
+if (unresolved.length > npm.length / 10) throw new Error(`Could not read ${unresolved.length} npm package manifests; is node_modules installed?`);
 const missing = [...npm, ...rust].filter((p) => p.texts.length === 0).map((p) => `${p.name} ${p.version} (${p.license})`);
 const header = [
   'THIRD-PARTY SOFTWARE NOTICES',

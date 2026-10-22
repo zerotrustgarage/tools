@@ -74,6 +74,15 @@ npx tauri dev                # desktop app (needs Rust and, on Linux, WebKitGTK)
 npm run check                # typecheck and tests
 ```
 
+## Windows build and test
+
+```bash
+scripts/ci/build-windows.sh readout                      # cross-compile on Linux
+scripts/ci/test-installer-wine.sh <ZTG-Readout-…-Setup.exe>   # installer checks under Wine
+```
+
+The UI itself needs a real Windows machine (WebView2 does not run under Wine).
+
 ## Release
 
 Releases are built and signed only by `.github/workflows/release-readout.yml`, run by hand

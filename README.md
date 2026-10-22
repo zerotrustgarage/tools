@@ -14,6 +14,7 @@ machine.
 | --- | --- |
 | `<tool>/` | One top-level folder per tool, named after it: the app, its `installer/` script and its README. Each is an npm workspace listed in the root `package.json` |
 | `scripts/signing/` | Authenticode signing and verification through Azure Artifact Signing, shared by every tool |
+| `scripts/ci/` | Runner setup, the Windows cross-compile, the Wine installer test and the release publisher |
 | `scripts/notices.mjs` | Generates THIRD-PARTY-NOTICES.txt from the npm and Rust dependency graphs |
 | `.github/workflows/ci.yml` | Checks on every pull request and push to main; no secrets |
 | `.github/workflows/release-<tool>.yml` | Manual release per tool: build, sign, package, attest, publish |
@@ -29,6 +30,12 @@ cd readout/src-tauri && cargo test --locked && cargo clippy --all-targets -- -D 
 
 The signing tests need `makensis`, `osslsigncode` and `openssl` (on Ubuntu:
 `apt-get install nsis osslsigncode`). They use a throwaway test CA, never real credentials.
+
+## Runners
+
+Every workflow runs on the organization's self-hosted pool, `[self-hosted, linux, ephemeral]`.
+GitHub-hosted runners are not assigned to this organization, and Windows executables are
+cross-compiled on Linux (`scripts/ci/build-windows.sh`).
 
 ## Dependency policy
 

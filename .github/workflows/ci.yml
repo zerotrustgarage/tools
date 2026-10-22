@@ -1,6 +1,9 @@
 name: CI
 
 # Checks only. No secrets, no signing environment, no releases.
+# Every job runs on the organization's self-hosted ephemeral pool: GitHub-hosted runners are
+# not assigned to zerotrustgarage repositories (infrasec docs/releases/runner-routing-review-
+# 2026-10-05.md), and there is no Windows runner, so the Windows build is cross-compiled.
 on:
   pull_request:
   push:
@@ -15,14 +18,13 @@ concurrency:
 
 jobs:
   web:
-    name: Editor (typecheck, tests, build)
-    runs-on: ubuntu-latest
+    name: Readout editor (typecheck, tests, build)
+    runs-on: [self-hosted, linux, ephemeral]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
-          cache: npm
       # .npmrc sets ignore-scripts: no dependency install script runs anywhere in CI.
       - run: npm ci
       - run: npm run check --workspace @ztg-tools/readout
@@ -30,30 +32,38 @@ jobs:
       - run: npm audit --omit=dev --audit-level=high
 
   rust:
-    name: Desktop shell (Rust tests, clippy, fmt)
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: readout/src-tauri
+    name: Readout desktop shell (Rust tests, clippy, fmt)
+    runs-on: [self-hosted, linux, ephemeral]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
-          cache: npm
       - name: Linux WebView build dependencies
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libsoup-3.0-dev
       # tauri::generate_context! embeds the built frontend, so it must exist before cargo runs.
       - run: npm ci && npm run build --workspace @ztg-tools/readout
-        working-directory: .
-      - run: rustup show active-toolchain || rustup toolchain install
-      - run: cargo fmt --check
-      - run: cargo clippy --all-targets --locked -- -D warnings
-      - run: cargo test --locked
+      - run: ../../scripts/ci/install-rust.sh
+        working-directory: readout/src-tauri
+      - run: cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked
+        working-directory: readout/src-tauri
+
+  windows:
+    name: Readout Windows build (cross-compiled, unsigned)
+    runs-on: [self-hosted, linux, ephemeral]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq clang lld llvm
+      - run: npm ci
+      - run: scripts/ci/build-windows.sh readout
+      - run: file readout/src-tauri/target/x86_64-pc-windows-msvc/release/ztg-readout.exe | grep -q 'PE32+ executable (GUI) x86-64'
 
   signing:
     name: Signing and installer mechanics
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, ephemeral]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -63,18 +73,3 @@ jobs:
       - run: node scripts/signing/sign.mjs check
       # A throwaway test CA stands in for Azure; no credential is involved.
       - run: npm run test:signing
-
-  windows:
-    name: Windows build (unsigned)
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '22'
-          cache: npm
-      - run: npm ci
-      - run: rustup toolchain install
-        working-directory: readout/src-tauri
-      - run: npx tauri build --no-bundle
-        working-directory: readout

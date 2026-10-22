@@ -37,11 +37,16 @@ pins.
 
 `.github/workflows/release-readout.yml`, run by hand from `main`:
 
-| Job | Runner | Sees | Does |
-| --- | --- | --- | --- |
-| build | windows-latest | nothing secret | Compiles all third-party code (npm, cargo), runs the tests, writes the unsigned exe, the notices file and their SHA-256 digests |
-| sign | ubuntu-latest, environment `tools-signing` | the signing identity, in one step | Checks the digests, signs the exe, runs makensis, which signs the uninstaller (`!uninstfinalize`) and the installer (`!finalize`) through `sign-file.sh`, then verifies everything again with no credential in scope |
-| publish | ubuntu-latest | `contents: write` | Attests build provenance and creates the release `readout-v<version>` with `SHA256SUMS.txt` |
+All three jobs run on the organization's self-hosted ephemeral pool,
+`[self-hosted, linux, ephemeral]`. GitHub-hosted runners are not assigned to `zerotrustgarage`
+repositories (infrasec `docs/releases/runner-routing-review-2026-10-05.md`), and there is no
+Windows runner, so the Windows executable is cross-compiled on Linux.
+
+| Job | Sees | Does |
+| --- | --- | --- |
+| build | nothing secret | Compiles all third-party code (npm, cargo), runs the tests, cross-compiles the Windows exe (`scripts/ci/build-windows.sh`), writes the notices file and the SHA-256 digests |
+| sign (environment `tools-signing`) | the signing identity, in one step | Checks the digests, signs the exe, runs makensis, which signs the uninstaller (`!uninstfinalize`) and the installer (`!finalize`) through `sign-file.sh`, then verifies everything again with no credential in scope |
+| publish | `contents: write` | Attests build provenance and publishes the release `readout-v<version>` with `SHA256SUMS.txt` through the REST API (`scripts/ci/github-release.mjs`; `gh` may be absent on the pool) |
 
 The split matters. A malicious dependency would run during build, which holds no signing
 identity. The sign job runs only this repository's scripts, official actions, and makensis,
@@ -98,6 +103,28 @@ If the organization's plan does not include artifact attestations for private re
 Actions, Release ZTG Readout, Run workflow on `main`. The version comes from
 `readout/package.json` (it must match `src-tauri/Cargo.toml`), and the run refuses a
 version that is already released.
+
+## Cross-compiling for Windows
+
+`scripts/ci/build-windows.sh` runs the Tauri CLI with `cargo-xwin` (pinned version) as its
+runner, targeting `x86_64-pc-windows-msvc` with clang and lld. It has to be the Tauri CLI, not
+plain cargo: the CLI turns on the production build, without which the executable loads its UI
+from a development server.
+
+cargo-xwin downloads Microsoft's MSVC C runtime and Windows SDK files at build time, and
+`XWIN_ACCEPT_LICENSE=1` accepts Microsoft's license terms for them on the organization's
+behalf. **This is an owner decision**: it is the same license any Visual Studio Build Tools
+install accepts, but confirm it is acceptable before the first release. The alternative is a
+Windows build runner (see below).
+
+## Testing on Windows
+
+- `scripts/ci/test-installer-wine.sh <Setup.exe>` checks the installer under Wine: the WebView2
+  refusal, silent install, files, shortcut, registry entries, reinstall and a clean uninstall.
+- The app UI needs a real Windows machine, because WebView2 does not run under Wine. Windows
+  Sandbox on a technician's PC is the quickest check. For automated checks, register a Windows
+  machine (for example a VM in the Proxmox pool) as a self-hosted runner, as infrasec's
+  `JACKPOINT_WINDOWS_RUNNER_LABELS` anticipates.
 
 ## Verifying a download
 
