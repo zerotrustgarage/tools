@@ -226,6 +226,36 @@ try {
     assert.equal(await page.locator('#grid th[data-col="serial"]').count(), 0);
     assert.equal(Math.round(await thWidth("name")), 190);
 
+    // ---------- Title bar and theme ----------
+    // The desktop runtime is present (mock), so the app draws its own title bar.
+    assert.equal(await page.isVisible("#titlebar"), true);
+    assert.equal(await page.isVisible(".topbar .brand"), false, "the toolbar repeats the product name");
+    assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById("titlebar")).getPropertyValue("--wails-draggable").trim()), "drag");
+    assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById("win-close")).getPropertyValue("--wails-draggable").trim()), "no-drag");
+    await page.click("#win-min");
+    await page.click("#win-max");
+    await page.waitForFunction(() => document.getElementById("win-max").getAttribute("aria-label") === "Restore");
+    await page.click("#win-close");
+    const windowCalls = (await page.evaluate(() => window.__calls)).map((c) => c[0]).filter((c) => /^Window|^Quit/.test(c));
+    assert.deepEqual(windowCalls, ["WindowMinimise", "WindowToggleMaximise", "Quit"]);
+
+    // Theme: auto, then light, then dark, each overriding the Windows setting, and remembered.
+    const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    assert.equal(await page.getAttribute("#theme-btn", "data-choice"), "auto");
+    await page.click("#theme-btn");
+    assert.equal(await page.getAttribute("html", "data-theme"), "light");
+    assert.equal(await bg(), "rgb(246, 247, 249)");
+    await page.click("#theme-btn");
+    assert.equal(await page.getAttribute("html", "data-theme"), "dark");
+    assert.equal(await bg(), "rgb(15, 17, 21)");
+    if (shots) await page.screenshot({ path: join(shots, `ui-titlebar-dark-from-${scheme}.png`), clip: { x: 0, y: 0, width: 1320, height: 140 } });
+    await page.reload();
+    await page.waitForSelector("#titlebar:not([hidden])");
+    assert.equal(await page.getAttribute("html", "data-theme"), "dark", "theme not remembered");
+    await page.click("#theme-btn");
+    assert.equal(await page.getAttribute("html", "data-theme"), null);
+    assert.equal(await bg(), scheme === "dark" ? "rgb(15, 17, 21)" : "rgb(246, 247, 249)");
+
     assert.deepEqual(errors, [], "page errors");
     console.log(`ok  ${scheme} scheme`);
     await page.close();

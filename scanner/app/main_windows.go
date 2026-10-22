@@ -48,6 +48,12 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: frontend,
 		},
+		// The app draws its own title bar (frontend/index.html, #titlebar) so the whole window
+		// follows the app's theme. Frameless windows keep resizing; on Windows 11 they also keep
+		// the shadow and rounded corners because DisableFramelessWindowDecorations stays false.
+		Frameless:        true,
+		CSSDragProperty:  "--wails-draggable",
+		CSSDragValue:     "drag",
 		BackgroundColour: &options.RGBA{R: 15, G: 17, B: 21, A: 255},
 		OnStartup: func(ctx context.Context) {
 			app.setPlatform(ctx, wailsPlatform{ctx: ctx})
@@ -58,6 +64,8 @@ func main() {
 			Theme:               windows.SystemDefault,
 			DisableWindowIcon:   false,
 			WebviewUserDataPath: "", // default per-user location
+			// Keep the Windows 11 shadow and rounded corners on the frameless window.
+			DisableFramelessWindowDecorations: false,
 		},
 	})
 	if err != nil {
