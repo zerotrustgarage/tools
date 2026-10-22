@@ -114,6 +114,10 @@ function Test-Service {
       & $cli service remove
       if ($LASTEXITCODE -ne 0) { throw 'Service removal failed' }
     }
+    # Restore administrator ownership only during teardown of this disposable
+    # fixture; ordinary reads above must respect the service's protected DACL.
+    & takeown.exe /f $base /r /d y /a | Out-Null
+    & icacls.exe $base /grant '*S-1-5-32-544:(OI)(CI)F' /t /c | Out-Null
     Remove-Item $base -Recurse -Force
   }
 }
