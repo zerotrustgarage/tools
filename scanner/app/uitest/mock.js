@@ -22,20 +22,40 @@
   ];
 
   let timer = null;
+  let hasResults = false;
+  let currentHosts = structuredClone(hosts);
+  let site = "";
+  let saved = null;
+  const snapshot = (all) => ({ running: false, site, targets: ["192.168.50.0/24"], hosts: hasResults ? structuredClone(all ? currentHosts.concat([{ ip: "192.168.50.2", status: "down" }]) : currentHosts) : [] });
   window.go = { main: { App: {
     Version: async () => "0.2.0-test",
     Defaults: async () => ({ ports: "22,80,443", probes: { ports: true, banners: true, reverse_dns: true, netbios: true, mdns: true, ssdp: true }, concurrency: 128, timeout_ms: 800, max_hosts: 65536, snmp_auth_protocols: ["SHA", "SHA-256", "SHA-512"], snmp_priv_protocols: ["AES", "AES-256"] }),
     Suggestions: async () => [{ interface: "Ethernet", address: "192.168.50.10", range: "192.168.50.0/24" }],
-    Results: async (all) => ({ running: false, hosts: all ? hosts.concat([{ ip: "192.168.50.2", status: "down" }]) : hosts.slice(0, 0) }),
+    Results: async (all) => snapshot(all),
+    SetSite: async (name) => { site = name; },
+    SetAnnotation: async (ip, note) => { calls.push(["SetAnnotation", ip, note]); Object.assign(currentHosts.find(h => h.ip === ip), note); },
+    SaveScan: async (name) => { site = name; saved = snapshot(true); window.__savedScan = saved; calls.push(["SaveScan", name]); return "C:\\Scans\\clinic.json"; },
+    LoadScan: async () => { calls.push(["LoadScan"]); if (saved) { site = saved.site; currentHosts = structuredClone(saved.hosts.filter(h => h.status === "up")); hasResults = true; } return "C:\\Scans\\clinic.json"; },
+    NewSite: async () => { calls.push(["NewSite"]); hasResults = false; site = ""; currentHosts = structuredClone(hosts); },
+    CompareScan: async (name) => { calls.push(["CompareScan", name]); return { path: "C:\\Scans\\baseline.json", changes: [
+      { kind: "new", after: currentHosts[0] },
+      { kind: "changed", before: { ...currentHosts[1], ip: "192.168.50.19" }, after: currentHosts[1], fields: ["ip", "services"] },
+      { kind: "missing", before: { ip: "192.168.50.99", name: '<img src=x onerror="window.__pwned=1">' } },
+      { kind: "not_scanned", before: { ip: "192.168.60.1" } },
+      { kind: "unchanged", before: currentHosts[3], after: currentHosts[3] },
+    ] }; },
+    DeviceAction: async (action, ip, allow) => { calls.push(["DeviceAction", action, ip, allow]); return "Reply from " + ip + ': <img src=x onerror="window.__pwned=1">'; },
+    WakeOnLAN: async (ip) => calls.push(["WakeOnLAN", ip]),
     StartScan: async (req) => {
       calls.push(["StartScan", req]);
       if (req.targets.includes("8.8.8.8") && !req.allow_public) {
         throw "8.8.8.8: 8.8.8.8 is public address space; scanning it needs --allow-public and authorization from its owner";
       }
+      hasResults = true;
       let i = 0;
       timer = setInterval(() => {
-        if (i < hosts.length) {
-          emit("scan:host", hosts[i]);
+        if (i < currentHosts.length) {
+          emit("scan:host", structuredClone(currentHosts[i]));
           emit("scan:progress", { done: (i + 1) * 50, total: 254, up: i + 1 });
           i++;
         } else {
