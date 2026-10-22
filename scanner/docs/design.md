@@ -1,8 +1,8 @@
 # ZTG Scanner: design
 
 Status (October 22, 2026): slices S1 (engine and CLI), S2 (desktop app), S3 (SNMPv3 inventory) and S4 (packaging
-and release pipeline), and S5 (actions, local inventories and comparison) are built. S4's first signed release
-awaits owner setup. S6 is planned.
+and release pipeline), and S5 (actions, local inventories and comparison) are built. Owner signing setup is
+complete; S4's first signed release awaits a successful production release run. S6 is planned.
 
 ## 1. Purpose
 
@@ -148,7 +148,7 @@ directive.
 | S1    | Engine, probes, IEEE vendor table, classification, findings, CLI with table, CSV and JSON, CI                                                | Built   |
 | S2    | Desktop app (Wails v2, WebView2 on Windows): range picker from local interfaces, live results grid, detail pane, filters, export | Built   |
 | S3    | SNMPv3 inventory, opt-in per scan: authPriv only, GET and GETNEXT only, model, serial, firmware, location, interfaces | Built   |
-| S4    | Packaging and trust: Authenticode signing, MSI (WiX) and a portable ZIP, reproducible unsigned executable builds, SBOM, release workflow with provenance attestation | Built; first signed release awaits owner setup |
+| S4    | Packaging and trust: Authenticode signing, MSI (WiX) and a portable ZIP, reproducible unsigned executable builds, SBOM, release workflow with provenance attestation | Built; signing setup complete, first production release run pending |
 | S5    | Actions from results: browser, SSH, RDP, copy, Wake-on-LAN, ping and traceroute; site inventories, notes, tags and favorites; compare scans | Built |
 | S6    | macOS build (ARP through the routing socket), IPv6 neighbor discovery on the local link                                                     | Planned |
 

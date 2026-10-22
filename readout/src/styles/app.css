@@ -1,3 +1,5 @@
+@import '../../../scripts/updates/client.css';
+
 /* Application chrome, in the ZTG palette (design-tokens.json in zerotrustgarage/ztg). */
 
 :root,
@@ -229,6 +231,8 @@ body.resizing .pane, body.resizing .sidebar { pointer-events: none; }
 
 .status-bar {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 16px;
   padding: 3px 12px;
   font-size: 12px;

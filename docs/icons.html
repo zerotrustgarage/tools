@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZTG application icons</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 40px; background: #eef2f6; color: #24354b; font: 15px/1.5 system-ui,sans-serif; }
+  h1 { margin: 0; font-size: 30px; letter-spacing: -.7px; }
+  p { margin: 10px 0 24px; max-width: 780px; }
+  h2 { font-size: 16px; margin: 0 0 16px; }
+  .set { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 24px; padding: 28px; border-radius: 12px; margin-bottom: 24px; }
+  .light { background: #fff; }
+  .dark { background: #020c1b; color: #cbd5e1; }
+  .large { display: block; width: 128px; height: 128px; margin-bottom: 20px; }
+  .sizes { display: flex; align-items: end; gap: 12px; }
+  .sample { display: grid; justify-items: center; gap: 8px; font-size: 11px; }
+  .sizes img { display: block; }
+  .note { color: #526377; font-size: 13px; }
+  @media(max-width:1000px) { body { padding: 20px; } .set { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+</style>
+<h1>ZTG application icons</h1>
+<p>Four distinct glyphs, one family. ZTG green and slate, with the cursor from the ZTG wordmark.
+Every icon has an alpha-transparent background.</p>
+<main id="preview"></main>
+<p class="note">Large icons: 128 px. Small samples: 16, 20, 24, 32 and 48 px. ICOs include dedicated small
+frames. Scanner and Readout consume these assets today; Copy and TFTP assets are ready for their desktop slices.</p>
+<script>
+  for (const theme of ['light','dark']) {
+    const section = document.createElement('section');
+    section.className = `set ${theme}`;
+    section.setAttribute('aria-label', `${theme} background`);
+    for (const [id,name] of [['scanner','Scanner'],['copy','Copy'],['tftp','TFTP'],['readout','Readout']]) {
+      const card = document.createElement('article');
+      const title = document.createElement('h2'); title.textContent = `ZTG ${name}`;
+      const large = new Image(); large.className = 'large'; large.src = `../assets/icons/${id}/icon.png`; large.alt = `${name} application icon`;
+      const sizes = document.createElement('div'); sizes.className = 'sizes';
+      for (const n of [16,20,24,32,48]) {
+        const sample = document.createElement('div'); sample.className = 'sample';
+        const icon = new Image(n,n); icon.src = `../assets/icons/${id}/${n<=32?'small':'icon'}.svg`; icon.alt = '';
+        const label = document.createElement('span'); label.textContent = `${n}`;
+        sample.append(icon,label); sizes.append(sample);
+      }
+      card.append(title,large,sizes); section.append(card);
+    }
+    document.querySelector('main').append(section);
+  }
+</script>
+</html>

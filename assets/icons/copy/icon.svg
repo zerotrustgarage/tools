@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 64 64" role="img" aria-label="ZTG Copy">
+  <title>ZTG Copy: duplicate pages and ZTG cursor</title>
+  <g fill="none" stroke="#64748b" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 44H8a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h25a2 2 0 0 1 2 2v4"/>
+    <rect x="18" y="20" width="30" height="36" rx="2"/>
+  </g>
+  <path d="M25 38h16m-6-6 6 6-6 6" fill="none" stroke="#00FF41" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M55 38h3.5v18.25H55Z" fill="#00FF41"/>
+</svg>

@@ -13,7 +13,7 @@ const { chromium } = createRequire(import.meta.url)("playwright");
 const here = fileURLToPath(new URL(".", import.meta.url));
 const root = join(here, "..", "frontend");
 const shots = process.argv[2];
-const types = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript" };
+const types = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript", ".png": "image/png" };
 
 const server = createServer(async (req, res) => {
   const path = normalize(new URL(req.url, "http://x").pathname).replace(/^(\.\.[/\\])+/, "");
@@ -38,11 +38,29 @@ try {
     // A Content-Security-Policy violation means the UI silently lost a style or script.
     page.on("console", (m) => m.type() === "error" && /Content Security Policy/i.test(m.text()) && errors.push(m.text()));
     await page.addInitScript({ path: join(here, "mock.js") });
+    let updateRequests = 0;
+    await page.route("https://api.github.com/repos/zerotrustgarage/tools/releases?*", async route => {
+      updateRequests++;
+      await route.fulfill({ contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify([
+        { tag_name: "scanner-v0.5.0", published_at: "2026-10-22T12:00:00Z", draft: false, prerelease: false, html_url: "https://evil.example", assets: [
+          { name: "ZTG-Scanner-0.5.0-x64.msi", state: "uploaded", size: 100 },
+          { name: "SHA256SUMS.txt", state: "uploaded", size: 100 },
+        ] },
+      ]) });
+    });
     await page.goto(url);
 
     // Prefilled from the machine's networks.
     await page.waitForFunction(() => document.getElementById("targets").value === "192.168.50.0/24");
     assert.equal(await page.title(), "ZTG Scanner 0.2.0-test");
+    assert.equal(updateRequests, 0, "update checks must be explicit");
+    await page.click("#check-updates");
+    await page.waitForFunction(() => document.querySelector("#ztg-update-dialog [role=status]")?.textContent.includes("Update available: 0.5.0"));
+    await page.click('#ztg-update-dialog button:has-text("View release and downloads")');
+    assert.deepEqual((await page.evaluate(() => window.__calls)).find(c => c[0] === "BrowserOpenURL"),
+      ["BrowserOpenURL", "https://github.com/zerotrustgarage/tools/releases/tag/scanner-v0.5.0"]);
+    await page.click('#ztg-update-dialog button:has-text("Close")');
+    assert.equal(updateRequests, 1);
 
     // Scan streams rows in and finishes.
     await page.click("#scan-btn");

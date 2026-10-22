@@ -17,6 +17,8 @@ import { runFormat, type FormatCommand } from './format';
 import { Sidebar } from './sidebar';
 import { splitter } from './splitter';
 import { titleBar } from './titlebar';
+import { showUpdateDialog } from '../../../scripts/updates/client.js';
+import { version as appVersion } from '../../package.json';
 
 type ViewMode = 'edit' | 'split' | 'preview';
 type ThemeChoice = 'auto' | 'light' | 'dark';
@@ -214,7 +216,10 @@ export class App {
     }
 
     const s = this.status;
-    const statusBar = el('footer', { class: 'status-bar' }, s.cursor, s.words, el('span', { class: 'spacer' }), s.encoding, s.eol);
+    const statusBar = el('footer', { class: 'status-bar' }, s.cursor, s.words, el('span', { class: 'spacer' }),
+      button('Check for updates', 'Check for updates', () => showUpdateDialog({
+        tool: 'readout', current: appVersion, openExternal: url => this.platform.openExternal(url),
+      })), s.encoding, s.eol);
     this.measureButton.addEventListener('click', () => {
       this.measure = this.measure === 'readable' ? 'full' : 'readable';
       store('ztg-readout-measure', this.measure);

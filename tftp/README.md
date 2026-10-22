@@ -1,6 +1,6 @@
 # ZTG TFTP
 
-A TFTP server and client for technicians. T1 and T2 are implemented and ready for review: a time-boxed server,
+A TFTP server and client for technicians. T1 and T2 are implemented and merged: a time-boxed server,
 CLI `get`, `put` and `findings`, an owned protocol engine, opt-in collection into a separate drop box, configuration
 findings, change tracking and JSON Lines audit records. The plan is in
 [docs/design.md](docs/design.md) and the research behind it in [docs/research.md](docs/research.md).
@@ -149,3 +149,10 @@ upload tests and checks the native owner-only DACLs, locking and atomic commits.
 
 T3 adds the Windows desktop app. T4 adds service configuration and log forwarding. T5 adds packaging, signing, SBOM
 and release provenance. These features are not present. Each slice is reviewed before the next starts.
+
+## Updates
+
+Run `ztg-tftp check-updates [--json]` to check published releases on request.
+Checks contact GitHub only when requested and open official release downloads without installing
+anything. Offline errors and unpublished releases are shown explicitly. See
+[../docs/updates.md](../docs/updates.md).

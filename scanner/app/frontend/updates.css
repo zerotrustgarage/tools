@@ -1,0 +1,14 @@
+.ztg-updates {
+  color: var(--text); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 24px; width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto;
+  font: inherit; box-shadow: 0 12px 40px rgba(2,12,27,.3);
+}
+.ztg-updates::backdrop { background: rgba(2,12,27,.55); }
+.ztg-updates h2 { margin: 0 0 16px; font-size: 20px; }
+.ztg-updates p { margin: 12px 0; line-height: 1.55; }
+.ztg-updates .ztg-update-help { font-size: 13px; color: var(--muted, var(--dim)); }
+.ztg-update-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.ztg-updates button { padding: 8px 12px; font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 5px; cursor: pointer; }
+.ztg-updates button:hover { border-color: var(--accent, var(--acc)); }
+.ztg-updates button:focus-visible { outline: 2px solid var(--accent, var(--acc)); outline-offset: 2px; }
+.ztg-updates button:disabled { opacity: .6; cursor: wait; }

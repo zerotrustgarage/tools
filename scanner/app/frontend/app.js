@@ -1,7 +1,7 @@
 // ZTG Scanner desktop UI. Talks to the Go side through the Wails bindings
 // (window.go.main.App) and runtime events. Every string that came from a
 // scanned device is inserted with textContent, never as HTML.
-"use strict";
+import { showUpdateDialog } from "./updates.js";
 
 (() => {
   const api = window.go && window.go.main && window.go.main.App;
@@ -984,6 +984,9 @@
 
     const [version, defaults, suggestions] = await Promise.all([api.Version(), api.Defaults(), api.Suggestions()]);
     document.title = "ZTG Scanner " + version;
+    $("check-updates").addEventListener("click", () => showUpdateDialog({
+      tool: "scanner", current: version, openExternal: (url) => rt.BrowserOpenURL(url),
+    }));
     if (rt && rt.WindowSetTitle) rt.WindowSetTitle(document.title);
     state.defaults = defaults;
     loadSettings();
