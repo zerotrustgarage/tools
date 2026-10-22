@@ -1,0 +1,156 @@
+name: Release ZTG Markdown
+
+# Builds, signs and publishes the Windows installer. Run it by hand from main.
+#
+# Trust boundaries (docs/signing.md):
+# - build compiles all third-party code (npm and cargo) and sees no secret and no signing
+#   identity.
+# - sign runs in the tools-signing environment (main only, required reviewers recommended). It
+#   runs no third-party build code: it downloads the build output, signs the app, packages it
+#   with makensis from Ubuntu's archive (which signs the uninstaller and the installer through
+#   scripts/signing/sign-file.sh) and verifies every signature against the pinned Microsoft
+#   roots and the pinned publisher. Signing credentials reach one step only.
+# - publish attests provenance and creates the GitHub release; it holds no signing identity.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-markdown
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./apps/markdown/package.json').version")
+          cargo_version=$(grep -m1 '^version' apps/markdown/src-tauri/Cargo.toml | cut -d'"' -f2)
+          [ "$version" = "$cargo_version" ] || { echo "package.json $version and Cargo.toml $cargo_version differ"; exit 1; }
+          if git ls-remote --exit-code --tags origin "refs/tags/markdown-v$version" >/dev/null; then
+            echo "markdown-v$version is already released; bump the version first"; exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - run: npm ci
+      - run: npm run check --workspace @ztg-tools/markdown
+      - run: rustup toolchain install
+        working-directory: apps/markdown/src-tauri
+      - run: npx tauri build --no-bundle
+        working-directory: apps/markdown
+      - name: Collect the unsigned build and its notices
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .release
+          cp apps/markdown/src-tauri/target/release/ztg-markdown.exe .release/
+          node scripts/notices.mjs apps/markdown .release/THIRD-PARTY-NOTICES.txt
+          (cd .release && sha256sum ztg-markdown.exe THIRD-PARTY-NOTICES.txt > build.sha256)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: markdown-unsigned
+          path: .release/
+          if-no-files-found: error
+          retention-days: 3
+
+  sign:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: tools-signing
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: markdown-unsigned
+          path: .release
+      - name: Check the build output against the build job's digests
+        run: cd .release && sha256sum --check --strict build.sha256
+      # osslsigncode and openssl verify; Java runs jsign, which sign.mjs downloads and checks
+      # against a pinned SHA-256. makensis packages. All from Ubuntu's signed archive.
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq nsis osslsigncode openjdk-17-jre-headless
+      - run: node scripts/signing/sign.mjs check
+      # The only step that sees signing credentials. With no client secret configured it uses
+      # the job's GitHub OIDC token through an Entra federated credential.
+      - name: Sign the app, build and sign the installer
+        env:
+          AZURE_SIGNING_TENANT_ID: ${{ vars.AZURE_SIGNING_TENANT_ID }}
+          AZURE_SIGNING_CLIENT_ID: ${{ vars.AZURE_SIGNING_CLIENT_ID }}
+          AZURE_SIGNING_CLIENT_SECRET: ${{ secrets.AZURE_SIGNING_CLIENT_SECRET }}
+          ZTG_SIGN_NAME: ZTG Markdown
+          ZTG_SIGN_URL: https://ztg.sh
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          node scripts/signing/sign.mjs sign .release/ztg-markdown.exe
+          mkdir -p dist
+          makensis -V2 \
+            "-DVERSION=$VERSION" \
+            "-DAPP_EXE=$GITHUB_WORKSPACE/.release/ztg-markdown.exe" \
+            "-DNOTICES=$GITHUB_WORKSPACE/.release/THIRD-PARTY-NOTICES.txt" \
+            "-DOUTFILE=$GITHUB_WORKSPACE/dist/ZTG-Markdown-$VERSION-Setup.exe" \
+            "-DSIGN_SCRIPT=$GITHUB_WORKSPACE/scripts/signing/sign-file.sh" \
+            installer/windows/ztg-markdown.nsi
+      - name: Verify again, without credentials
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          node scripts/signing/sign.mjs verify .release/ztg-markdown.exe
+          node scripts/signing/sign.mjs verify "dist/ZTG-Markdown-$VERSION-Setup.exe"
+          cp .release/ztg-markdown.exe "dist/ztg-markdown-$VERSION.exe"
+          cp .release/THIRD-PARTY-NOTICES.txt dist/
+          (cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: markdown-signed
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [build, sign]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: markdown-signed
+          path: dist
+      - run: cd dist && sha256sum --check --strict SHA256SUMS.txt
+      # Attestations on private repositories need GitHub Enterprise Cloud. Set the repository
+      # variable ATTEST_PROVENANCE to false only if the plan does not include them.
+      - if: vars.ATTEST_PROVENANCE != 'false'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*.exe
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh release create "markdown-v$VERSION" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "ZTG Markdown $VERSION" \
+            --notes "Signed Windows installer for ZTG Markdown $VERSION. Verify downloads against SHA256SUMS.txt; build provenance is attested (gh attestation verify <file> --repo $GITHUB_REPOSITORY)."

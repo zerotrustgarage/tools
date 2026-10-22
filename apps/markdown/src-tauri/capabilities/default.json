@@ -1,0 +1,22 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The main window may call the app's own narrow commands, listen for events, set its title and close. It has no file system, dialog, shell or opener permission of its own.",
+  "windows": ["main"],
+  "permissions": [
+    "core:event:default",
+    "core:window:allow-set-title",
+    "core:window:allow-destroy",
+    "allow-choose-document",
+    "allow-choose-folder",
+    "allow-list-folder",
+    "allow-read-document",
+    "allow-save-document",
+    "allow-save-document-as",
+    "allow-export-html",
+    "allow-open-external",
+    "allow-read-image",
+    "allow-resolve-link",
+    "allow-initial-document"
+  ]
+}

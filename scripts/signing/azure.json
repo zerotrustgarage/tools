@@ -1,0 +1,9 @@
+{
+  "endpoint": "eus.codesigning.azure.net",
+  "account": "proudlock-signing",
+  "profile": "echowire-public",
+  "publisher": {
+    "subject": "CN=Proudlock Technology LLC,O=Proudlock Technology LLC,L=West Jefferson,ST=North Carolina,C=US",
+    "profileEku": "1.3.6.1.4.1.311.97.99817433.843640572.153338144.736599790"
+  }
+}

@@ -1,0 +1,80 @@
+name: CI
+
+# Checks only. No secrets, no signing environment, no releases.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Editor (typecheck, tests, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+      # .npmrc sets ignore-scripts: no dependency install script runs anywhere in CI.
+      - run: npm ci
+      - run: npm run check --workspace @ztg-tools/markdown
+      - run: npm run build --workspace @ztg-tools/markdown
+      - run: npm audit --omit=dev --audit-level=high
+
+  rust:
+    name: Desktop shell (Rust tests, clippy, fmt)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/markdown/src-tauri
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Linux WebView build dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libsoup-3.0-dev
+      # tauri::generate_context! embeds the built frontend, so it must exist before cargo runs.
+      - run: npm ci && npm run build --workspace @ztg-tools/markdown
+        working-directory: .
+      - run: rustup show active-toolchain || rustup toolchain install
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
+
+  signing:
+    name: Signing and installer mechanics
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq nsis osslsigncode
+      - run: node scripts/signing/sign.mjs check
+      # A throwaway test CA stands in for Azure; no credential is involved.
+      - run: npm run test:signing
+
+  windows:
+    name: Windows build (unsigned)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: rustup toolchain install
+        working-directory: apps/markdown/src-tauri
+      - run: npx tauri build --no-bundle
+        working-directory: apps/markdown

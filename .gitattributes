@@ -1,0 +1,2 @@
+# Corpus files are byte-exact fixtures (CRLF, BOM); git must never normalize them.
+apps/markdown/test/corpus/** -text

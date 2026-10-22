@@ -1,0 +1,40 @@
+{
+  "name": "@ztg-tools/markdown",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run test",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-markdown": "6.5.2",
+    "@codemirror/language": "6.13.1",
+    "@codemirror/language-data": "6.5.2",
+    "@codemirror/search": "6.7.2",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.14",
+    "@lezer/highlight": "1.2.5",
+    "@tauri-apps/api": "2.12.1",
+    "dompurify": "3.4.16",
+    "highlight.js": "11.12.0",
+    "katex": "0.19.0",
+    "markdown-it": "15.0.3",
+    "markdown-it-footnote": "4.0.0",
+    "mermaid": "12.2.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.1",
+    "@types/markdown-it-footnote": "3.0.4",
+    "@types/node": "26.6.4",
+    "jsdom": "29.1.1",
+    "typescript": "7.0.2",
+    "vite": "8.3.3",
+    "vitest": "5.0.3"
+  }
+}

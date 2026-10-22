@@ -1,0 +1,10 @@
+{
+  "name": "ztg-tools",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "check": "npm run check --workspaces --if-present && npm run test:signing",
+    "test:signing": "node --test \"scripts/signing/*.test.mjs\""
+  },
+  "engines": { "node": ">=22" }
+}
