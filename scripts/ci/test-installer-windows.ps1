@@ -19,6 +19,9 @@ param(
   [string] $Shots = ''
 )
 $ErrorActionPreference = 'Stop'
+$Setup = (Resolve-Path $Setup).Path
+$Msi = (Resolve-Path $Msi).Path
+$Sample = (Resolve-Path $Sample).Path
 $installDir = Join-Path $env:ProgramFiles 'ZTG Readout'
 $exe = Join-Path $installDir 'ztg-readout.exe'
 $shortcut = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\ZTG Readout.lnk'
