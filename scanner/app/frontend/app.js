@@ -20,6 +20,9 @@
     startedAt: 0,
     layout: null, // { order: [keys], hidden: [keys], widths: {key: px} }
     resizedAt: 0,
+    dirty: false,
+    file: "",
+    comparison: null,
   };
 
   // ---------- DOM helpers ----------
@@ -153,7 +156,8 @@
   const COLUMNS = [
     { key: "status", label: "", title: "Status", width: 34, fixed: true, text: (h) => h.status, sort: (h) => (h.status === "up" ? 0 : 1),
       cell: (h) => el("span", { class: "dot " + (h.status === "up" ? "up" : ""), title: h.status }) },
-    { key: "name", label: "Name", width: 190, text: (h) => h.name || "" },
+    { key: "name", label: "Name", width: 190, text: (h) => h.name || "",
+      cell: (h) => el("span", null, h.favorite ? el("span", { class: "favorite-mark", "aria-label": "Favorite", text: "★ " }) : null, h.name || "") },
     { key: "ip", label: "IP address", width: 132, mono: true, text: (h) => h.ip, sort: (h) => ipNum(h.ip) },
     { key: "type", label: "Type", width: 190, text: (h) => h.type || "", tip: (h) => h.type_reason },
     { key: "flags", label: "Findings", width: 160, sort: (h) => -worst(h), cell: findingBadges,
@@ -175,6 +179,10 @@
     { key: "ttl", label: "TTL", width: 60, hidden: true, mono: true, text: (h) => (h.ttl ? String(h.ttl) : ""), sort: (h) => h.ttl || 999 },
     { key: "services", label: "Services", width: 300, hidden: true, text: serviceSummary },
     { key: "evidence", label: "Found by", width: 160, hidden: true, text: (h) => (h.evidence || []).join(", ") },
+    { key: "favorite", label: "Favorite", width: 80, hidden: true, text: (h) => h.favorite ? "Yes" : "" },
+    { key: "tags", label: "Tags", width: 200, hidden: true, text: (h) => (h.tags || []).join(", ") },
+    { key: "notes", label: "Notes", width: 260, hidden: true, text: (h) => h.notes || "" },
+    { key: "lastmac", label: "Last known MAC", width: 150, hidden: true, mono: true, text: (h) => h.last_known_mac || "" },
   ];
   const COL = Object.fromEntries(COLUMNS.map((c) => [c.key, c]));
   const MIN_WIDTH = 44;
@@ -216,7 +224,7 @@
   function matches(h, q) {
     if (!q) return true;
     const hay = [
-      h.ip, h.name, h.mac, h.vendor, h.type, h.dns_name,
+      h.ip, h.name, h.mac, h.vendor, h.type, h.dns_name, h.notes, ...(h.tags || []),
       h.netbios && h.netbios.computer, h.netbios && h.netbios.workgroup,
       h.mdns && h.mdns.hostname, h.upnp && h.upnp.manufacturer, h.upnp && h.upnp.model_name,
       h.snmp && h.snmp.sys_name, h.snmp && h.snmp.model, h.snmp && h.snmp.serial, h.snmp && h.snmp.sys_location,
@@ -235,7 +243,7 @@
     const col = COL[state.sortKey] || COL.ip;
     const key = (h) => sortValue(col, h);
     return [...state.hosts.values()]
-      .filter((h) => (showDown || h.status === "up") && (!type || h.type === type) && (!findingsOnly || (h.findings || []).length) && matches(h, q))
+      .filter((h) => (showDown || h.status === "up") && (!type || h.type === type) && (!findingsOnly || (h.findings || []).length) && (!$("favorites-only").checked || h.favorite) && matches(h, q))
       .sort((a, b) => {
         const x = key(a), y = key(b);
         return (x < y ? -1 : x > y ? 1 : ipNum(a.ip) - ipNum(b.ip)) * state.sortDir;
@@ -456,6 +464,7 @@
       el("button", { class: "ghost close", "aria-label": "Close details", text: "✕", onclick: () => select(null) }),
       el("h2", { text: h.name || h.ip }),
       el("div", { class: "muted mono" }, h.ip, " ", copyButton(h.ip)),
+      deviceActions(h),
       ...section("Device", kv([
         ["Type", h.type],
         ["Why", h.type_reason],
@@ -466,11 +475,13 @@
       ])),
       ...section("Hardware", kv([
         ["MAC address", h.mac ? el("span", { class: "mono" }, h.mac, " ", copyButton(h.mac)) : ""],
+        ["Last known MAC", h.last_known_mac],
         ["Manufacturer", h.mac_randomized ? "Private (randomized) MAC address: no manufacturer" : h.vendor],
         ["UPnP maker", up && up.manufacturer],
         ["Model", (up && [up.model_name, up.model_number].filter(Boolean).join(" ")) || (h.snmp && h.snmp.model)],
         ["UPnP type", up && up.device_type],
       ])),
+      annotationForm(h),
       ...section("Names", kv([
         ["DNS", h.dns_name],
         ["NetBIOS", nb && nb.computer],
@@ -508,6 +519,136 @@
     renderDetail();
   }
 
+  // ---------- local inventories and actions ----------
+
+  function markDirty(value = true) {
+    state.dirty = value;
+    $("scan-file").textContent = (state.file || "Not saved") + (value ? " · unsaved changes" : "");
+    $("scan-file").title = $("scan-file").textContent;
+  }
+
+  function deviceActions(h) {
+    const buttons = [
+      ["ping", "Ping", true], ["traceroute", "Trace route", true],
+      ["ssh", "SSH", h.status === "up" && ports(h).includes(22)],
+      ["rdp", "RDP", h.status === "up" && ports(h).includes(3389)],
+    ].map(([action, label, enabled]) => el("button", {
+      type: "button", "data-action": action, text: label, disabled: !enabled,
+      onclick: () => runAction(action, h.ip),
+    }));
+    const wakeMAC = h.mac || h.last_known_mac;
+    buttons.push(el("button", { type: "button", "data-action": "wake", text: "Wake-on-LAN", disabled: !wakeMAC || h.mac_randomized,
+      onclick: async () => {
+        if (!await confirmDialog("Send Wake-on-LAN?", "Send one wake packet for " + h.ip + " (" + (h.mac ? "MAC " : "last known MAC ") + wakeMAC + ") on its directly connected network?", "Send wake packet")) return;
+        try { await api.WakeOnLAN(h.ip); toast("Wake packet sent. The device must support and enable Wake-on-LAN."); }
+        catch (e) { toast(String(e)); }
+      },
+    }));
+    return el("div", { class: "device-actions" }, buttons);
+  }
+
+  async function runAction(action, ip, allowPublic = false) {
+    const diagnostic = action === "ping" || action === "traceroute";
+    if (diagnostic) {
+      $("diagnostics").hidden = false;
+      $("comparison").hidden = true;
+      $("diagnostics-title").textContent = (action === "ping" ? "Ping " : "Trace route to ") + ip;
+      $("diagnostics-output").textContent = "Running…";
+    }
+    try {
+      const output = await api.DeviceAction(action, ip, allowPublic);
+      if (diagnostic) $("diagnostics-output").textContent = output;
+      else toast(output);
+    } catch (e) {
+      const message = String(e && e.message ? e.message : e);
+      if (!allowPublic && message.includes("public address space")) {
+        const ok = await confirmDialog("Connect to a public address?", "Only continue if you are authorized to use " + action + " with " + ip + ".", "I am authorized");
+        if (ok) return runAction(action, ip, true);
+      }
+      if (diagnostic) $("diagnostics-output").textContent = message;
+      else toast(message);
+    }
+  }
+
+  function annotationForm(h) {
+    const notes = el("textarea", { id: "device-notes", rows: 3, maxlength: 8192 });
+    notes.value = h.notes || "";
+    const tags = el("input", { id: "device-tags", type: "text", placeholder: "owner:Alice, location:MDF, cui:inside" });
+    tags.value = (h.tags || []).join(", ");
+    const favorite = el("input", { id: "device-favorite", type: "checkbox" });
+    favorite.checked = !!h.favorite;
+    const button = el("button", { id: "apply-notes", type: "button", text: "Apply device notes", disabled: state.running || (h.status !== "up" && !h.last_known_mac),
+      onclick: async () => {
+        const note = { notes: notes.value, tags: [...new Set(tags.value.split(",").map(t => t.trim()).filter(Boolean))], favorite: favorite.checked };
+        try {
+          await api.SetAnnotation(h.ip, note);
+          Object.assign(h, note);
+          markDirty(); render();
+          toast("Device updated. Save the scan to keep your notes and favorites.");
+        } catch (e) { toast(String(e)); }
+      },
+    });
+    return el("div", { class: "annotation-form" },
+      el("label", null, "Device notes", notes), el("label", null, "Tags (comma separated)", tags),
+      el("label", { class: "check" }, favorite, "Favorite"), button);
+  }
+
+  async function replaceInventory(action) {
+    if (state.dirty && !await confirmDialog("Replace current results?", "The current scan has unsaved changes. Save the scan first if you want to keep them.", "Replace results")) return;
+    try {
+      let path = "";
+      if (action === "load") { path = await api.LoadScan(); if (!path) return; }
+      else await api.NewSite();
+      state.file = path;
+      state.settings.probes.snmp = false;
+      $("snmp-auth-pass").value = "";
+      $("snmp-priv-pass").value = "";
+      paintSettings();
+      state.comparison = null;
+      $("comparison").hidden = true;
+      $("diagnostics").hidden = true;
+      select(null);
+      const snap = await api.Results(true);
+      $("site").value = snap.site || "";
+      if ((snap.targets || []).length) $("targets").value = snap.targets.join(", ");
+      state.hosts.clear();
+      for (const h of snap.hosts || []) state.hosts.set(h.ip, h);
+      markDirty(false); render();
+      $("status-text").textContent = path ? "Opened " + path : "Ready for a new site.";
+      $("warnings").textContent = "";
+      $("progress-bar").style.width = "0%";
+    } catch (e) { toast(String(e)); }
+  }
+
+  function renderComparison() {
+    const result = state.comparison;
+    if (!result) return;
+    const labels = { new: "New", missing: "Missing", changed: "Changed", unchanged: "Unchanged", not_scanned: "Not assessed" };
+    $("comparison-source").textContent = "Baseline: " + result.path;
+    const changes = result.changes || [];
+    $("comparison-counts").textContent = Object.entries(labels).map(([k, label]) => changes.filter(c => c.kind === k).length + " " + label.toLowerCase()).join(" · ");
+    const filter = $("change-filter").value;
+    const shown = changes.filter(c => filter === "changes" ? c.kind !== "unchanged" : c.kind === filter);
+    $("comparison-list").replaceChildren(...shown.slice(0, 500).map(c => {
+      const h = c.after || c.before;
+      return el("li", { "data-change": c.kind }, el("strong", { text: labels[c.kind] + ": " + h.ip + (h.name ? " · " + h.name : "") }),
+        c.before && c.after && c.before.ip !== c.after.ip ? el("p", { text: "Previous address: " + c.before.ip }) : null,
+        (c.fields || []).map(field => {
+          const value = host => {
+            if (field === "services") return serviceSummary(host) || "none";
+            if (["model", "serial", "firmware", "software"].includes(field)) {
+              const key = field === "firmware" ? "firmware_rev" : field === "software" ? "software_rev" : field;
+              return (host.snmp && host.snmp[key]) || "unknown";
+            }
+            return host[field] || "unknown";
+          };
+          return el("p", { class: "muted small", text: field + ": " + value(c.before) + " → " + value(c.after) });
+        }),
+        c.after ? el("button", { type: "button", class: "link", text: "Device details", onclick: () => { $("comparison").hidden = true; select(c.after.ip); } }) : null);
+    }));
+    $("comparison-limit").textContent = shown.length > 500 ? "Showing the first 500 of " + shown.length + ". Choose a change type to narrow the list." : shown.length ? "" : "No devices in this category.";
+  }
+
   // ---------- scanning ----------
 
   function setRunning(running) {
@@ -516,6 +657,8 @@
     b.textContent = running ? "Stop" : "Scan";
     b.classList.toggle("stop", running);
     $("targets").disabled = running;
+    for (const id of ["site", "save-scan", "load-scan", "compare-scan", "new-site"]) $(id).disabled = running;
+    renderDetail();
   }
 
   function setProgress(done, total, up) {
@@ -551,6 +694,7 @@
     if (!api) return toast("Not connected to the scanner engine.");
     store.set("targets", $("targets").value);
     try {
+      await api.SetSite($("site").value);
       state.hosts.clear();
       select(null);
       $("warnings").textContent = "";
@@ -558,10 +702,14 @@
       setRunning(true);
       render();
       const n = await api.StartScan(request(allowPublic));
+      state.comparison = null;
+      $("comparison").hidden = true;
+      markDirty();
       setProgress(0, n, 0);
     } catch (e) {
       setRunning(false);
       const msg = String(e && e.message ? e.message : e);
+      await reload($("show-down").checked);
       render();
       if (!allowPublic && msg.includes("public address space")) {
         const ok = await confirmDialog(
@@ -589,7 +737,7 @@
     $("progress-bar").style.width = "100%";
     $("status-text").textContent = (sum.canceled ? "Stopped: " : "Done: ") + sum.up + " of " + sum.total + " up in " + secs + "s · " + (sum.methods || []).join(", ");
     $("warnings").textContent = (sum.warnings || []).join(" ");
-    if ($("show-down").checked) await reload(true);
+    await reload($("show-down").checked);
     render();
   }
 
@@ -599,6 +747,7 @@
     state.hosts.clear();
     for (const h of snap.hosts || []) state.hosts.set(h.ip, h);
     render();
+    renderDetail();
   }
 
   // ---------- settings ----------
@@ -733,7 +882,29 @@
       if (e.key === "ArrowDown" && tr.nextElementSibling) tr.nextElementSibling.focus();
       if (e.key === "ArrowUp" && tr.previousElementSibling) tr.previousElementSibling.focus();
     });
-    for (const id of ["filter", "type-filter", "findings-only"]) $(id).addEventListener("input", render);
+    for (const id of ["filter", "type-filter", "findings-only", "favorites-only"]) $(id).addEventListener("input", render);
+    $("site").addEventListener("input", () => markDirty());
+    $("save-scan").addEventListener("click", async () => {
+      try {
+        const path = await api.SaveScan($("site").value);
+        if (path) { state.file = path; markDirty(false); toast("Saved " + path); }
+      } catch (e) { toast(String(e)); }
+    });
+    $("load-scan").addEventListener("click", () => replaceInventory("load"));
+    $("new-site").addEventListener("click", () => replaceInventory("new"));
+    $("compare-scan").addEventListener("click", async () => {
+      try {
+        const result = await api.CompareScan($("site").value);
+        if (!result.path) return;
+        state.comparison = result;
+        $("comparison").hidden = false;
+        $("diagnostics").hidden = true;
+        renderComparison();
+      } catch (e) { toast(String(e)); }
+    });
+    $("change-filter").addEventListener("change", renderComparison);
+    $("comparison-close").addEventListener("click", () => { $("comparison").hidden = true; });
+    $("diagnostics-close").addEventListener("click", () => { $("diagnostics").hidden = true; });
     $("show-down").addEventListener("change", async () => {
       if ($("show-down").checked && !state.running) await reload(true);
       render();
@@ -764,6 +935,7 @@
       closeMenus();
       if (b.dataset.export === "view") return exportView();
       try {
+        if (!state.running) await api.SetSite($("site").value);
         const path = await api.Export(b.dataset.export, $("show-down").checked);
         if (path) toast("Saved " + path);
       } catch (err) {
@@ -776,7 +948,9 @@
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
         closeMenus();
-        if (!$("settings").hidden) toggle($("settings-btn"), $("settings"), false);
+        if (!$("comparison").hidden) $("comparison").hidden = true;
+        else if (!$("diagnostics").hidden) $("diagnostics").hidden = true;
+        else if (!$("settings").hidden) toggle($("settings-btn"), $("settings"), false);
         else if (!$("modal").hidden) $("modal-cancel").click();
         else select(null);
       }
@@ -810,6 +984,7 @@
 
     const [version, defaults, suggestions] = await Promise.all([api.Version(), api.Defaults(), api.Suggestions()]);
     document.title = "ZTG Scanner " + version;
+    if (rt && rt.WindowSetTitle) rt.WindowSetTitle(document.title);
     state.defaults = defaults;
     loadSettings();
 
@@ -830,6 +1005,9 @@
     $("targets").value = store.get("targets", "") || (suggestions && suggestions[0] ? suggestions[0].range : "");
 
     const snap = await api.Results(false);
+    $("site").value = snap.site || "";
+    state.file = snap.file || "";
+    markDirty(!!snap.dirty);
     for (const h of snap.hosts || []) state.hosts.set(h.ip, h);
     setRunning(!!snap.running);
     render();

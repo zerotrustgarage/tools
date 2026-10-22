@@ -17,11 +17,13 @@ import (
 
 // Document is the JSON export: the scan summary and every host.
 type Document struct {
-	Tool    string       `json:"tool"`
-	Version string       `json:"version"`
-	Targets []string     `json:"targets"`
-	Summary scan.Summary `json:"summary"`
-	Hosts   []scan.Host  `json:"hosts"`
+	Tool        string                     `json:"tool"`
+	Version     string                     `json:"version"`
+	Targets     []string                   `json:"targets"`
+	Summary     scan.Summary               `json:"summary"`
+	Hosts       []scan.Host                `json:"hosts"`
+	Site        string                     `json:"site,omitempty"`
+	Annotations map[string]scan.Annotation `json:"annotations,omitempty"`
 }
 
 // SortHosts orders hosts by IP address.
@@ -41,7 +43,7 @@ func JSON(w io.Writer, doc Document) error {
 }
 
 // CSVHeader is the column order of the CSV export.
-var CSVHeader = []string{"ip", "status", "name", "type", "mac", "vendor", "mac_randomized", "dns_name", "netbios_name", "workgroup", "mdns_name", "manufacturer", "model", "open_ports", "services", "rtt_ms", "ttl", "os_hint", "findings", "evidence", "serial", "firmware", "location", "snmp_descr"}
+var CSVHeader = []string{"ip", "status", "name", "type", "mac", "vendor", "mac_randomized", "dns_name", "netbios_name", "workgroup", "mdns_name", "manufacturer", "model", "open_ports", "services", "rtt_ms", "ttl", "os_hint", "findings", "evidence", "serial", "firmware", "location", "snmp_descr", "notes", "tags", "favorite", "last_known_mac"}
 
 // CSV writes one row per host.
 func CSV(w io.Writer, hosts []scan.Host) error {
@@ -50,7 +52,11 @@ func CSV(w io.Writer, hosts []scan.Host) error {
 		return err
 	}
 	for _, h := range hosts {
-		if err := cw.Write(csvRow(h)); err != nil {
+		row := csvRow(h)
+		for i := range row {
+			row[i] = safe(row[i])
+		}
+		if err := cw.Write(row); err != nil {
 			return err
 		}
 	}
@@ -101,6 +107,8 @@ func csvRow(h scan.Host) []string {
 		safe(h.DNSName), safe(nbName), safe(wg), safe(mdnsName), safe(maker), safe(model),
 		Ports(h), safe(ServiceSummary(h)), rtt, ttl, h.OSHint, strings.Join(findings, " "), strings.Join(h.Evidence, " "),
 		safe(serial), safe(firmware), safe(location), safe(descr),
+		safe(h.Notes), safe(strings.Join(h.Tags, ", ")), strconv.FormatBool(h.Favorite),
+		safe(h.LastKnownMAC),
 	}
 }
 

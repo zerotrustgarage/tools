@@ -8,7 +8,9 @@ ZTG Scanner is ZTG's replacement for Advanced IP Scanner: source, build chain an
 remote access software, and nothing installed on the hosts it scans. The design, safety model and roadmap are in
 [docs/design.md](docs/design.md).
 
-Status: engine and CLI (S1), Windows desktop app (S2) and SNMPv3 inventory (S3) are built.
+Status: engine and CLI (S1), Windows desktop app (S2), SNMPv3 inventory (S3) and the packaging and release
+pipeline (S4) are built. A signed release still needs the owner signing setup in
+[../docs/signing.md](../docs/signing.md). Actions, site inventories and scan comparisons (S5) are built.
 
 ## Usage
 
@@ -80,6 +82,82 @@ It needs the Microsoft Edge WebView2 runtime, which Windows 10 and 11 include.
 The window draws its own title bar in the app's theme (Wails frameless mode): drag it to move the window,
 double-click it to maximize. The theme button beside Settings switches between Auto (the Windows setting), Light
 and Dark, and the choice is remembered.
+
+## Site inventories and device actions
+
+1. Enter a site label (client and office), then scan. Choose **New site** when moving to a different client so its
+   device notes cannot carry across. Changing the label renames the current inventory.
+2. Select a device and apply notes, comma-separated tags and a favorite. Tags such as `owner:Alice`, `location:MDF`
+   and `cui:inside` make the results a useful starting point for an asset inventory. Search includes notes and tags;
+   the Favorites filter and the optional Favorite, Tags and Notes columns work with the normal grid controls.
+3. **Save scan** writes a local JSON file containing the site, every visited address (even when filtered out), the
+   observations and annotations. **Open scan** restores it without running probes. Keep separate files per site and
+   date. Earlier Scanner JSON exports also open. Files are limited to 64 MiB and 65,536 addresses; invalid files
+   leave the current inventory in place. Writes replace an existing file only after a complete, flushed save.
+4. **Compare with…** selects an earlier JSON file as the baseline for the current scan or loaded inventory. Different
+   nonempty site labels are refused. Results show new, missing, changed and unchanged devices, plus devices whose
+   absence could not be assessed. The comparison shows old and new field values and detects address moves when a
+   non-randomized MAC is unique in both scans. MAC replacements at the same IP appear as changed occupants.
+
+Missing means a previously observed address did not answer in a completed scan, not proof a device was removed.
+Unvisited addresses, canceled scans and ambiguous identities never produce a missing-device claim. Changes reflect
+observations: different probe settings or reachability can change the evidence without a device being reconfigured.
+The comparison panel displays up to 500 rows per category and reports the full counts.
+
+Notes follow confirmed address moves between consecutive scans, but never transfer to a different MAC at the same
+IP or to a duplicate MAC at a new address. For an unresponsive device, a previously learned MAC is labeled
+**Last known MAC**, kept separate from current evidence, and retained with notes and favorites. Full CSV exports
+append `notes`, `tags`, `favorite` and `last_known_mac`; JSON preserves the full annotation history. These files are
+saved only when you choose to save or export. Browser settings contain no inventory or SNMP passphrases. Opening
+an inventory or starting a new site clears the SNMP passphrase fields and disables SNMP. The native
+close button and Alt+F4 offer Cancel when the current scan has unsaved changes.
+
+The device pane offers browser access, IP/MAC copy, SSH, RDP, ping, traceroute and Wake-on-LAN. SSH and RDP launch
+the installed Windows clients only when their standard port was observed open. Ping and traceroute show bounded
+diagnostic output in the app. Programs use fixed system paths and numeric result addresses, never names or banners
+as commands. A public address loaded from a file requires authorization before these connection actions.
+Wake-on-LAN asks before sending one UDP magic packet and is limited to directly connected internal IPv4 networks;
+it can use the last known MAC of an offline favorite. Nothing is installed on the scanned device, and no credentials
+are collected by Scanner for these actions. Scheduled scans and custom command templates remain planned.
+
+## Windows packages and releases
+
+`installer/` builds a Windows x64 MSI for managed deployment and a portable ZIP. Both contain the desktop app,
+CLI, license texts, an IEEE data attribution, and a CycloneDX 1.6 SBOM generated from the modules actually linked
+into the two executables. The MSI adds an all-users Start menu shortcut and supports repair and major upgrades;
+it refuses downgrades and installs no service, driver, scan schedule, firewall exception or PATH entry.
+The MSI needs administrator rights to install; scanning and using the portable tools do not.
+
+The desktop app requires the Microsoft Edge WebView2 Runtime. The MSI checks for it and fails before installation
+if it is absent. Deploy the machine-wide runtime first when using Intune, Group Policy or an RMM. No runtime is
+downloaded or bundled by the MSI. The CLI works without WebView2. Portable packaging uses the current user's
+normal desktop preferences; it does not isolate settings. Uninstalling preserves exported scans and preferences.
+
+To build unsigned packages locally on Linux (Go, Node 22+, `wixl`, `msitools`, `zip`):
+
+```bash
+version=$(cat scanner/VERSION)       # from the repository root
+scanner/app/build-windows.sh "$version" amd64 .release/scanner
+node scanner/ci/metadata.mjs .release/scanner "$version"
+cp scanner/installer/README.txt .release/scanner/
+scanner/installer/build-msi.sh .release/scanner "$version" dist/ZTG-Scanner-x64.msi
+scanner/installer/portable.sh .release/scanner dist/ZTG-Scanner-x64-portable.zip
+node --test scanner/ci/metadata.test.mjs
+SCANNER_PAYLOAD="$PWD/.release/scanner" node --test scanner/ci/packaging.test.mjs  # also needs osslsigncode, openssl, unzip
+```
+
+`scanner/VERSION` is the release version (numeric `X.Y.Z`, within Windows Installer limits). The release workflow
+`.github/workflows/release-scanner.yml` runs manually from `main` and refuses an existing `scanner-v<version>` tag.
+It checks that two builds produce identical unsigned executables. `-trimpath`, a fixed version and commit, disabled
+VCS stamping and an empty Go build ID remove local paths and build IDs. This reproducibility claim covers the
+unsigned executables with the same source, toolchain and module versions, not MSI container metadata or signatures
+with live timestamps. Portable archives have fixed entry timestamps and permissions.
+
+The workflow separates compilation, signing through `tools-signing`, Windows validation and publication. It signs
+and verifies both EXEs before embedding them in the MSI, then signs and verifies the MSI. Windows must validate the
+signatures and launch both installed and portable apps before publication. Downloads include `SHA256SUMS.txt`, the
+SBOM and notices, with provenance attested for every asset. See [../docs/signing.md](../docs/signing.md) for setup
+and verification. PR CI uses unsigned packages and also checks MSI upgrades and downgrade refusal on `windows-2025`.
 
 ## Building
 

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Keep UpgradeCode and component GUIDs stable across releases. No service, driver,
+     scheduled scan, PATH change or firewall exception is installed. -->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="ZTG Scanner" Language="1033" Version="$(var.Version)"
+           Manufacturer="Proudlock Technology LLC" UpgradeCode="932c387f-9d36-40b5-b0d2-265c96fb4f27">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine"
+             Description="ZTG Scanner $(var.Version)" Comments="Local network discovery and inventory" />
+    <Media Id="1" Cabinet="scanner.cab" EmbedCab="yes" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of ZTG Scanner is already installed." />
+    <Property Id="WEBVIEW2_VERSION">
+      <RegistrySearch Id="WebView2Machine" Root="HKLM" Win64="no" Type="raw" Name="pv"
+                      Key="SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" />
+    </Property>
+    <Property Id="WEBVIEW2_USER_VERSION">
+      <RegistrySearch Id="WebView2User" Root="HKCU" Win64="no" Type="raw" Name="pv"
+                      Key="Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" />
+    </Property>
+    <!-- build-msi.sh adds the launch condition, which wixl cannot express. -->
+    <Icon Id="ScannerIcon" SourceFile="$(var.IconFile)" />
+    <Property Id="ARPPRODUCTICON" Value="ScannerIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://ztg.sh" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLDIR" Name="ZTG Scanner">
+          <Component Id="App" Guid="752cb55b-0a7c-46d8-bcba-445d4b69ef5d" Win64="yes">
+            <File Id="ScannerExe" Name="ZTGScanner.exe" Source="$(var.Payload)/ZTGScanner.exe" KeyPath="yes" />
+          </Component>
+          <Component Id="CLI" Guid="1f0df3c2-e3ed-41c2-bb5a-0448dad973a4" Win64="yes">
+            <File Id="ScannerCLI" Name="ztg-scanner.exe" Source="$(var.Payload)/ztg-scanner.exe" KeyPath="yes" />
+          </Component>
+          <Component Id="Notices" Guid="bb181caa-25fc-46b6-a138-1d7abb4af116" Win64="yes">
+            <File Id="NoticesTxt" Name="THIRD-PARTY-NOTICES.txt" Source="$(var.Payload)/THIRD-PARTY-NOTICES.txt" KeyPath="yes" />
+          </Component>
+          <Component Id="SBOM" Guid="ad01e636-9d36-4f24-bb39-56280295586e" Win64="yes">
+            <File Id="SBOMJson" Name="scanner.cdx.json" Source="$(var.Payload)/scanner.cdx.json" KeyPath="yes" />
+          </Component>
+          <Component Id="Readme" Guid="71d07e16-0271-4806-854b-8d9257cbec15" Win64="yes">
+            <File Id="ReadmeTxt" Name="README.txt" Source="$(var.Payload)/README.txt" KeyPath="yes" />
+          </Component>
+        </Directory>
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Component Id="StartMenu" Guid="72deaf4d-15cc-4281-a71c-606434e6672e" Win64="yes">
+          <Shortcut Id="ScannerShortcut" Name="ZTG Scanner" Description="Network discovery and inventory"
+                    Target="[INSTALLDIR]ZTGScanner.exe" WorkingDirectory="INSTALLDIR" Icon="ScannerIcon" />
+          <RegistryValue Root="HKLM" Key="Software\ZTG\Scanner" Name="StartMenuShortcut" Value="1" Type="integer" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </Directory>
+    <Feature Id="Main" Title="ZTG Scanner" Level="1">
+      <ComponentRef Id="App" />
+      <ComponentRef Id="CLI" />
+      <ComponentRef Id="Notices" />
+      <ComponentRef Id="SBOM" />
+      <ComponentRef Id="Readme" />
+      <ComponentRef Id="StartMenu" />
+    </Feature>
+  </Product>
+</Wix>

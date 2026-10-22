@@ -80,8 +80,8 @@ These need the repository owner; no code change can do them.
 
 | # | Item | Priority | Status |
 | --- | --- | --- | --- |
-| SC1 | S4, packaging and trust: Authenticode signing, MSI, portable ZIP, SBOM, release workflow with provenance. `scripts/signing/` and Readout's MSI approach are reusable | High | Open |
-| SC2 | S5, actions from results: SSH, RDP, Wake-on-LAN, ping and traceroute, saved favorites, compare two scans | High | Open |
+| SC1 | S4, packaging and trust: Authenticode signing, MSI, portable ZIP, SBOM, release workflow with provenance. Reuses `scripts/signing/` and Readout's MSI approach; CI checks reproducible unsigned EXEs and Windows portable/install/launch/repair/upgrade/uninstall | High | **Built**; first signed release awaits O2 and O3 and a successful release run |
+| SC2 | S5, actions from results: SSH, RDP, Wake-on-LAN, ping and traceroute, saved favorites, compare two scans | High | **Built**; installed Windows clients, bounded diagnostics, explicit on-link wake, local inventory files |
 | SC3 | S6: macOS build, IPv6 neighbor discovery | Low | Open |
 | SC4 | The frameless title bar and theme switch have been tested in Chromium only, not on Windows (O7) | High | Open |
 | SC5 | With the Light theme, the native window behind the page could flash dark while opening or resizing | Medium | **Done** (the frontend sets the window background with the theme) |
@@ -93,9 +93,9 @@ credentials, no cloud reporting.
 
 | # | Improvement | Priority | Reference |
 | --- | --- | --- | --- |
-| SC6 | Saved scans per client site and change detection: new, missing and changed devices since the last scan (extends S5's compare). Shadow IT discovery is the main reason MSPs run these tools | High | Fing |
+| SC6 | Saved scans per client site and change detection: new, missing and changed devices since the last scan (extends S5's compare). Shadow IT discovery is the main reason MSPs run these tools | High | **Built**: site-labeled files and comparison, with coverage and identity checks; Fing |
 | SC7 | Scheduled rescans with a desktop notification when a new device appears; local only | Medium | Fing |
-| SC8 | Per-device notes and tags (owner, location, inside the CUI boundary) kept in the scan file and exported, so an export is a starting point for a CMMC CM.L2-3.4.1 asset inventory and a client's SSP | High | Lansweeper |
+| SC8 | Per-device notes and tags (owner, location, inside the CUI boundary) kept in the scan file and exported, so an export is a starting point for a CMMC CM.L2-3.4.1 asset inventory and a client's SSP | High | **Built**: notes, tags, favorites and historical MACs in JSON/CSV; Lansweeper |
 | SC9 | Saved target sets per client; import target lists from a file | Medium | Angry IP Scanner |
 | SC10 | Technician-defined "Open with" commands with `{ip}` and `{hostname}` placeholders (PuTTY, mstsc, an RMM console URL). Commands come from the technician's settings, never from what a device reports | Medium | Angry IP Scanner, Advanced IP Scanner |
 | SC11 | Deeper identification through single standard exchanges: WS-Discovery (printers, ONVIF cameras), LLMNR names, an SMB2 negotiate for OS and version, an HTTP favicon fingerprint | Medium | Fing |
