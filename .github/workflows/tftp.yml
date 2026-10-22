@@ -64,4 +64,6 @@ jobs:
       - name: Native Windows upload checks
         run: |
           go test -v ./internal/store -run 'TestDrop|TestWindows'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go test -v ./internal/server -run TestUpload
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
