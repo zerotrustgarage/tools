@@ -15,7 +15,6 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"time"
 
@@ -142,7 +141,7 @@ func cmdScan(args []string) error {
 		ConnectTimeout: *timeout,
 	}
 	if *portsFlag != "" {
-		if cfg.Ports, err = parsePorts(*portsFlag); err != nil {
+		if cfg.Ports, err = scan.ParsePorts(*portsFlag); err != nil {
 			return err
 		}
 	}
@@ -206,44 +205,6 @@ func upOnly(hs []scan.Host) []scan.Host {
 		}
 	}
 	return out
-}
-
-func parsePorts(s string) ([]int, error) {
-	seen := map[int]bool{}
-	var out []int
-	for _, part := range strings.Split(s, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		lo, hi, isRange := strings.Cut(part, "-")
-		a, err := strconv.Atoi(lo)
-		if err != nil {
-			return nil, fmt.Errorf("bad port %q", part)
-		}
-		b := a
-		if isRange {
-			if b, err = strconv.Atoi(hi); err != nil {
-				return nil, fmt.Errorf("bad port range %q", part)
-			}
-		}
-		if a < 1 || b > 65535 || b < a {
-			return nil, fmt.Errorf("bad port range %q", part)
-		}
-		for p := a; p <= b; p++ {
-			if !seen[p] {
-				seen[p] = true
-				out = append(out, p)
-			}
-		}
-	}
-	if len(out) == 0 {
-		return nil, errors.New("no ports given")
-	}
-	if len(out) > 1024 {
-		return nil, fmt.Errorf("%d ports is too many for an inventory scan (max 1024)", len(out))
-	}
-	return out, nil
 }
 
 func cmdVendor(args []string) error {

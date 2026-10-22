@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="wails-options" content="noautoinject">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>ZTG Scanner</title>
+  <link rel="stylesheet" href="app.css">
+  <script src="/wails/ipc.js"></script>
+  <script src="/wails/runtime.js"></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="mark" aria-hidden="true">ZTG</span><span class="product">Scanner</span></div>
+    <form id="scan-form" class="targets" autocomplete="off">
+      <label for="targets" class="sr-only">Networks to scan</label>
+      <input id="targets" name="targets" type="text" spellcheck="false"
+             placeholder="192.168.1.0/24, 10.0.0.1-50, printer.lan" aria-describedby="target-help">
+      <button type="button" id="suggest-btn" class="ghost" aria-haspopup="menu" aria-expanded="false" title="My networks">My networks ▾</button>
+      <ul id="suggest-menu" class="menu" role="menu" hidden></ul>
+      <button type="submit" id="scan-btn" class="primary">Scan</button>
+    </form>
+    <div class="actions">
+      <button type="button" id="settings-btn" class="ghost" aria-controls="settings" aria-expanded="false">Settings</button>
+      <button type="button" id="export-btn" class="ghost" aria-haspopup="menu" aria-expanded="false">Export ▾</button>
+      <ul id="export-menu" class="menu right" role="menu" hidden>
+        <li role="none"><button role="menuitem" data-export="csv">CSV (spreadsheet)</button></li>
+        <li role="none"><button role="menuitem" data-export="json">JSON (full detail)</button></li>
+      </ul>
+    </div>
+  </header>
+  <p id="target-help" class="sr-only">Enter addresses, ranges, CIDR blocks or hostnames separated by commas or spaces.</p>
+
+  <section class="status" aria-live="polite">
+    <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="progress-bar"></div></div>
+    <span id="status-text">Ready. Choose a network and press Scan.</span>
+    <span id="warnings" class="warn"></span>
+  </section>
+
+  <section class="filters">
+    <input id="filter" type="search" placeholder="Filter by name, IP, MAC, vendor, port…" aria-label="Filter results">
+    <select id="type-filter" aria-label="Device type"><option value="">All types</option></select>
+    <label class="check"><input type="checkbox" id="findings-only"> Findings only</label>
+    <label class="check"><input type="checkbox" id="show-down"> Show unresponsive</label>
+    <span id="count" class="muted"></span>
+  </section>
+
+  <main class="workspace">
+    <div class="grid-wrap">
+      <table id="grid" aria-label="Scan results">
+        <thead>
+          <tr>
+            <th data-sort="status" class="col-status" aria-label="Status"></th>
+            <th data-sort="name">Name</th>
+            <th data-sort="ip">IP address</th>
+            <th data-sort="type">Type</th>
+            <th data-sort="flags">Findings</th>
+            <th data-sort="vendor">Manufacturer</th>
+            <th data-sort="mac">MAC address</th>
+            <th data-sort="ports">Open ports</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div id="empty" class="empty">No results yet.</div>
+    </div>
+    <aside id="detail" class="detail" hidden aria-label="Device details"></aside>
+  </main>
+
+  <aside id="settings" class="drawer" hidden aria-label="Scan settings">
+    <h2>Scan settings</h2>
+    <fieldset>
+      <legend>Probes</legend>
+      <label class="check"><input type="checkbox" data-probe="ports"> Port scan</label>
+      <label class="check"><input type="checkbox" data-probe="banners"> Identify services (banners, web titles, certificates)</label>
+      <label class="check"><input type="checkbox" data-probe="reverse_dns"> Reverse DNS</label>
+      <label class="check"><input type="checkbox" data-probe="netbios"> NetBIOS names</label>
+      <label class="check"><input type="checkbox" data-probe="mdns"> mDNS (Bonjour) names and services</label>
+      <label class="check"><input type="checkbox" data-probe="ssdp"> UPnP device descriptions</label>
+    </fieldset>
+    <label>TCP ports <textarea id="ports" rows="3" spellcheck="false"></textarea></label>
+    <div class="row">
+      <label>Hosts in parallel <input id="concurrency" type="number" min="1" max="512"></label>
+      <label>Connect timeout (ms) <input id="timeout" type="number" min="100" max="10000" step="100"></label>
+    </div>
+    <p class="muted small">Defaults identify devices without logging in to anything. Only private networks are scanned unless you confirm you are authorized to scan a public range.</p>
+    <div class="row end"><button type="button" id="settings-reset" class="ghost">Restore defaults</button><button type="button" id="settings-close" class="primary">Done</button></div>
+  </aside>
+
+  <div id="modal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-card">
+      <h2 id="modal-title"></h2>
+      <p id="modal-body"></p>
+      <div class="row end"><button type="button" id="modal-cancel" class="ghost">Cancel</button><button type="button" id="modal-ok" class="danger"></button></div>
+    </div>
+  </div>
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

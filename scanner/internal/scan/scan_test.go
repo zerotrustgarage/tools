@@ -106,3 +106,15 @@ func TestPortSetHelpers(t *testing.T) {
 		t.Fatalf("merge %v", got)
 	}
 }
+
+func TestParsePorts(t *testing.T) {
+	got, err := ParsePorts("80, 443;22,8000-8002,80")
+	if err != nil || fmt.Sprint(got) != "[80 443 22 8000 8001 8002]" {
+		t.Fatalf("got %v %v", got, err)
+	}
+	for _, bad := range []string{"", "0", "70000", "90-80", "x", "1-2000"} {
+		if _, err := ParsePorts(bad); err == nil {
+			t.Errorf("%q: want error", bad)
+		}
+	}
+}
