@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 64 64" role="img" aria-label="ZTG Scanner">
+  <title>ZTG Scanner: small radar and ZTG cursor</title>
+  <g transform="translate(3 3) scale(.9)">
+  <circle cx="25" cy="28" r="20" fill="none" stroke="#64748b" stroke-width="6"/>
+  <path d="M25 28 40 13" fill="none" stroke="#00FF41" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="25" cy="28" r="4" fill="#64748b"/>
+  <circle cx="16" cy="18" r="4" fill="#00FF41"/>
+  <path d="M54 36h5v20h-5Z" fill="#00FF41"/>
+  </g>
+</svg>

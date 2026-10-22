@@ -6,10 +6,10 @@ name: Scanner
 # Go comes from go.dev verified against a committed checksum, and no secret is used.
 on:
   pull_request:
-    paths: ['scanner/**', '.github/workflows/scanner.yml', 'scripts/ci/check-pe.sh', 'scripts/ci/install-go.sh', '.github/workflows/release-scanner.yml', 'scripts/signing/**']
+    paths: ['scanner/**', '.github/workflows/scanner.yml', 'scripts/ci/check-pe.sh', 'scripts/ci/install-go.sh', '.github/workflows/release-scanner.yml', 'scripts/signing/**', 'assets/icons/**', 'scripts/icons/**', 'scripts/ci/check-icons.mjs']
   push:
     branches: [main]
-    paths: ['scanner/**', '.github/workflows/scanner.yml', 'scripts/ci/check-pe.sh', 'scripts/ci/install-go.sh', '.github/workflows/release-scanner.yml', 'scripts/signing/**']
+    paths: ['scanner/**', '.github/workflows/scanner.yml', 'scripts/ci/check-pe.sh', 'scripts/ci/install-go.sh', '.github/workflows/release-scanner.yml', 'scripts/signing/**', 'assets/icons/**', 'scripts/icons/**', 'scripts/ci/check-icons.mjs']
 
 permissions:
   contents: read

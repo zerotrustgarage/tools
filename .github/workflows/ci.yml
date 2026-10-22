@@ -121,6 +121,7 @@ jobs:
         with:
           node-version: '22'
       - run: node scripts/ci/check-palette.mjs
+      - run: node scripts/ci/check-icons.mjs
 
   signing:
     name: Signing and installer mechanics

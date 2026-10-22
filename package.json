@@ -5,9 +5,10 @@
     "readout"
   ],
   "scripts": {
-    "check": "npm run check --workspaces --if-present && npm run test:signing && npm run check:palette",
+    "check": "npm run check --workspaces --if-present && npm run test:signing && npm run check:palette && npm run check:icons",
     "test:signing": "node --test \"scripts/signing/*.test.mjs\"",
-    "check:palette": "node scripts/ci/check-palette.mjs"
+    "check:palette": "node scripts/ci/check-palette.mjs",
+    "check:icons": "node scripts/ci/check-icons.mjs"
   },
   "engines": {
     "node": ">=22"
