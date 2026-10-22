@@ -30,7 +30,11 @@ try {
     const name = basename(file);
     const upload = new URL(release.upload_url.replace(/\{.*\}$/, ''));
     upload.searchParams.set('name', name);
-    const type = name.endsWith('.exe') ? 'application/vnd.microsoft.portable-executable' : 'text/plain';
+    const type = name.endsWith('.exe') ? 'application/vnd.microsoft.portable-executable'
+      : name.endsWith('.msi') ? 'application/x-msi'
+      : name.endsWith('.zip') ? 'application/zip'
+      : name.endsWith('.json') ? 'application/json'
+      : 'text/plain';
     await call(upload, {
       method: 'POST',
       headers: { 'content-type': type, 'content-length': String((await stat(file)).size) },

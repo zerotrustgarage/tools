@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Installs a pinned Go toolchain from go.dev, verified against a committed
-# SHA-256, for the self-hosted CI pool (which may not have Go). Prints the
+# SHA-256, for CI runners and local builds. Prints the
 # bin directory and adds it to GITHUB_PATH when running in Actions.
 set -euo pipefail
 

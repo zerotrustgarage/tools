@@ -19,7 +19,7 @@ machine.
 | `scripts/ci/` | Runner setup, the Windows cross-compile, the Wine installer test and the release publisher |
 | `scripts/notices.mjs` | Generates THIRD-PARTY-NOTICES.txt from the npm and Rust dependency graphs |
 | `.github/workflows/ci.yml` | Checks on every pull request and push to main; no secrets |
-| `.github/workflows/scanner.yml` | ZTG Scanner checks (Go), path-filtered to `scanner/`; no secrets |
+| `.github/workflows/scanner.yml` | ZTG Scanner checks (Go, packaging, portable/MSI lifecycle on Windows), path-filtered; no secrets |
 | `.github/workflows/release-<tool>.yml` | Manual release per tool: build, sign, package, attest, publish |
 | `docs/signing.md` | Signing design and the one-time owner setup |
 | `docs/roadmap.md` | Open work and recommended improvements for every tool |

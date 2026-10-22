@@ -6,10 +6,10 @@ name: Scanner
 # Go comes from go.dev verified against a committed checksum, and no secret is used.
 on:
   pull_request:
-    paths: ['scanner/**', '.github/workflows/scanner.yml', 'scripts/ci/check-pe.sh']
+    paths: ['scanner/**', '.github/workflows/scanner.yml', '.github/workflows/release-scanner.yml', 'scripts/signing/**', 'scripts/ci/check-pe.sh']
   push:
     branches: [main]
-    paths: ['scanner/**', '.github/workflows/scanner.yml', 'scripts/ci/check-pe.sh']
+    paths: ['scanner/**', '.github/workflows/scanner.yml', '.github/workflows/release-scanner.yml', 'scripts/signing/**', 'scripts/ci/check-pe.sh']
 
 permissions:
   contents: read
@@ -51,6 +51,9 @@ jobs:
         working-directory: scanner/app
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
       - run: ../ci/install-go.sh
       - name: gofmt
         run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
@@ -67,6 +70,43 @@ jobs:
           ./build-windows.sh 0.0.0-ci amd64 dist
           ../../scripts/ci/check-pe.sh dist/ZTGScanner.exe gui amd64
           ../../scripts/ci/check-pe.sh dist/ztg-scanner.exe console amd64
+      - name: Reproducible executable builds
+        run: |
+          ./build-windows.sh 0.0.0-ci amd64 "$RUNNER_TEMP/scanner-rebuild"
+          cmp dist/ZTGScanner.exe "$RUNNER_TEMP/scanner-rebuild/ZTGScanner.exe"
+          cmp dist/ztg-scanner.exe "$RUNNER_TEMP/scanner-rebuild/ztg-scanner.exe"
+      - name: Inventory and package
+        run: |
+          node --test ../ci/metadata.test.mjs
+          node ../ci/metadata.mjs dist 0.0.0
+          cp ../installer/README.txt dist/
+          ../../scripts/ci/apt-install.sh wixl msitools osslsigncode zip unzip
+          SCANNER_PAYLOAD="$PWD/dist" node --test ../ci/packaging.test.mjs
+          ../installer/build-msi.sh dist 0.0.0 dist/ZTG-Scanner.msi
+          ../installer/build-msi.sh dist 0.0.1 dist/ZTG-Scanner-upgrade.msi
+          ../installer/portable.sh dist dist/ZTG-Scanner-portable.zip
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scanner-windows-unsigned
+          path: scanner/app/dist/
+          if-no-files-found: error
+          retention-days: 3
+
+  windows-install:
+    name: Scanner on Windows (portable, install, launch, upgrade, uninstall)
+    needs: app
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: scanner-windows-unsigned
+          path: dist
+      - shell: pwsh
+        run: >-
+          ./scanner/ci/test-windows.ps1 -Msi dist/ZTG-Scanner.msi
+          -UpgradeMsi dist/ZTG-Scanner-upgrade.msi
+          -Portable dist/ZTG-Scanner-portable.zip -Version 0.0.0-ci
 
   ui:
     name: Scanner desktop UI (headless Chromium, binding mock)

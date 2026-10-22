@@ -105,6 +105,34 @@ Actions, Release ZTG Readout, Run workflow on `main`. The version comes from
 `readout/package.json` (it must match `src-tauri/Cargo.toml`), and the run refuses a
 version that is already released.
 
+For Scanner, run **Release ZTG Scanner** (`.github/workflows/release-scanner.yml`) on `main`.
+The numeric version comes from `scanner/VERSION`; its tag is `scanner-v<version>`. It uses the
+same `tools-signing` environment, publisher and verification policy. Its Go cross-compile
+does not download the Microsoft SDK or require `XWIN_ACCEPT_LICENSE`.
+
+Scanner's build job checks reproducible unsigned EXEs and produces the license notices and
+CycloneDX module SBOM. The sign job signs both the desktop app and CLI, packages them with
+Ubuntu's wixl/msitools, signs the MSI and creates the portable ZIP from those same signed EXEs.
+The MSI's standard Windows Installer uninstall needs no separate uninstaller binary.
+A Windows job then verifies signatures and timestamps, compares the MSI and ZIP payloads,
+and launches both installed and portable applications before the publish job attests all
+download assets and publishes them. PR CI tests unsigned packages, including MSI repair,
+major upgrades, downgrade refusal and removal. Interactive theme and title bar checks still
+need a person (roadmap O7/SC4).
+
+Scanner downloads are a signed x64 MSI, a portable ZIP containing signed EXEs, the SBOM,
+notices and `SHA256SUMS.txt`. For example:
+
+```powershell
+Get-AuthenticodeSignature .\ZTG-Scanner-0.4.0-x64.msi | Format-List Status, SignerCertificate, TimeStamperCertificate
+(Get-FileHash .\ZTG-Scanner-0.4.0-x64-portable.zip -Algorithm SHA256).Hash
+gh attestation verify .\ZTG-Scanner-0.4.0-x64-portable.zip --repo zerotrustgarage/tools
+```
+
+After extracting the portable ZIP, also check `Get-AuthenticodeSignature` on both EXEs.
+An archive itself has no Authenticode signature; the release checksum and provenance bind
+the archive, and Authenticode binds its executables.
+
 ## Cross-compiling for Windows
 
 `scripts/ci/build-windows.sh` runs the Tauri CLI with `cargo-xwin` (pinned version) as its

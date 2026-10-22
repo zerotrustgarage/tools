@@ -21,7 +21,7 @@ These need the repository owner; no code change can do them.
 | O4 | Approve accepting Microsoft's license for the CRT and Windows SDK files the cross-compile downloads (`XWIN_ACCEPT_LICENSE`) | It is accepted on the organization's behalf at every Windows build | Open |
 | O5 | Build provenance attestations | Public repositories get them on every plan, so every release is attested; the `ATTEST_PROVENANCE` switch is gone | **Done** (repository made public) |
 | O6 | Enable Dependabot security updates (Settings, Code security) | Version updates are configured; security updates are a separate switch and are not held by the 14-day cooldown | Open |
-| O7 | Test both apps on real Windows (Windows Sandbox is enough) | CI now installs, launches and uninstalls Readout on a real Windows runner (R8); what still needs a person is the interactive side: dragging the title bar, drag and drop from Explorer, the look of both themes, and all of Scanner | Open |
+| O7 | Test both apps on real Windows (Windows Sandbox is enough) | CI covers installation, launch and uninstall for Readout (R8) and Scanner (SC1). Interactive title bar behavior, drag and drop from Explorer and both themes still need a person | Open |
 | O8 | Keep the organization's self-hosted runner group (`proxmox-ci`) closed to public repositories (Organization settings, Actions, Runner groups: "Allow public repositories" off) | The repository is public, so anyone can open a pull request whose workflow would run on those runners, inside the organization's network and behind the egress IP that infrasec's deploy tokens trust. CI here runs on GitHub-hosted runners instead | Open (verify) |
 | O9 | Require approval for workflows from outside contributors (Settings, Actions, General, "Fork pull request workflows from outside collaborators": all outside collaborators) | Fork pull requests then run only after a maintainer has read them | Open |
 | O10 | Enable secret scanning with push protection and private vulnerability reporting (Settings, Code security) | Free on public repositories; push protection stops a credential from being committed in the first place | Open |
@@ -80,7 +80,7 @@ These need the repository owner; no code change can do them.
 
 | # | Item | Priority | Status |
 | --- | --- | --- | --- |
-| SC1 | S4, packaging and trust: Authenticode signing, MSI, portable ZIP, SBOM, release workflow with provenance. `scripts/signing/` and Readout's MSI approach are reusable | High | Open |
+| SC1 | S4, packaging and trust: Authenticode signing, MSI, portable ZIP, SBOM, release workflow with provenance. Reuses `scripts/signing/` and Readout's MSI approach; CI checks reproducible unsigned EXEs and Windows portable/install/launch/repair/upgrade/uninstall | High | **Built**; first signed release awaits O2 and O3 and a successful release run |
 | SC2 | S5, actions from results: SSH, RDP, Wake-on-LAN, ping and traceroute, saved favorites, compare two scans | High | Open |
 | SC3 | S6: macOS build, IPv6 neighbor discovery | Low | Open |
 | SC4 | The frameless title bar and theme switch have been tested in Chromium only, not on Windows (O7) | High | Open |
