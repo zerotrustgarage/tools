@@ -1,12 +1,12 @@
 package spike
 
 import (
-	"encoding/binary"
 	"encoding/base64"
+	"encoding/binary"
 	"os"
+	"reflect"
 	"slices"
 	"strings"
-	"reflect"
 	"testing"
 	"unicode/utf16"
 )
