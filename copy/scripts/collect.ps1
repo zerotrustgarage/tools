@@ -50,4 +50,8 @@ foreach ($name in @('help-default', 'help-unicode', 'serial-copy', 'mt8-copy')) 
         Write-Output ('RC0_FIXTURE ' + (@{ name = $name; base64 = $encoded } | ConvertTo-Json -Compress))
     }
 }
+$nativeLog = Join-Path $Output 'native-log.native.log'
+if (Test-Path -LiteralPath $nativeLog) {
+    Write-Output ('RC0_FIXTURE ' + (@{ name = 'native-log'; base64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($nativeLog)) } | ConvertTo-Json -Compress))
+}
 if ($spikeExit -ne 0) { throw "RC0 observations need investigation (spike exit $spikeExit)." }

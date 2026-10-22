@@ -24,7 +24,9 @@ creates:
 
 - Exact stdout and stderr bytes for help, list-only previews, serial and multithreaded
   copies, trailing backslashes in paths with spaces, and valid/invalid /QUIT commands.
-- Decoded UTF-16LE stdout when /UNICODE is requested. Malformed encoding is recorded.
+- UTF-16LE decode attempts when /UNICODE is requested, with errors recorded. This is an
+  experiment: captured console output on Server 2025 mixes encodings despite a BOM.
+- A /UNILOG copy with Unicode filename checks against the native log.
 - A JSON Lines timeline of pipe chunks (bytes are base64) and process I/O counters.
   Receipt time does not establish when a file completed. I/O counters are not copy totals.
 - The native and normalized exit codes, arguments, elapsed time and content/Unicode checks.

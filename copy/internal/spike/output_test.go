@@ -2,6 +2,10 @@ package spike
 
 import (
 	"encoding/binary"
+	"encoding/base64"
+	"os"
+	"slices"
+	"strings"
 	"reflect"
 	"testing"
 	"unicode/utf16"
@@ -57,4 +61,21 @@ func FuzzDecodeUnicode(f *testing.F) {
 	f.Fuzz(func(t *testing.T, data []byte) {
 		_, _ = DecodeUnicode(data)
 	})
+}
+
+func TestCapturedDefaultHelp(t *testing.T) {
+	encoded, err := os.ReadFile("testdata/windows-2025-en/help-default.stdout.base64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(encoded)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := HelpOptions(string(raw))
+	for _, required := range []string{"/MT", "/COPY", "/UNILOG", "/MIR", "/QUIT", "/256", "/A+", "/A-"} {
+		if !slices.Contains(options, required) {
+			t.Errorf("real help capture missing %s", required)
+		}
+	}
 }

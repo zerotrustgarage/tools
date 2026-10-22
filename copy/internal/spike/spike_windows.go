@@ -179,7 +179,7 @@ func runCase(ctx context.Context, engine, output, name string, args []string) (c
 			decoded, decodeErr := DecodeUnicode(raw)
 			if decodeErr != nil {
 				result.UnicodeError = decodeErr.Error()
-			} else if err := os.WriteFile(filepath.Join(output, name+".stdout.txt"), []byte(decoded), 0600); err != nil {
+			} else if err := os.WriteFile(filepath.Join(output, name+".utf16-attempt.txt"), []byte(decoded), 0600); err != nil {
 				return result, err
 			}
 		}
@@ -244,10 +244,10 @@ func Run(ctx context.Context, output string) error {
 	if _, err := execute("help-unicode", "/UNICODE", "/?"); err != nil {
 		return err
 	}
-	if help, err := os.ReadFile(filepath.Join(output, "help-unicode.stdout.txt")); err == nil {
+	if help, err := os.ReadFile(filepath.Join(output, "help-default.stdout.bin")); err == nil {
 		m.Options = HelpOptions(string(help))
 	}
-	for _, mode := range []string{"serial", "mt8", "trailing-slash"} {
+	for _, mode := range []string{"serial", "mt8", "trailing-slash", "native-log"} {
 		destination := filepath.Join(root, "destination "+mode)
 		srcArg, dstArg := source, destination
 		if mode == "trailing-slash" {
@@ -255,6 +255,9 @@ func Run(ctx context.Context, output string) error {
 			dstArg += "\\"
 		}
 		args := []string{srcArg, dstArg, "/E", "/COPY:DAT", "/DCOPY:DAT", "/XJ", "/R:0", "/W:0", "/BYTES", "/FP", "/UNICODE"}
+		if mode == "native-log" {
+			args = append(args, "/UNILOG:"+filepath.Join(output, "native-log.native.log"), "/TEE")
+		}
 		if mode == "mt8" {
 			args = append(args, "/MT:8")
 		}
@@ -273,7 +276,12 @@ func Run(ctx context.Context, output string) error {
 		m.Checks[mode+"-native-success"] = result.NativeExit < 8 && preview.NativeExit < 8
 		raw, _ := os.ReadFile(filepath.Join(output, mode+"-copy.stdout.bin"))
 		decoded, err := DecodeUnicode(raw)
-		m.Checks[mode+"-unicode-name"] = err == nil && strings.Contains(decoded, name)
+		m.Notes = append(m.Notes, fmt.Sprintf("%s /UNICODE pipe decoded as pure UTF-16LE preserves the fixture name: %t", mode, err == nil && strings.Contains(decoded, name)))
+		if mode == "native-log" {
+			nativeRaw, readErr := os.ReadFile(filepath.Join(output, "native-log.native.log"))
+			nativeText, decodeErr := DecodeUnicode(nativeRaw)
+			m.Checks["native-log-unicode-name"] = readErr == nil && decodeErr == nil && strings.Contains(nativeText, name)
+		}
 	}
 	valid, err := execute("quit-valid", source, filepath.Join(root, "quit destination"), "/E", "/QUIT", "/UNICODE")
 	if err != nil {

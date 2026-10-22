@@ -17,6 +17,16 @@ The collector runs only synthetic local data. It records:
 | 6. Go argument quoting | Real copies using spaces, Unicode and trailing backslashes; content equality checks. Volume roots and extended paths remain open. |
 | 10. Engine signing | System-resolved path, SHA-256, file version, Authenticode status and SignatureType from Windows. Whether production should enforce signature validation remains undecided. |
 
+## First observed decisions
+
+Real Server 2025 captures are committed under `internal/spike/testdata/windows-2025-en/`,
+with provenance. On that build, /UNICODE console output mixes narrow-byte text with
+UTF-16LE fragments despite a BOM. Keep exact bytes; do not decode the whole stream as
+UTF-16LE or use it to establish filename correctness. The spike now compares /UNILOG.
+Help option detection must use /? alone: /UNICODE /? is rejected as an invalid option.
+Both the full help and that invalid combination return 16, so exit 16 does not by itself
+establish that a valid help request failed.
+
 ## Still required before the RC0 review
 
 - Controlled large-file capture proving when file lines occur, serial and /MT.
