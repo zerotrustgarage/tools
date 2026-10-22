@@ -46,7 +46,7 @@ jobs:
             echo "readout-v$version is already released; bump the version first"; exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq clang lld llvm
+      - run: scripts/ci/apt-install.sh clang lld llvm
       - run: npm ci
       - run: npm run check --workspace @ztg-tools/readout
       - run: scripts/ci/build-windows.sh readout
@@ -84,7 +84,7 @@ jobs:
         run: cd .release && sha256sum --check --strict build.sha256
       # osslsigncode and openssl verify; Java runs jsign, which sign.mjs downloads and checks
       # against a pinned SHA-256. makensis packages. All from Ubuntu's signed archive.
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq nsis osslsigncode openjdk-17-jre-headless
+      - run: scripts/ci/apt-install.sh nsis osslsigncode openjdk-17-jre-headless
       - run: node scripts/signing/sign.mjs check
       # The only step that sees signing credentials. With no client secret configured it uses
       # the job's GitHub OIDC token through an Entra federated credential.
