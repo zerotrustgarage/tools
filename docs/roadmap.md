@@ -1,10 +1,10 @@
 # Roadmap: open work and recommended improvements
 
 Status as of October 22, 2026. This file lists what is not finished and what is recommended for
-ZTG Readout, ZTG Scanner and the repository as a whole. The recommendations come from the work so
+ZTG Readout, ZTG Scanner, ZTG TFTP and the repository as a whole. The recommendations come from the work so
 far and from comparing both tools with established products in their categories (sources at the
-end). Each tool's own design and checks are in its folder (`readout/`, `scanner/`); Scanner's
-slices are defined in `scanner/docs/design.md`.
+end). Each tool's own design and checks are in its folder (`readout/`, `scanner/`, `tftp/`); Scanner's
+slices are defined in `scanner/docs/design.md` and ZTG TFTP's in `tftp/docs/design.md`.
 
 Priority: **High** is visible in daily use or blocks a release; **Medium** is clearly worth doing;
 **Low** is polish or depends on outside changes.
@@ -103,7 +103,21 @@ From `scanner/docs/design.md`, section 10: remote control (Advanced IP Scanner b
 remote shutdown, vulnerability scanning, credential storage and cloud reporting. Keeping them out
 is what makes Scanner easy to approve in client and CMMC environments.
 
-## 5. Questions answered
+## 5. ZTG TFTP
+
+Proposed; design only. The research behind it (Tftpd64, SolarWinds TFTP Server, tftpd-hpa, atftpd,
+dnsmasq, Open TFTP Server, their CVE history and the gaps across them) is in
+`tftp/docs/research.md`, with its sources.
+
+| # | Item | Priority | Status |
+| --- | --- | --- | --- |
+| TF1 | Owner answers to the open questions in `tftp/docs/design.md` section 15: name, own protocol engine, default session length, which T6 candidates, retention of collected configs | High | Open |
+| TF2 | T1: protocol engine, read-only server, client, scope guard, limits, name policy, audit log, fuzzing, interop tests, `tftp.yml` | High | Open |
+| TF3 | T2: drop box uploads and findings on collected configs | High | Open |
+| TF4 | T3: Windows desktop app; its stylesheet joins `scripts/ci/check-palette.mjs` | Medium | Open |
+| TF5 | T4 service mode and T5 packaging and signing (reuses Scanner's S4 work, SC1) | Medium | Open |
+
+## 6. Questions answered
 
 **Would caching the build downloads make the installers larger?** No. The 2 GB is Microsoft's
 CRT and SDK and the test browser, used on the build machine while compiling and testing. None of it

@@ -190,6 +190,8 @@ Content-Security-Policy with no inline script; UI tests in headless Chromium aga
   recording both hashes).
 - Built-in client panel for get and put tests (Windows has no TFTP client by default, R5 item 9).
 - Export the session's audit log.
+- The ZTG palette from `design-tokens.json`; T3 adds the stylesheet to `scripts/ci/check-palette.mjs`
+  (repository rule 6).
 
 ## 11. Compliance mapping
 
