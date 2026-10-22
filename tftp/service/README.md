@@ -35,8 +35,10 @@ Stop-Service ZTGTFTP
 ```
 
 The service uses LocalService and manual startup. Grant `NT AUTHORITY\LOCAL SERVICE` read
-access to config and images and modify access to its audit/drop-box directories; grant those
-rights only on the directories you choose. Installation registers the Event Log source.
+access to config and images and modify access to its data parent. Let the service create its own
+drop-box directory so it owns the protected DACL. For a pre-existing drop box, set its owner to
+LocalService and grant that account full control before starting; Modify alone cannot set the
+required owner-only DACL. Grant these rights only on the directories you choose. Installation registers the Event Log source.
 Stop and remove an explicitly installed service before uninstalling the desktop MSI.
 Foreground `service run --config FILE` is also available for diagnosis.
 

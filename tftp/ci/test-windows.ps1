@@ -72,7 +72,7 @@ function Test-Service {
   if ($LASTEXITCODE -ne 0) { throw 'Cannot grant LocalService access to test data' }
   Set-Content "$base\images\boot.txt" 'test data'
   $config = Join-Path $base 'config.json'
-  @{root="$base\images";audit_dir="$base\audit";bind='127.0.0.1';port=49699;duration='1h';indefinite=$true;event_log=$true} | ConvertTo-Json | Set-Content $config
+  @{root="$base\images";audit_dir="$base\audit";bind='127.0.0.1';port=49699;duration='1h';indefinite=$true;event_log=$true;upload="$base\drop";upload_max=1024;free_floor=1} | ConvertTo-Json | Set-Content $config
   $cli = Join-Path $installDir 'ztg-tftp.exe'
   $created = $false
   try {
@@ -84,6 +84,15 @@ function Test-Service {
     $service.WaitForStatus('Running', [TimeSpan]::FromSeconds(15))
     & $cli get --port 49699 --timeout 1 --for 15s 127.0.0.1 boot.txt "$base\download.txt"
     if ($LASTEXITCODE -ne 0) { throw 'Windows service did not serve a file' }
+    & $cli put --port 49699 --timeout 1 --for 15s 127.0.0.1 "$base\images\boot.txt" startup-config
+    if ($LASTEXITCODE -ne 0) { throw 'LocalService upload failed' }
+    $receipt = @(Get-ChildItem "$base\drop" -Filter receipt.json -Recurse)
+    if ($receipt.Count -ne 1) { throw 'Service upload receipt missing' }
+    $record = Get-Content $receipt[0].FullName -Raw | ConvertFrom-Json
+    $payload = Join-Path "$base\drop" $record.stored_as
+    $acl = Get-Acl $payload
+    $sid = ([System.Security.Principal.NTAccount]::new($acl.Owner)).Translate([System.Security.Principal.SecurityIdentifier]).Value
+    if ($sid -ne 'S-1-5-19' -or -not $acl.AreAccessRulesProtected) { throw 'Service upload is not privately owned by LocalService' }
     & sc.exe control ZTGTFTP 6 | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'SCM configuration reload failed' }
   } finally {
