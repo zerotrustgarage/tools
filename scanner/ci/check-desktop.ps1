@@ -17,18 +17,26 @@ public static class ScannerDesktop {
 '@
 $p = Get-Process -Id $AppProcessId
 $handle = $p.MainWindowHandle
-[ScannerDesktop]::ShowWindow($handle, 9) | Out-Null
+[ScannerDesktop]::ShowWindow($handle, 3) | Out-Null
 [ScannerDesktop]::SetForegroundWindow($handle) | Out-Null
 $window = [System.Windows.Automation.AutomationElement]::FromHandle($handle)
 $scope = [System.Windows.Automation.TreeScope]::Descendants
 
 function Find-Control([string] $name, [System.Windows.Automation.ControlType] $type) {
-  $condition = New-Object System.Windows.Automation.AndCondition(
-    (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, $name)),
-    (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, $type))
+  $condition = [System.Windows.Automation.AndCondition]::new(
+    [System.Windows.Automation.AndCondition]::new(
+      [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, $name),
+      [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, $type)
+    ),
+    [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::IsOffscreenProperty, $false)
   )
   $found = $window.FindFirst($scope, $condition)
-  if (-not $found) { throw "Visible desktop control not found: $name" }
+  if (-not $found) {
+    $window.FindAll($scope, [System.Windows.Automation.Condition]::TrueCondition) | ForEach-Object {
+      Write-Host "$($_.Current.ControlType.ProgrammaticName): $($_.Current.Name) [$($_.Current.FrameworkId)]"
+    }
+    throw "Visible desktop control not found: $name"
+  }
   return $found
 }
 
@@ -48,12 +56,13 @@ foreach ($choice in @(
   @{ Name = 'light'; Keys = '{HOME}{DOWN}{ENTER}'; R = 245; G = 247; B = 249 }
 )) {
   $theme.SetFocus()
+  $theme.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern).Expand()
   [System.Windows.Forms.SendKeys]::SendWait($choice.Keys)
   $matched = $false
   for ($i = 0; $i -lt 50; $i++) {
     Start-Sleep -Milliseconds 100
     $rect = $window.Current.BoundingRectangle
-    $bitmap = New-Object System.Drawing.Bitmap([int]$rect.Width, [int]$rect.Height)
+    $bitmap = [System.Drawing.Bitmap]::new([int]$rect.Width, [int]$rect.Height)
     $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
     try {
       $graphics.CopyFromScreen([int]$rect.Left, [int]$rect.Top, 0, 0, $bitmap.Size)
@@ -68,5 +77,6 @@ foreach ($choice in @(
   if (-not $matched) { throw "Desktop did not visibly switch to $($choice.Name): observed $pixel" }
 }
 $theme.SetFocus()
+$theme.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern).Expand()
 [System.Windows.Forms.SendKeys]::SendWait('{HOME}{ENTER}')
 Write-Host "Desktop $Version: unified controls and actual dark/light pixels verified."
