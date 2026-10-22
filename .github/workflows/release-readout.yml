@@ -61,6 +61,7 @@ jobs:
         with:
           name: readout-unsigned
           path: .release/
+          include-hidden-files: true # the explicitly selected build-output directory is hidden
           if-no-files-found: error
           retention-days: 3
 
