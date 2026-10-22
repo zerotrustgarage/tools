@@ -1,6 +1,6 @@
 # CLAUDE.md (tftp)
 
-ZTG TFTP, a TFTP server and client for technicians, in Go. Status: T1 and T2 merged; desktop, service and release packaging implemented, under validation. Repository-wide
+ZTG TFTP, a TFTP server and client for technicians, in Go. Status: T1 and T2 merged; desktop, service and release packaging implemented. Repository-wide
 conventions (one folder per tool, GitHub-hosted runners, actions pinned by SHA, dependencies public for at least 14
 days) are in the root README.
 

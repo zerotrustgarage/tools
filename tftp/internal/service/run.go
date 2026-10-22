@@ -8,6 +8,7 @@ import (
 	"github.com/zerotrustgarage/tools/tftp/internal/session"
 	"io"
 	"os"
+	"sync"
 )
 
 type running struct {
@@ -15,6 +16,7 @@ type running struct {
 	file    *os.File
 	forward *Forward
 	done    chan error
+	cancel  context.CancelFunc
 }
 
 func start(ctx context.Context, c Config) (*running, error) {
@@ -31,18 +33,28 @@ func start(ctx context.Context, c Config) (*running, error) {
 		log.Close()
 		return nil, e
 	}
-	v.Audit = io.MultiWriter(log, f)
-	s, e := server.StartService(ctx, v)
+	child, cancel := context.WithCancel(ctx)
+	writer := &fanout{local: log, remote: f, cancel: cancel}
+	v.Audit = writer
+	s, e := server.StartService(child, v)
 	if e != nil {
+		cancel()
 		log.Close()
 		f.Close()
 		return nil, e
 	}
-	r := &running{s, log, f, make(chan error, 1)}
-	go func() { r.done <- s.Wait() }()
+	r := &running{server: s, file: log, forward: f, done: make(chan error, 1), cancel: cancel}
+	go func() {
+		e := s.Wait()
+		if e == nil {
+			e = writer.Err()
+		}
+		r.done <- e
+	}()
 	return r, nil
 }
 func (r *running) stop() error {
+	r.cancel()
 	r.server.Stop()
 	e := <-r.done
 	ce := r.file.Close()
@@ -69,6 +81,7 @@ func Run(ctx context.Context, name string, reload <-chan struct{}, status io.Wri
 		case <-ctx.Done():
 			return active.stop()
 		case e := <-active.done:
+			active.cancel()
 			active.file.Close()
 			active.forward.Close()
 			return e
@@ -95,3 +108,36 @@ func Run(ctx context.Context, name string, reload <-chan struct{}, status io.Wri
 		}
 	}
 }
+
+// fanout cancels on forwarding failure but continues recording shutdown outcomes
+// locally. A broken remote sink must not poison the local audit encoder.
+type fanout struct {
+	local, remote io.Writer
+	cancel        context.CancelFunc
+	mu            sync.Mutex
+	err           error
+}
+
+func (w *fanout) Write(b []byte) (int, error) {
+	n, e := w.local.Write(b)
+	if e != nil || n != len(b) {
+		if e == nil {
+			e = io.ErrShortWrite
+		}
+		return n, e
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.err == nil {
+		n, e = w.remote.Write(b)
+		if e == nil && n != len(b) {
+			e = io.ErrShortWrite
+		}
+		if e != nil {
+			w.err = e
+			w.cancel()
+		}
+	}
+	return len(b), nil
+}
+func (w *fanout) Err() error { w.mu.Lock(); defer w.mu.Unlock(); return w.err }

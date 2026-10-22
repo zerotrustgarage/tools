@@ -149,3 +149,21 @@ func TestTLSForwardFramingAndTrust(t *testing.T) {
 		t.Fatal("no frame")
 	}
 }
+
+type brokenSink struct{}
+
+func (brokenSink) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
+func TestForwardFailureRetainsShutdownAudit(t *testing.T) {
+	var local bytes.Buffer
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	w := &fanout{local: &local, remote: brokenSink{}, cancel: cancel}
+	for _, record := range []string{"complete\n", "aborted\n"} {
+		if _, e := w.Write([]byte(record)); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if ctx.Err() == nil || w.Err() == nil || local.String() != "complete\naborted\n" {
+		t.Fatal("forward failure lost local shutdown outcomes")
+	}
+}

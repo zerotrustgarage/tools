@@ -111,7 +111,7 @@ is what makes Scanner easy to approve in client and CMMC environments.
 
 ## 5. ZTG TFTP
 
-T1 and T2 merged; T3 to T5 and the two approved T6 features are implemented, under validation. The research behind it (Tftpd64, SolarWinds TFTP Server, tftpd-hpa, atftpd,
+T1 and T2 merged; T3 to T5 and the two approved T6 features are implemented. The research behind it (Tftpd64, SolarWinds TFTP Server, tftpd-hpa, atftpd,
 dnsmasq, Open TFTP Server, their CVE history and the gaps across them) is in
 `tftp/docs/research.md`, with its sources.
 
@@ -120,8 +120,8 @@ dnsmasq, Open TFTP Server, their CVE history and the gaps across them) is in
 | TF1 | T1 follows the proposed name, own protocol engine and 60-minute session; retention is manual deletion; include image manifests and Scanner import, defer HTTP boot and ProxyDHCP | High | Resolved |
 | TF2 | T1: protocol engine, read-only server, client, scope guard, limits, name policy, audit log, fuzzing, interop tests, `tftp.yml` | High | Merged |
 | TF3 | T2: drop box uploads and findings on collected configs | High | Merged |
-| TF4 | T3: Windows desktop app; palette enforcement, lifecycle and UI tests | Medium | Implemented, under validation |
-| TF5 | T4 service mode and T5 packaging and signing (reuses Scanner's S4 work, SC1) | Medium | Implemented, under validation |
+| TF4 | T3: Windows desktop app; palette enforcement, lifecycle and UI tests | Medium | Implemented |
+| TF5 | T4 service mode and T5 packaging and signing (reuses Scanner's S4 work, SC1) | Medium | Implemented |
 
 ## 6. Questions answered
 

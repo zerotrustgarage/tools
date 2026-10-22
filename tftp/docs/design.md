@@ -1,6 +1,6 @@
 # ZTG TFTP: design
 
-Status (October 22, 2026): T1 and T2 merged. T3 to T5 and the approved T6 features are implemented, under validation. The market research is in [research.md](research.md);
+Status (October 22, 2026): T1 and T2 merged. T3 to T5 and the approved T6 features are implemented. The market research is in [research.md](research.md);
 section numbers below refer to that document as "R" (R5 is its list of gaps).
 
 ## 1. Purpose
@@ -225,10 +225,10 @@ them, and TFTP itself cannot meet SC.L2-3.13.8.
 | --- | --- | --- |
 | T1 | Protocol engine (section 3), read-only server, client `get` and `put`, scope guard, allowlist, limits, name policy, audit log, fuzzing, interop tests, CI workflow `tftp.yml` | Merged |
 | T2 | Uploads: drop box, atomic commit, owner-only files, upload caps, findings on collected configs, change status | Merged |
-| T3 | Windows desktop app (section 10) | Implemented, under validation |
-| T4 | Service mode: Windows service and systemd unit, JSON configuration file with reload, syslog (RFC 5424, TCP with TLS) and Windows Event Log forwarding, path remap rules, per-MAC templated files for phone provisioning | Implemented, under validation |
-| T5 | Packaging and trust: Authenticode signing through `scripts/signing/`, MSI with the scoped firewall rule, portable ZIP, SBOM, `release-tftp.yml` with provenance attestation | Implemented, under validation |
-| T6 | Approved-image SHA-256 manifests and Scanner JSON allowlist import. HTTP boot and ProxyDHCP are deferred by owner decision. | Implemented, under validation |
+| T3 | Windows desktop app (section 10) | Implemented |
+| T4 | Service mode: Windows service and systemd unit, JSON configuration file with reload, syslog (RFC 5424, TCP with TLS) and Windows Event Log forwarding, path remap rules, per-MAC templated files for phone provisioning | Implemented |
+| T5 | Packaging and trust: Authenticode signing through `scripts/signing/`, MSI with the scoped firewall rule, portable ZIP, SBOM, `release-tftp.yml` with provenance attestation | Implemented |
+| T6 | Approved-image SHA-256 manifests and Scanner JSON allowlist import. HTTP boot and ProxyDHCP are deferred by owner decision. | Implemented |
 
 Each slice is reviewed before the next starts.
 
