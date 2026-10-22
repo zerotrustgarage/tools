@@ -19,6 +19,7 @@ $p = Get-Process -Id $AppProcessId
 $handle = $p.MainWindowHandle
 [ScannerDesktop]::ShowWindow($handle, 3) | Out-Null
 [ScannerDesktop]::SetForegroundWindow($handle) | Out-Null
+Start-Sleep -Milliseconds 500
 $window = [System.Windows.Automation.AutomationElement]::FromHandle($handle)
 $scope = [System.Windows.Automation.TreeScope]::Descendants
 
@@ -28,12 +29,18 @@ function Find-Control([string] $name, [System.Windows.Automation.ControlType] $t
       [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, $name),
       [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, $type)
     ),
-    [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::IsOffscreenProperty, $false)
+    [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::FrameworkIdProperty, 'Chrome')
   )
-  $found = $window.FindFirst($scope, $condition)
+  # Chromium creates its accessibility tree lazily on the first UIA request.
+  $found = $null
+  for ($attempt = 0; $attempt -lt 100; $attempt++) {
+    $found = $window.FindFirst($scope, $condition)
+    if ($found -and -not $found.Current.IsOffscreen) { break }
+    Start-Sleep -Milliseconds 100
+  }
   if (-not $found) {
     $window.FindAll($scope, [System.Windows.Automation.Condition]::TrueCondition) | ForEach-Object {
-      Write-Host "$($_.Current.ControlType.ProgrammaticName): $($_.Current.Name) [$($_.Current.FrameworkId)]"
+      Write-Host "$($_.Current.ControlType.ProgrammaticName): $($_.Current.Name) [$($_.Current.FrameworkId)] offscreen=$($_.Current.IsOffscreen) bounds=$($_.Current.BoundingRectangle)"
     }
     throw "Visible desktop control not found: $name"
   }
