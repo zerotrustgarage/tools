@@ -15,6 +15,15 @@ import (
 
 const serviceName = "ZTGTFTP"
 
+type eventStatus struct{ log *eventlog.Log }
+
+func (w eventStatus) Write(b []byte) (int, error) {
+	if e := w.log.Info(2, string(b)); e != nil {
+		return 0, e
+	}
+	return len(b), nil
+}
+
 type handler struct {
 	name string
 	out  io.Writer
@@ -22,6 +31,12 @@ type handler struct {
 
 func (h handler) Execute(_ []string, requests <-chan svc.ChangeRequest, status chan<- svc.Status) (bool, uint32) {
 	status <- svc.Status{State: svc.StartPending}
+	diagnostics, err := eventlog.Open(serviceName)
+	if err != nil {
+		return true, 1
+	}
+	defer diagnostics.Close()
+	h.out = eventStatus{diagnostics}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	reload := make(chan struct{}, 1)
@@ -33,6 +48,7 @@ func (h handler) Execute(_ []string, requests <-chan svc.ChangeRequest, status c
 		select {
 		case e := <-done:
 			if e != nil {
+				diagnostics.Error(3, e.Error())
 				return true, 1
 			}
 			return false, 0

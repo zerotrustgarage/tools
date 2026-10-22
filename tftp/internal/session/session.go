@@ -238,18 +238,30 @@ func (s *Session) Promote(storedAs, name string) error {
 	s.record(rec)
 	return nil
 }
+
+// Export fixes the length between serialized writes so exports end on a complete JSON record.
 func (s *Session) Export(w io.Writer) error {
+	s.op.Lock()
+	defer s.op.Unlock()
 	s.mu.Lock()
 	name := s.snapshot.Audit
+	writer := s.writer
 	s.mu.Unlock()
-	if name == "" {
+	if name == "" || writer == nil {
 		return errors.New("no session audit")
 	}
+	writer.mu.Lock()
 	f, e := os.Open(name)
+	if e != nil {
+		writer.mu.Unlock()
+		return e
+	}
+	info, e := f.Stat()
+	writer.mu.Unlock()
+	defer f.Close()
 	if e != nil {
 		return e
 	}
-	defer f.Close()
-	_, e = io.Copy(w, f)
+	_, e = io.CopyN(w, f, info.Size())
 	return e
 }

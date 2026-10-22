@@ -40,6 +40,10 @@ test('packages preserve the binaries, ZIP is reproducible and MSI is signable', 
     assert.match(conditions, /WEBVIEW2_VERSION/);
     assert.match(conditions, /Installed OR/); // removal and repair work without WebView2
     assert.match(conditions, /newer version/);
+    const actions = run('msiinfo', ['export', msi, 'CustomAction']);
+    assert.match(actions, /firewall install/);
+    assert.match(actions, /firewall remove/);
+    assert.match(actions, /FirewallRestore/);
     const registry = run('msiinfo', ['export', msi, 'Registry']);
     assert.doesNotMatch(registry, /RunOnce|CurrentVersion\\Run\b/);
     assert.notEqual(spawnSync(msiScript, [resolve(payload), '256.0.0', msi]).status, 0);

@@ -3,7 +3,9 @@ package session
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"github.com/zerotrustgarage/tools/tftp/internal/client"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -42,6 +44,17 @@ func TestLifecycleAndExport(t *testing.T) {
 	}
 	if !bytes.Contains(out.Bytes(), []byte(`"result":"complete"`)) {
 		t.Fatal(out.String())
+	}
+	dec := json.NewDecoder(bytes.NewReader(out.Bytes()))
+	for {
+		var rec map[string]any
+		e := dec.Decode(&rec)
+		if e == io.EOF {
+			break
+		}
+		if e != nil {
+			t.Fatal("export is not complete JSONL", e)
+		}
 	}
 	if e = s.Extend(1); e == nil {
 		t.Fatal("extended stopped session")

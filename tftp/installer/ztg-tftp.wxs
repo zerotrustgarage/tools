@@ -52,9 +52,11 @@
     <CustomAction Id="FirewallInstall" FileKey="TFTPCLI" ExeCommand="firewall install" Execute="deferred" Impersonate="no" Return="check" />
     <CustomAction Id="FirewallRemove" FileKey="TFTPCLI" ExeCommand="firewall remove" Execute="deferred" Impersonate="no" Return="check" />
     <CustomAction Id="FirewallRollback" FileKey="TFTPCLI" ExeCommand="firewall remove" Execute="rollback" Impersonate="no" Return="ignore" />
+    <CustomAction Id="FirewallRestore" FileKey="TFTPCLI" ExeCommand="firewall install" Execute="rollback" Impersonate="no" Return="ignore" />
     <InstallExecuteSequence>
       <Custom Action="FirewallRollback" After="InstallFiles">NOT REMOVE~="ALL"</Custom>
       <Custom Action="FirewallInstall" After="FirewallRollback">NOT REMOVE~="ALL"</Custom>
+      <Custom Action="FirewallRestore" Before="FirewallRemove">REMOVE~="ALL"</Custom>
       <Custom Action="FirewallRemove" Before="RemoveFiles">REMOVE~="ALL"</Custom>
     </InstallExecuteSequence>
     <Feature Id="Main" Title="ZTG TFTP" Level="1">
