@@ -100,8 +100,8 @@ jobs:
       - run: node scripts/signing/sign.mjs check
       - name: Sign executables, package MSI, sign MSI
         env:
-          AZURE_SIGNING_TENANT_ID: ${{ vars.AZURE_SIGNING_TENANT_ID }}
-          AZURE_SIGNING_CLIENT_ID: ${{ vars.AZURE_SIGNING_CLIENT_ID }}
+          AZURE_SIGNING_TENANT_ID: ${{ vars.AZURE_SIGNING_TENANT_ID || secrets.AZURE_SIGNING_TENANT_ID }}
+          AZURE_SIGNING_CLIENT_ID: ${{ vars.AZURE_SIGNING_CLIENT_ID || secrets.AZURE_SIGNING_CLIENT_ID }}
           AZURE_SIGNING_CLIENT_SECRET: ${{ secrets.AZURE_SIGNING_CLIENT_SECRET }}
           ZTG_SIGN_NAME: ZTG Scanner
           ZTG_SIGN_URL: https://ztg.sh

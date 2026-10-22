@@ -13,7 +13,7 @@ const { chromium } = createRequire(import.meta.url)("playwright");
 const here = fileURLToPath(new URL(".", import.meta.url));
 const root = join(here, "..", "frontend");
 const shots = process.argv[2];
-const types = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript" };
+const types = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript", ".png": "image/png" };
 
 const server = createServer(async (req, res) => {
   const path = normalize(new URL(req.url, "http://x").pathname).replace(/^(\.\.[/\\])+/, "");

@@ -23,6 +23,7 @@ machine.
 | `.github/workflows/release-<tool>.yml` | Manual release per tool: build, sign, package, attest, publish |
 | `docs/signing.md` | Signing design and the one-time owner setup |
 | `docs/roadmap.md` | Open work and recommended improvements for every tool |
+| `assets/icons/` | Transparent application and tray icons for Scanner, Copy, TFTP and Readout; SVG sources and export instructions |
 | `design-tokens.json` | The ZTG palette every tool's stylesheet is checked against |
 
 ## Checks
@@ -54,6 +55,11 @@ Every tool uses the ZTG palette. `design-tokens.json` is a byte-identical copy o
 token file (`zerotrustgarage/ztg`, generated in `zerotrustgarage/infrasec`), and
 `scripts/ci/check-palette.mjs` (CI job "ZTG palette") fails when a tool's stylesheet drifts from
 it. To change a colour, change the canonical file and copy it here.
+
+Application icons use distinct glyphs and the green cursor from the ZTG wordmark, with transparent
+backgrounds. See [assets/icons/](assets/icons/) for sources and [docs/icons.html](docs/icons.html) for
+light/dark and small-size previews. Scanner and Readout use the new assets in their executables,
+installers and shortcuts. Copy/TFTP desktop and tray consumers remain in their planned slices.
 
 ## Dependency policy
 

@@ -1,6 +1,6 @@
 # ZTG TFTP
 
-A TFTP server and client for technicians. T1 and T2 are implemented and ready for review: a time-boxed server,
+A TFTP server and client for technicians. T1 and T2 are implemented and merged: a time-boxed server,
 CLI `get`, `put` and `findings`, an owned protocol engine, opt-in collection into a separate drop box, configuration
 findings, change tracking and JSON Lines audit records. The plan is in
 [docs/design.md](docs/design.md) and the research behind it in [docs/research.md](docs/research.md).

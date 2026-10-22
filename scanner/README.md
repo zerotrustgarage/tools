@@ -9,8 +9,8 @@ remote access software, and nothing installed on the hosts it scans. The design,
 [docs/design.md](docs/design.md).
 
 Status: engine and CLI (S1), Windows desktop app (S2), SNMPv3 inventory (S3) and the packaging and release
-pipeline (S4) are built. A signed release still needs the owner signing setup in
-[../docs/signing.md](../docs/signing.md). Actions, site inventories and scan comparisons (S5) are built.
+pipeline (S4) are built. Owner signing setup is complete; the first signed Scanner release still needs a successful run of
+the release workflow, using the shared identity in [../docs/signing.md](../docs/signing.md). Actions, site inventories and scan comparisons (S5) are built.
 
 ## Usage
 
