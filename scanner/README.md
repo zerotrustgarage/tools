@@ -8,7 +8,9 @@ ZTG Scanner is ZTG's replacement for Advanced IP Scanner: source, build chain an
 remote access software, and nothing installed on the hosts it scans. The design, safety model and roadmap are in
 [docs/design.md](docs/design.md).
 
-Status: engine and CLI (S1), Windows desktop app (S2) and SNMPv3 inventory (S3) are built.
+Status: engine and CLI (S1), Windows desktop app (S2), SNMPv3 inventory (S3) and the packaging and release
+pipeline (S4) are built. A signed release still needs the owner signing setup in
+[../docs/signing.md](../docs/signing.md). Actions from results and saved scan comparisons (S5) remain planned.
 
 ## Usage
 
@@ -80,6 +82,45 @@ It needs the Microsoft Edge WebView2 runtime, which Windows 10 and 11 include.
 The window draws its own title bar in the app's theme (Wails frameless mode): drag it to move the window,
 double-click it to maximize. The theme button beside Settings switches between Auto (the Windows setting), Light
 and Dark, and the choice is remembered.
+
+## Windows packages and releases
+
+`installer/` builds a Windows x64 MSI for managed deployment and a portable ZIP. Both contain the desktop app,
+CLI, license texts, an IEEE data attribution, and a CycloneDX 1.6 SBOM generated from the modules actually linked
+into the two executables. The MSI adds an all-users Start menu shortcut and supports repair and major upgrades;
+it refuses downgrades and installs no service, driver, scan schedule, firewall exception or PATH entry.
+The MSI needs administrator rights to install; scanning and using the portable tools do not.
+
+The desktop app requires the Microsoft Edge WebView2 Runtime. The MSI checks for it and fails before installation
+if it is absent. Deploy the machine-wide runtime first when using Intune, Group Policy or an RMM. No runtime is
+downloaded or bundled by the MSI. The CLI works without WebView2. Portable packaging uses the current user's
+normal desktop preferences; it does not isolate settings. Uninstalling preserves exported scans and preferences.
+
+To build unsigned packages locally on Linux (Go, Node 22+, `wixl`, `msitools`, `zip`):
+
+```bash
+version=$(cat scanner/VERSION)       # from the repository root
+scanner/app/build-windows.sh "$version" amd64 .release/scanner
+node scanner/ci/metadata.mjs .release/scanner "$version"
+cp scanner/installer/README.txt .release/scanner/
+scanner/installer/build-msi.sh .release/scanner "$version" dist/ZTG-Scanner-x64.msi
+scanner/installer/portable.sh .release/scanner dist/ZTG-Scanner-x64-portable.zip
+node --test scanner/ci/metadata.test.mjs
+SCANNER_PAYLOAD="$PWD/.release/scanner" node --test scanner/ci/packaging.test.mjs  # also needs osslsigncode, openssl, unzip
+```
+
+`scanner/VERSION` is the release version (numeric `X.Y.Z`, within Windows Installer limits). The release workflow
+`.github/workflows/release-scanner.yml` runs manually from `main` and refuses an existing `scanner-v<version>` tag.
+It checks that two builds produce identical unsigned executables. `-trimpath`, a fixed version and commit, disabled
+VCS stamping and an empty Go build ID remove local paths and build IDs. This reproducibility claim covers the
+unsigned executables with the same source, toolchain and module versions, not MSI container metadata or signatures
+with live timestamps. Portable archives have fixed entry timestamps and permissions.
+
+The workflow separates compilation, signing through `tools-signing`, Windows validation and publication. It signs
+and verifies both EXEs before embedding them in the MSI, then signs and verifies the MSI. Windows must validate the
+signatures and launch both installed and portable apps before publication. Downloads include `SHA256SUMS.txt`, the
+SBOM and notices, with provenance attested for every asset. See [../docs/signing.md](../docs/signing.md) for setup
+and verification. PR CI uses unsigned packages and also checks MSI upgrades and downgrade refusal on `windows-2025`.
 
 ## Building
 

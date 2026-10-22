@@ -80,7 +80,7 @@ These need the repository owner; no code change can do them.
 
 | # | Item | Priority | Status |
 | --- | --- | --- | --- |
-| SC1 | S4, packaging and trust: Authenticode signing, MSI, portable ZIP, SBOM, release workflow with provenance. `scripts/signing/` and Readout's MSI approach are reusable | High | Open |
+| SC1 | S4, packaging and trust: Authenticode signing, MSI, portable ZIP, SBOM, release workflow with provenance. Reuses `scripts/signing/` and Readout's MSI approach; CI checks reproducible unsigned EXEs and Windows portable/install/launch/repair/upgrade/uninstall | High | **Built**; first signed release awaits O2 and O3 and a successful release run |
 | SC2 | S5, actions from results: SSH, RDP, Wake-on-LAN, ping and traceroute, saved favorites, compare two scans | High | Open |
 | SC3 | S6: macOS build, IPv6 neighbor discovery | Low | Open |
 | SC4 | The frameless title bar and theme switch have been tested in Chromium only, not on Windows (O7) | High | Open |

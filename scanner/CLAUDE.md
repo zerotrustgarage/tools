@@ -25,3 +25,8 @@ go test -race ./...
 cd app && go vet ./... && GOOS=windows CGO_ENABLED=0 go vet ./... && go test -race ./...
 NODE_PATH=$(npm root -g) node uitest/run.mjs   # needs playwright
 ```
+
+Packaging checks run from the repository root: `node --test scanner/ci/metadata.test.mjs`, then
+`SCANNER_PAYLOAD=<Windows build directory with metadata> node --test scanner/ci/packaging.test.mjs`.
+See `scanner/README.md` for preparing that payload. They require wixl, msitools, osslsigncode,
+openssl, zip and unzip. `scanner/ci/test-windows.ps1` runs the portable/MSI lifecycle on Windows.

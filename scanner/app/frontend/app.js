@@ -810,6 +810,7 @@
 
     const [version, defaults, suggestions] = await Promise.all([api.Version(), api.Defaults(), api.Suggestions()]);
     document.title = "ZTG Scanner " + version;
+    if (rt && rt.WindowSetTitle) rt.WindowSetTitle(document.title);
     state.defaults = defaults;
     loadSettings();
 
