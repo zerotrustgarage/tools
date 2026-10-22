@@ -65,6 +65,19 @@ function Assert-Firewall {
     if (-not $program.StartsWith($installDir + '\')) { throw "Unexpected firewall program $program" }
   }
 }
+function Remove-PrivateFixture([string] $path) {
+  # Reclaim each directory before enumerating its protected children. Bulk /t
+  # cannot traverse owner-only subdirectories before their ACLs are repaired.
+  & takeown.exe /f $path /a | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "Cannot reclaim test fixture $path" }
+  & icacls.exe $path /grant '*S-1-5-32-544:F' /c | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "Cannot grant fixture cleanup rights $path" }
+  $item = Get-Item -LiteralPath $path -Force
+  if ($item.PSIsContainer) {
+    foreach ($child in Get-ChildItem -LiteralPath $path -Force) { Remove-PrivateFixture $child.FullName }
+  }
+  Remove-Item -LiteralPath $path -Force
+}
 function Test-Service {
   $base = Join-Path $env:ProgramData ('ZTGTFTP-CI-' + [guid]::NewGuid())
   New-Item -ItemType Directory -Path "$base\images" -Force | Out-Null
@@ -116,9 +129,7 @@ function Test-Service {
     }
     # Restore administrator ownership only during teardown of this disposable
     # fixture; ordinary reads above must respect the service's protected DACL.
-    & takeown.exe /f $base /r /d y /a | Out-Null
-    & icacls.exe $base /grant '*S-1-5-32-544:(OI)(CI)F' /t /c | Out-Null
-    Remove-Item $base -Recurse -Force
+    Remove-PrivateFixture $base
   }
 }
 
