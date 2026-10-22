@@ -137,5 +137,9 @@ func (s *Store) readOriginal(name string) (*os.File, error) {
 		f.Close()
 		return nil, errors.New("not a regular file")
 	}
+	if e = checkReadable(f); e != nil {
+		f.Close()
+		return nil, e
+	}
 	return f, nil
 }
