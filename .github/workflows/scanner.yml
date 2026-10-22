@@ -1,0 +1,60 @@
+name: scanner
+
+on:
+  push:
+    paths: ["scanner/**", ".github/workflows/scanner.yml"]
+  pull_request:
+    paths: ["scanner/**", ".github/workflows/scanner.yml"]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: scanner
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: scanner/go.mod
+          cache-dependency-path: scanner/go.sum
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: vet (linux, windows)
+        run: |
+          go vet ./...
+          GOOS=windows GOARCH=amd64 go vet ./...
+      - name: test
+        run: go test -race ./...
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { goos: windows, goarch: amd64, ext: .exe }
+          - { goos: windows, goarch: arm64, ext: .exe }
+          - { goos: linux, goarch: amd64, ext: "" }
+          - { goos: linux, goarch: arm64, ext: "" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: scanner/go.mod
+          cache-dependency-path: scanner/go.sum
+      - name: build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_SHA::12}" -o dist/ztg-scanner-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/ztg-scanner
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ztg-scanner-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: scanner/dist/
+          retention-days: 14
