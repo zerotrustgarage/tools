@@ -22,7 +22,9 @@ The collector runs only synthetic local data. It records:
 Real Server 2025 captures are committed under `internal/spike/testdata/windows-2025-en/`,
 with provenance. On that build, /UNICODE console output mixes narrow-byte text with
 UTF-16LE fragments despite a BOM. Keep exact bytes; do not decode the whole stream as
-UTF-16LE or use it to establish filename correctness. The spike now compares /UNILOG.
+UTF-16LE or use it to establish filename correctness. The /UNILOG experiment passed: the complete native log decoded as UTF-16LE and preserved
+all fixture filename characters while the simultaneous pipe still mixed encodings. Use native
+logs for filename correctness on this build; repeat the experiment across the support matrix.
 Help option detection must use /? alone: /UNICODE /? is rejected as an invalid option.
 Both the full help and that invalid combination return 16, so exit 16 does not by itself
 establish that a valid help request failed.

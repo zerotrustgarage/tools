@@ -79,3 +79,21 @@ func TestCapturedDefaultHelp(t *testing.T) {
 		}
 	}
 }
+
+func TestCapturedNativeLog(t *testing.T) {
+	encoded, err := os.ReadFile("testdata/windows-2025-en/native-log.base64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(encoded)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeUnicode(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(decoded, "café-日本語-😀.txt") {
+		t.Fatal("native log lost the non-ASCII fixture filename")
+	}
+}

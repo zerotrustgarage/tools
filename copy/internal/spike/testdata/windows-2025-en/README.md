@@ -21,3 +21,10 @@ Findings for this build only:
 The production parser must not assume a pure UTF-16LE console stream based on the BOM.
 Compare /UNILOG before choosing the authoritative name/summary stream.
 These captures do not resolve the full Windows version and locale matrix.
+
+Native /UNILOG evidence was subsequently captured in successful run
+[39829570047](https://github.com/zerotrustgarage/tools/actions/runs/39829570047)
+from commit ee43e613b6a096b8ec35ca8c4460991ff4ec53a9. `native-log.base64` contains the exact native
+log. Its full stream decodes as UTF-16LE and preserves café-日本語-😀.txt, while
+the simultaneous console stream still mixes encodings. This supports using native
+logs for filename correctness on this build; other builds and locales remain open.
