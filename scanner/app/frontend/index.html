@@ -80,6 +80,20 @@
       <label class="check"><input type="checkbox" data-probe="mdns"> mDNS (Bonjour) names and services</label>
       <label class="check"><input type="checkbox" data-probe="ssdp"> UPnP device descriptions</label>
     </fieldset>
+    <fieldset id="snmp-fields">
+      <legend>SNMPv3 inventory (optional)</legend>
+      <label class="check"><input type="checkbox" data-probe="snmp" id="snmp-on"> Query devices with SNMPv3 (read-only, authPriv)</label>
+      <div class="snmp-creds">
+        <label>Username <input id="snmp-user" type="text" autocomplete="off" spellcheck="false"></label>
+        <div class="row">
+          <label>Authentication <select id="snmp-auth"></select></label>
+          <label>Privacy <select id="snmp-priv"></select></label>
+        </div>
+        <label>Authentication passphrase <input id="snmp-auth-pass" type="password" autocomplete="off"></label>
+        <label>Privacy passphrase <input id="snmp-priv-pass" type="password" autocomplete="off"></label>
+        <p class="muted small">Model, serial, firmware and location from switches, firewalls, printers and NAS units. Passphrases stay in memory for this session and are never saved or exported. SNMP v1/v2c, MD5 and DES are not supported.</p>
+      </div>
+    </fieldset>
     <label>TCP ports <textarea id="ports" rows="3" spellcheck="false"></textarea></label>
     <div class="row">
       <label>Hosts in parallel <input id="concurrency" type="number" min="1" max="512"></label>

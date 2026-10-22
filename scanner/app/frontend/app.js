@@ -111,6 +111,7 @@
       h.ip, h.name, h.mac, h.vendor, h.type, h.dns_name,
       h.netbios && h.netbios.computer, h.netbios && h.netbios.workgroup,
       h.mdns && h.mdns.hostname, h.upnp && h.upnp.manufacturer, h.upnp && h.upnp.model_name,
+      h.snmp && h.snmp.sys_name, h.snmp && h.snmp.model, h.snmp && h.snmp.serial, h.snmp && h.snmp.sys_location,
       ...(h.services || []).flatMap((s) => [String(s.port), s.name, s.product, s.http && s.http.title]),
     ].filter(Boolean).join(" ").toLowerCase();
     return q.split(/\s+/).every((term) => hay.includes(term));
@@ -259,7 +260,7 @@
         ["MAC address", h.mac ? el("span", { class: "mono" }, h.mac, " ", copyButton(h.mac)) : ""],
         ["Manufacturer", h.mac_randomized ? "Private (randomized) MAC address: no manufacturer" : h.vendor],
         ["UPnP maker", up && up.manufacturer],
-        ["Model", up && [up.model_name, up.model_number].filter(Boolean).join(" ")],
+        ["Model", (up && [up.model_name, up.model_number].filter(Boolean).join(" ")) || (h.snmp && h.snmp.model)],
         ["UPnP type", up && up.device_type],
       ])),
       ...section("Names", kv([
@@ -270,6 +271,20 @@
         ["UPnP name", up && up.friendly_name],
         ["UPnP server", up && up.server],
       ])),
+      ...section("SNMP", h.snmp ? kv([
+        ["System name", h.snmp.sys_name],
+        ["Description", h.snmp.sys_descr],
+        ["Vendor", [h.snmp.manufacturer, h.snmp.enterprise].filter(Boolean).join(" · ")],
+        ["Model", h.snmp.model],
+        ["Serial", h.snmp.serial ? el("span", { class: "mono" }, h.snmp.serial, " ", copyButton(h.snmp.serial)) : ""],
+        ["Firmware", h.snmp.firmware_rev || h.snmp.software_rev],
+        ["Hardware rev", h.snmp.hardware_rev],
+        ["Location", h.snmp.sys_location],
+        ["Contact", h.snmp.sys_contact],
+        ["Interfaces", h.snmp.interfaces],
+        ["Uptime", h.snmp.uptime_seconds ? Math.floor(h.snmp.uptime_seconds / 86400) + " days" : ""],
+        ["Object ID", h.snmp.sys_object_id],
+      ]) : null),
       ...section("Advertised services (mDNS)", md && md.services && md.services.length ? el("div", { class: "chips" }, md.services.map((s) => el("span", { text: s }))) : null),
       ...section("Open ports", (h.services || []).map((s) => serviceCard(h, s))),
       ...section("Findings", (h.findings || []).map((f) => el("div", { class: "finding " + f.severity }, el("strong", { text: f.severity.toUpperCase() + " " }), f.message))),
@@ -312,6 +327,15 @@
       concurrency: Number(s.concurrency) || 0,
       timeout_ms: Number(s.timeout_ms) || 0,
       allow_public: !!allowPublic,
+      snmp: s.probes.snmp
+        ? {
+            username: $("snmp-user").value.trim(),
+            auth_protocol: $("snmp-auth").value,
+            auth_passphrase: $("snmp-auth-pass").value,
+            priv_protocol: $("snmp-priv").value,
+            priv_passphrase: $("snmp-priv-pass").value,
+          }
+        : null,
     };
   }
 
@@ -375,6 +399,15 @@
     const d = state.defaults;
     const saved = store.get("settings", null);
     state.settings = saved && saved.probes ? saved : { ports: d.ports, probes: { ...d.probes }, concurrency: d.concurrency, timeout_ms: d.timeout_ms };
+    state.settings.probes.snmp = false; // opt-in for each session
+    const fill = (sel, opts, cur) => {
+      sel.replaceChildren(...opts.map((o) => el("option", { value: o, text: o })));
+      sel.value = opts.includes(cur) ? cur : opts[0];
+    };
+    const snmp = state.settings.snmp || {};
+    fill($("snmp-auth"), d.snmp_auth_protocols || [], snmp.auth_protocol || "SHA-256");
+    fill($("snmp-priv"), d.snmp_priv_protocols || [], snmp.priv_protocol || "AES");
+    $("snmp-user").value = snmp.username || "";
     paintSettings();
   }
 
@@ -384,6 +417,7 @@
     $("ports").value = s.ports;
     $("concurrency").value = s.concurrency;
     $("timeout").value = s.timeout_ms;
+    $("snmp-fields").classList.toggle("on", !!s.probes.snmp);
   }
 
   function readSettings() {
@@ -392,7 +426,11 @@
     s.ports = $("ports").value.trim();
     s.concurrency = Number($("concurrency").value) || state.defaults.concurrency;
     s.timeout_ms = Number($("timeout").value) || state.defaults.timeout_ms;
-    store.set("settings", s);
+    s.snmp = { username: $("snmp-user").value.trim(), auth_protocol: $("snmp-auth").value, priv_protocol: $("snmp-priv").value };
+    $("snmp-fields").classList.toggle("on", !!s.probes.snmp);
+    // Saved: the username and protocols. Never saved: the passphrases, and
+    // whether SNMP is on (it is opt-in each session).
+    store.set("settings", { ...s, probes: { ...s.probes, snmp: false } });
   }
 
   function toggle(btn, panel, open) {

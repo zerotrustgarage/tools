@@ -144,6 +144,8 @@ td.mono, .mono { font-family: var(--mono); font-size: 12px; }
 .drawer label { display: grid; gap: 4px; margin-bottom: 10px; }
 .drawer label.check { display: flex; margin: 0; }
 .row { display: flex; gap: 12px; }
+.drawer input[type=password], .drawer input[type=text], .drawer select { width: 100%; }
+#snmp-fields:not(.on) .snmp-creds { display: none; }
 .row > label { flex: 1; }
 .row.end { justify-content: flex-end; }
 

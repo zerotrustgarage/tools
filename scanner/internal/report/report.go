@@ -41,7 +41,7 @@ func JSON(w io.Writer, doc Document) error {
 }
 
 // CSVHeader is the column order of the CSV export.
-var CSVHeader = []string{"ip", "status", "name", "type", "mac", "vendor", "mac_randomized", "dns_name", "netbios_name", "workgroup", "mdns_name", "manufacturer", "model", "open_ports", "services", "rtt_ms", "ttl", "os_hint", "findings", "evidence"}
+var CSVHeader = []string{"ip", "status", "name", "type", "mac", "vendor", "mac_randomized", "dns_name", "netbios_name", "workgroup", "mdns_name", "manufacturer", "model", "open_ports", "services", "rtt_ms", "ttl", "os_hint", "findings", "evidence", "serial", "firmware", "location", "snmp_descr"}
 
 // CSV writes one row per host.
 func CSV(w io.Writer, hosts []scan.Host) error {
@@ -70,6 +70,20 @@ func csvRow(h scan.Host) []string {
 		maker = h.UPnP.Manufacturer
 		model = strings.TrimSpace(h.UPnP.ModelName + " " + h.UPnP.ModelNumber)
 	}
+	var serial, firmware, location, descr string
+	if h.SNMP != nil {
+		if maker == "" {
+			maker = h.SNMP.Manufacturer
+		}
+		if model == "" {
+			model = h.SNMP.Model
+		}
+		serial, location, descr = h.SNMP.Serial, h.SNMP.SysLocation, h.SNMP.SysDescr
+		firmware = h.SNMP.Firmware
+		if firmware == "" {
+			firmware = h.SNMP.Software
+		}
+	}
 	var findings []string
 	for _, f := range h.Findings {
 		findings = append(findings, f.Severity+":"+f.Code)
@@ -86,6 +100,7 @@ func csvRow(h scan.Host) []string {
 		h.IP, h.Status, safe(h.Name), h.Type, h.MAC, safe(h.Vendor), strconv.FormatBool(h.MACRandomized),
 		safe(h.DNSName), safe(nbName), safe(wg), safe(mdnsName), safe(maker), safe(model),
 		Ports(h), safe(ServiceSummary(h)), rtt, ttl, h.OSHint, strings.Join(findings, " "), strings.Join(h.Evidence, " "),
+		safe(serial), safe(firmware), safe(location), safe(descr),
 	}
 }
 

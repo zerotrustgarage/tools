@@ -20,6 +20,8 @@ type Evidence struct {
 	UPnPType      string
 	UPnPMaker     string
 	UPnPModel     string
+	SNMPDescr     string // sysDescr and ENTITY-MIB model
+	SNMPMaker     string // ENTITY-MIB manufacturer and sysObjectID enterprise
 	NetBIOSGroups []byte // suffixes of group names
 	NetBIOS       bool
 	Telnet        bool
@@ -54,7 +56,7 @@ func has(e *Evidence, ports ...int) bool {
 }
 
 func vendorIs(e *Evidence, names ...string) (string, bool) {
-	v := strings.ToLower(e.Vendor + " " + e.UPnPMaker)
+	v := strings.ToLower(e.Vendor + " " + e.UPnPMaker + " " + e.SNMPMaker)
 	for _, n := range names {
 		if strings.Contains(v, n) {
 			return n, true
@@ -64,7 +66,7 @@ func vendorIs(e *Evidence, names ...string) (string, bool) {
 }
 
 func textHas(e *Evidence, words ...string) (string, bool) {
-	all := strings.ToLower(strings.Join(e.HTTPText, " ") + " " + e.UPnPType + " " + e.UPnPModel + " " + e.Hostname)
+	all := strings.ToLower(strings.Join(e.HTTPText, " ") + " " + e.UPnPType + " " + e.UPnPModel + " " + e.SNMPDescr + " " + e.Hostname)
 	for _, w := range words {
 		if strings.Contains(all, w) {
 			return w, true
@@ -272,7 +274,7 @@ var ndaaVendors = []string{"huawei", "zte corporation", "hytera", "hikvision", "
 // Findings flags conditions worth a technician's attention.
 func Findings(e *Evidence, now time.Time) []Finding {
 	var out []Finding
-	v := strings.ToLower(e.Vendor + " " + e.UPnPMaker)
+	v := strings.ToLower(e.Vendor + " " + e.UPnPMaker + " " + e.SNMPMaker)
 	for _, n := range ndaaVendors {
 		if strings.Contains(v, n) {
 			out = append(out, Finding{

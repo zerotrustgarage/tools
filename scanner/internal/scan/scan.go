@@ -39,6 +39,9 @@ type Probes struct {
 	NetBIOS    bool `json:"netbios"`
 	MDNS       bool `json:"mdns"`
 	SSDP       bool `json:"ssdp"`
+	// SNMP is opt-in and needs Config.SNMP credentials (SNMPv3 authPriv,
+	// read-only GET and GETNEXT).
+	SNMP bool `json:"snmp"`
 }
 
 // DefaultProbes is the safe default set: identification only, nothing
@@ -56,6 +59,9 @@ type Config struct {
 	ConnectTimeout  time.Duration // default 800ms
 	ProbeTimeout    time.Duration // banners and name queries, default 2s
 	Resolver        *net.Resolver
+	// SNMP holds SNMPv3 credentials when Probes.SNMP is set. They live only
+	// as long as the scan and never appear in results.
+	SNMP *probe.SNMPCredentials
 	// Now is injectable for tests.
 	Now func() time.Time
 }
@@ -77,6 +83,7 @@ type Host struct {
 	NetBIOS       *probe.NetBIOSInfo `json:"netbios,omitempty"`
 	MDNS          *probe.MDNSInfo    `json:"mdns,omitempty"`
 	UPnP          *probe.UPnPInfo    `json:"upnp,omitempty"`
+	SNMP          *probe.SNMPInfo    `json:"snmp,omitempty"`
 	Services      []probe.Service    `json:"services,omitempty"`
 	Type          string             `json:"type,omitempty"`
 	TypeReason    string             `json:"type_reason,omitempty"`
@@ -144,6 +151,17 @@ func Run(ctx context.Context, cfg Config, obs Observer) Summary {
 		sum.Warnings = append(sum.Warnings, "MAC vendor database failed to load: "+err.Error())
 	}
 	e.locals = localInterfaces()
+	if cfg.Probes.SNMP {
+		if cfg.SNMP == nil {
+			e.cfg.Probes.SNMP = false
+			sum.Warnings = append(sum.Warnings, "SNMP was requested without credentials and was skipped.")
+		} else if err := cfg.SNMP.Validate(); err != nil {
+			e.cfg.Probes.SNMP = false
+			sum.Warnings = append(sum.Warnings, "SNMP skipped: "+err.Error())
+		} else {
+			sum.Methods = append(sum.Methods, "snmpv3-authpriv")
+		}
+	}
 
 	if cfg.Probes.SSDP && e.anyOnLink() {
 		go func() {
@@ -387,6 +405,15 @@ func (e *engine) scanHost(ctx context.Context, addr netip.Addr) Host {
 			}
 		})
 	}
+	if e.cfg.Probes.SNMP {
+		run(func() {
+			if info, err := probe.SNMPQuery(ctx, addr, *e.cfg.SNMP, e.cfg.ProbeTimeout); err == nil {
+				mu.Lock()
+				h.SNMP = info
+				mu.Unlock()
+			}
+		})
+	}
 	services := make([]probe.Service, len(open))
 	for i, port := range open {
 		if !e.cfg.Probes.Banners {
@@ -440,6 +467,8 @@ func bestName(h *Host) string {
 		return h.DNSName
 	case h.NetBIOS != nil && h.NetBIOS.Computer != "":
 		return h.NetBIOS.Computer
+	case h.SNMP != nil && h.SNMP.SysName != "":
+		return h.SNMP.SysName
 	case h.MDNS != nil && h.MDNS.Hostname != "":
 		return h.MDNS.Hostname
 	case h.UPnP != nil && h.UPnP.FriendlyName != "":
@@ -477,6 +506,10 @@ func (e *engine) classify(h *Host) {
 		ev.UPnPType = h.UPnP.DeviceType
 		ev.UPnPMaker = h.UPnP.Manufacturer
 		ev.UPnPModel = h.UPnP.ModelName + " " + h.UPnP.ModelNumber + " " + h.UPnP.Server
+	}
+	if h.SNMP != nil {
+		ev.SNMPDescr = h.SNMP.SysDescr + " " + h.SNMP.Model
+		ev.SNMPMaker = h.SNMP.Manufacturer + " " + h.SNMP.Enterprise
 	}
 	if h.NetBIOS != nil {
 		for _, n := range h.NetBIOS.Names {

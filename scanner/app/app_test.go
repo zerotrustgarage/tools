@@ -176,3 +176,21 @@ func mustAtoi(s string) int {
 	fmt.Sscan(s, &n)
 	return n
 }
+
+func TestSNMPRequestValidation(t *testing.T) {
+	a, f := NewApp(), newFake("")
+	a.setPlatform(context.Background(), f)
+	base := ScanRequest{Targets: "127.0.0.1", Probes: scan.Probes{SNMP: true}}
+	if _, err := a.StartScan(base); err == nil || !strings.Contains(err.Error(), "no credentials") {
+		t.Fatalf("missing credentials: %v", err)
+	}
+	weak := base
+	weak.SNMP = &SNMPRequest{Username: "noc", AuthProtocol: "MD5", AuthPassphrase: "authpass1", PrivProtocol: "AES", PrivPassphrase: "privpass1"}
+	if _, err := a.StartScan(weak); err == nil || !strings.Contains(err.Error(), "MD5") {
+		t.Fatalf("MD5: %v", err)
+	}
+	d := a.Defaults()
+	if len(d.SNMPAuth) == 0 || len(d.SNMPPriv) == 0 {
+		t.Fatalf("protocol lists missing: %+v", d)
+	}
+}

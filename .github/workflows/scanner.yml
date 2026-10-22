@@ -1,27 +1,33 @@
-name: scanner
+name: Scanner
 
+# ZTG Scanner checks: CLI and engine (scanner/), desktop app (scanner/app/) and its UI.
+# Like ci.yml, every job runs on the organization's self-hosted ephemeral pool (no
+# GitHub-hosted runners are assigned to zerotrustgarage), actions are pinned by commit SHA,
+# Go comes from go.dev verified against a committed checksum, and no secret is used.
 on:
-  push:
-    paths: ["scanner/**", ".github/workflows/scanner.yml"]
   pull_request:
-    paths: ["scanner/**", ".github/workflows/scanner.yml"]
+    paths: ['scanner/**', '.github/workflows/scanner.yml']
+  push:
+    branches: [main]
+    paths: ['scanner/**', '.github/workflows/scanner.yml']
 
 permissions:
   contents: read
 
-defaults:
-  run:
-    working-directory: scanner
+concurrency:
+  group: scanner-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  engine:
+    name: Scanner engine and CLI (fmt, vet, race tests, cross builds)
+    runs-on: [self-hosted, linux, ephemeral]
+    defaults:
+      run:
+        working-directory: scanner
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: scanner/go.mod
-          cache-dependency-path: scanner/go.sum
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: ci/install-go.sh
       - name: gofmt
         run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
       - name: vet (linux, windows)
@@ -30,31 +36,48 @@ jobs:
           GOOS=windows GOARCH=amd64 go vet ./...
       - name: test
         run: go test -race ./...
+      - name: cross builds
+        run: |
+          for target in windows/amd64 windows/arm64 linux/amd64 linux/arm64; do
+            GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /dev/null ./cmd/ztg-scanner
+          done
 
-  build:
-    needs: test
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - { goos: windows, goarch: amd64, ext: .exe }
-          - { goos: windows, goarch: arm64, ext: .exe }
-          - { goos: linux, goarch: amd64, ext: "" }
-          - { goos: linux, goarch: arm64, ext: "" }
+  app:
+    name: Scanner desktop app (fmt, vet, tests, Windows build)
+    runs-on: [self-hosted, linux, ephemeral]
+    defaults:
+      run:
+        working-directory: scanner/app
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: ../ci/install-go.sh
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: vet (linux, windows)
+        run: |
+          go vet ./...
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go vet ./...
+      - name: test
+        run: go test -race ./...
+      - name: Windows build (cross-compiled, unsigned)
+        run: |
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -tags desktop,production \
+            -ldflags "-s -w -H windowsgui" -o ZTGScanner.exe .
+          file ZTGScanner.exe | grep -q 'PE32+ executable (GUI) x86-64'
+
+  ui:
+    name: Scanner desktop UI (headless Chromium, binding mock)
+    runs-on: [self-hosted, linux, ephemeral]
+    defaults:
+      run:
+        working-directory: scanner/app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          go-version-file: scanner/go.mod
-          cache-dependency-path: scanner/go.sum
-      - name: build
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: "0"
-        run: go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_SHA::12}" -o dist/ztg-scanner-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/ztg-scanner
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ztg-scanner-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: scanner/dist/
-          retention-days: 14
+          node-version: '22'
+      - name: Playwright and Chromium
+        run: |
+          npm install --global --ignore-scripts playwright@1.56.1
+          npx --yes playwright@1.56.1 install --with-deps chromium
+      - run: NODE_PATH="$(npm root --global)" node uitest/run.mjs

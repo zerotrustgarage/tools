@@ -18,6 +18,7 @@ func sample() []scan.Host {
 			Services: []probe.Service{{Port: 80, Name: "http", HTTP: &probe.HTTPInfo{Status: 200, Title: "+cmd|' /C calc'!A0"}}, {Port: 9100, Name: "jetdirect"}},
 			Findings: []classify.Finding{{Severity: "medium", Code: "http-admin"}}},
 		{IP: "10.0.0.3", Status: "down"},
+		{IP: "10.0.0.9", Status: "up", Type: "Network device", SNMP: &probe.SNMPInfo{SysName: "core-sw", Model: "WS-C2960X", Serial: "FOC123", SysLocation: "@MDF", Software: "15.2"}},
 		{IP: "10.0.0.100", Status: "up", MACRandomized: true, Type: "Private-MAC device (phone, laptop or VM)"},
 	}
 }
@@ -25,8 +26,8 @@ func sample() []scan.Host {
 func TestSortHosts(t *testing.T) {
 	h := sample()
 	SortHosts(h)
-	if h[0].IP != "10.0.0.3" || h[1].IP != "10.0.0.20" || h[2].IP != "10.0.0.100" {
-		t.Fatalf("order %s %s %s", h[0].IP, h[1].IP, h[2].IP)
+	if h[0].IP != "10.0.0.3" || h[1].IP != "10.0.0.9" || h[2].IP != "10.0.0.20" || h[3].IP != "10.0.0.100" {
+		t.Fatalf("order %s %s %s %s", h[0].IP, h[1].IP, h[2].IP, h[3].IP)
 	}
 }
 
@@ -39,7 +40,7 @@ func TestCSVNeutralizesFormulas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 4 || len(rows[0]) != len(CSVHeader) {
+	if len(rows) != 5 || len(rows[0]) != len(CSVHeader) {
 		t.Fatalf("rows %d cols %d", len(rows), len(rows[0]))
 	}
 	for _, row := range rows[1:] {
@@ -51,6 +52,10 @@ func TestCSVNeutralizesFormulas(t *testing.T) {
 	}
 	if rows[1][13] != "80 9100" {
 		t.Fatalf("open_ports %q", rows[1][13])
+	}
+	sw := rows[3] // CSV keeps input order: the third host is 10.0.0.9
+	if sw[0] != "10.0.0.9" || sw[12] != "WS-C2960X" || sw[20] != "FOC123" || sw[21] != "15.2" || sw[22] != "'@MDF" {
+		t.Fatalf("SNMP columns %q", sw)
 	}
 }
 
@@ -68,7 +73,7 @@ func TestTableAndJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	var back Document
-	if err := json.Unmarshal(buf.Bytes(), &back); err != nil || len(back.Hosts) != 3 {
+	if err := json.Unmarshal(buf.Bytes(), &back); err != nil || len(back.Hosts) != 4 {
 		t.Fatalf("round trip: %v, %d hosts", err, len(back.Hosts))
 	}
 }

@@ -1,6 +1,7 @@
 # ZTG Scanner: design
 
-Status (October 22, 2026): slice S1 (engine and CLI) is built. S2 onward are planned.
+Status (October 22, 2026): slices S1 (engine and CLI), S2 (desktop app) and S3 (SNMPv3 inventory) are built. S4 onward
+are planned.
 
 ## 1. Purpose
 
@@ -16,8 +17,8 @@ cloud service, and keeps its results local unless the technician exports them.
 
 1. Identify, never intrude. Every default probe is a single standard protocol exchange that any client on the LAN may
    make (an ICMP echo, an ARP request, a TCP connect, one HTTP GET for `/`, one TLS handshake, a NetBIOS node status
-   query, an mDNS query, an SSDP search). Nothing authenticates, writes, or exploits. Probes that enumerate shares or
-   users, or that use credentials, are separate and opt-in per scan (slice S3).
+   query, an mDNS query, an SSDP search). Nothing authenticates, writes, or exploits. The one credentialed probe,
+   SNMPv3 (slice S3), is off by default, read-only, and enabled per scan with credentials the technician enters.
 2. Scope guard. Only private (RFC 1918), carrier-grade NAT, link-local and loopback space is scanned by default.
    Public space needs `--allow-public` (and, in the GUI, an explicit authorization confirmation). One scan is capped at
    65,536 addresses.
@@ -44,7 +45,7 @@ internal/oui         embedded IEEE MAC vendor table and its generator (go genera
 internal/classify    device type rules and findings
 internal/scan        the engine: worker pool, per-host pipeline, Observer callbacks
 internal/report      table, CSV and JSON output
-app/ (S2)            desktop shell (Wails) on the same engine
+app/                 desktop app (separate Go module): Wails shell, bound methods, plain HTML/CSS/JS frontend
 ```
 
 Per host, the engine runs:
@@ -104,23 +105,59 @@ FTP) and SC.L2-3.13.8 (cleartext administration). It is not itself an assessment
   device-supplied text cannot run as a spreadsheet formula.
 - JSON: the full record (summary, methods, warnings, every host with all probe detail).
 
-## 7. Slices
+## 7. Desktop app (S2)
+
+`app/` is its own Go module so the CLI module carries no GUI dependency. It imports the engine through a `replace`
+directive.
+
+- Shell: Wails v2.16.0 with WebView2 on Windows. The binary builds with `CGO_ENABLED=0`, so CI cross-compiles it
+  from Linux. Non-Windows builds print a pointer to the CLI.
+- Bound methods (`app.go`, no Wails imports, tested on any platform): `Suggestions` (the machine's IPv4 networks),
+  `Defaults`, `StartScan`, `StopScan`, `Results`, `Export` (CSV or JSON through a save dialog) and `OpenWeb`.
+  `OpenWeb` only opens a host and port that appear in the current results, so the UI cannot open arbitrary URLs.
+- Events: `scan:host` for each live host as it finishes, `scan:progress` (at most ten a second), `scan:done`.
+- Frontend: plain HTML, CSS and JavaScript, no npm. Every device-supplied string is inserted with `textContent`
+  under a Content-Security-Policy that forbids inline script, because a scanned device controls its own page title,
+  banner and names. `uitest/` runs the UI in headless Chromium against a binding mock, including an HTML injection
+  attempt.
+- Public ranges: the engine refuses them unless the request sets `allow_public`, which the UI does only after a
+  confirmation that the technician is authorized.
+- Settings persist in the WebView's local storage, except SNMP passphrases and the SNMP switch.
+
+## 8. SNMPv3 inventory (S3)
+
+- Opt-in per scan. The CLI enables it with `--snmp-user`; the GUI with a switch that is off at every launch.
+- authPriv only, with SHA-family authentication and AES privacy. SNMP v1 and v2c (cleartext community strings), MD5
+  and DES are refused. Passphrases must be at least 8 characters (RFC 3414).
+- GET and GETNEXT only, on standard objects: MIB-II system group and `ifNumber`, ENTITY-MIB (RFC 6933) columns of the
+  first chassis entity (manufacturer, model, serial, hardware, firmware and software revisions), and the Printer-MIB
+  (RFC 3805) serial number as a fallback. Nothing writable or vendor-specific is touched.
+- Credentials: `probe.SNMPCredentials` excludes every field from JSON and redacts itself in `String`, so it cannot
+  reach an export or a log. The CLI reads passphrases from an echo-off prompt or `ZTG_SNMP_AUTH_PASS` and
+  `ZTG_SNMP_PRIV_PASS`, never from flags (shell history, process lists).
+- Results feed naming (sysName), classification (sysDescr, manufacturer, sysObjectID enterprise) and the NDAA
+  section 889 finding.
+- Library: `github.com/gosnmp/gosnmp` (BSD-2-Clause) for the SNMPv3 user security model. Interoperability is tested
+  against net-snmp `snmpd` when it is installed.
+
+## 9. Slices
 
 | Slice | What                                                                                                                                        | Status  |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | S1    | Engine, probes, IEEE vendor table, classification, findings, CLI with table, CSV and JSON, CI                                                | Built   |
-| S2    | Desktop app (Wails v2, WebView2 on Windows): range picker from local interfaces, live results grid, detail pane, filters, export, scan history | Planned |
-| S3    | Opt-in deep probes, off by default and confirmed per scan: SMB dialect and NTLM-challenge host info, SMB share listing with supplied credentials, SNMPv3 (authPriv, read-only) for model, serial and interfaces | Planned |
+| S2    | Desktop app (Wails v2, WebView2 on Windows): range picker from local interfaces, live results grid, detail pane, filters, export | Built   |
+| S3    | SNMPv3 inventory, opt-in per scan: authPriv only, GET and GETNEXT only, model, serial, firmware, location, interfaces | Built   |
 | S4    | Packaging and trust: Authenticode signing, MSI (WiX) and a portable ZIP, reproducible builds, SBOM, release workflow with provenance attestation | Planned |
 | S5    | Actions from results: open in browser, SSH, RDP, copy, Wake-on-LAN, ping and traceroute; saved favorites; compare two scans (new and missing devices) | Planned |
 | S6    | macOS build (ARP through the routing socket), IPv6 neighbor discovery on the local link                                                     | Planned |
 
 Each slice is reviewed before the next starts.
 
-## 8. Not in scope
+## 10. Not in scope
 
 - Remote access (Advanced IP Scanner bundles Radmin; ZTG Scanner bundles no remote access software and installs
   nothing on scanned hosts).
 - Vulnerability scanning or exploitation.
-- Credential storage. S3 credentials are entered per scan, held in memory, and never written to disk or exports.
+- Credential storage. SNMPv3 passphrases are entered per scan (CLI prompt or environment variable, GUI password
+  fields), held in memory, and never written to disk, settings or exports.
 - Any cloud reporting. Results stay on the technician's machine unless exported.

@@ -8,6 +8,7 @@
 
   const hosts = [
     { ip: "192.168.50.1", status: "up", name: "gw.lab.lan", type: "Firewall", type_reason: "vendor fortinet", mac: "00:09:0f:aa:bb:01", vendor: "Fortinet, Inc.", evidence: ["icmp", "arp", "tcp-open"], rtt_ms: 0.6, ttl: 255, os_hint: "Network equipment or Solaris (initial TTL 255)", dns_name: "gw.lab.lan",
+      snmp: { sys_name: "lab-fw-01", sys_descr: "FortiGate-60F v7.4.3", enterprise: "Fortinet", model: "FGT60F", serial: "FGT60FTK2309XXXX", sys_location: "MDF rack 1", interfaces: 12 },
       services: [{ port: 443, name: "https", product: "", tls: { version: "TLS 1.3", subject: "CN=FortiGate", issuer: "CN=FortiGate", self_signed: true, not_after: "2027-03-01T00:00:00Z", sha256: "ab" }, http: { status: 200, title: "FortiGate Login" } }] },
     { ip: "192.168.50.20", status: "up", name: "FRONTDESK-PC", type: "Windows host", type_reason: "Windows RPC (135) and SMB (445) open", mac: "00:1b:21:aa:bb:cc", vendor: "Intel Corporate", evidence: ["icmp", "arp"], rtt_ms: 1.2, ttl: 128,
       netbios: { computer: "FRONTDESK-PC", workgroup: "LAB", names: [{ name: "FRONTDESK-PC", suffix: 0, group: false }, { name: "LAB", suffix: 0, group: true }] },
@@ -23,7 +24,7 @@
   let timer = null;
   window.go = { main: { App: {
     Version: async () => "0.2.0-test",
-    Defaults: async () => ({ ports: "22,80,443", probes: { ports: true, banners: true, reverse_dns: true, netbios: true, mdns: true, ssdp: true }, concurrency: 128, timeout_ms: 800, max_hosts: 65536 }),
+    Defaults: async () => ({ ports: "22,80,443", probes: { ports: true, banners: true, reverse_dns: true, netbios: true, mdns: true, ssdp: true }, concurrency: 128, timeout_ms: 800, max_hosts: 65536, snmp_auth_protocols: ["SHA", "SHA-256", "SHA-512"], snmp_priv_protocols: ["AES", "AES-256"] }),
     Suggestions: async () => [{ interface: "Ethernet", address: "192.168.50.10", range: "192.168.50.0/24" }],
     Results: async (all) => ({ running: false, hosts: all ? hosts.concat([{ ip: "192.168.50.2", status: "down" }]) : hosts.slice(0, 0) }),
     StartScan: async (req) => {

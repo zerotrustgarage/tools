@@ -113,6 +113,40 @@ try {
     assert.equal(starts.at(-1)[1].probes.mdns, false);
     assert.equal(starts.at(-1)[1].ports, "80,443");
 
+    // SNMPv3: off at launch, credentials sent with the scan, passphrases never stored.
+    await page.waitForFunction(() => document.getElementById("status-text").textContent.startsWith("Done:"));
+    await page.click("#settings-btn");
+    assert.equal(await page.isChecked("#snmp-on"), false);
+    assert.equal(await page.isVisible("#snmp-user"), false);
+    await page.check("#snmp-on");
+    await page.fill("#snmp-user", "noc-ro");
+    await page.selectOption("#snmp-auth", "SHA-512");
+    await page.fill("#snmp-auth-pass", "auth-secret-1");
+    await page.fill("#snmp-priv-pass", "priv-secret-1");
+    await page.click("#settings-close");
+    await page.click("#scan-btn");
+    starts = (await page.evaluate(() => window.__calls)).filter((c) => c[0] === "StartScan");
+    const snmpReq = starts.at(-1)[1];
+    assert.equal(snmpReq.probes.snmp, true);
+    assert.deepEqual(snmpReq.snmp, { username: "noc-ro", auth_protocol: "SHA-512", auth_passphrase: "auth-secret-1", priv_protocol: "AES", priv_passphrase: "priv-secret-1" });
+    const saved = await page.evaluate(() => JSON.stringify(localStorage));
+    assert.ok(!saved.includes("secret"), "passphrase persisted: " + saved);
+    assert.ok(saved.includes("noc-ro"), "username not remembered");
+    await page.waitForFunction(() => document.getElementById("status-text").textContent.startsWith("Done:"));
+    await page.click('#rows tr[data-ip="192.168.50.1"]');
+    assert.match(await page.textContent("#detail"), /FGT60FTK2309XXXX/);
+    assert.match(await page.textContent("#detail"), /MDF rack 1/);
+    if (shots) await page.screenshot({ path: join(shots, `ui-snmp-${scheme}.png`) });
+
+    // After a reload SNMP is off again and the passphrases are gone.
+    await page.reload();
+    await page.waitForFunction(() => document.getElementById("targets").value !== "");
+    await page.click("#settings-btn");
+    assert.equal(await page.isChecked("#snmp-on"), false);
+    await page.check("#snmp-on");
+    assert.equal(await page.inputValue("#snmp-user"), "noc-ro");
+    assert.equal(await page.inputValue("#snmp-auth-pass"), "");
+
     assert.deepEqual(errors, [], "page errors");
     console.log(`ok  ${scheme} scheme`);
     await page.close();

@@ -23,6 +23,7 @@ import (
 	"github.com/zerotrustgarage/tools/scanner/internal/report"
 	"github.com/zerotrustgarage/tools/scanner/internal/scan"
 	"github.com/zerotrustgarage/tools/scanner/internal/targets"
+	"golang.org/x/term"
 )
 
 // version is set at build time: -ldflags "-X main.version=1.2.3".
@@ -101,6 +102,9 @@ func cmdScan(args []string) error {
 		maxHosts    = fs.Int("max-hosts", targets.DefaultMaxHosts, "refuse target lists larger than this")
 		allowPublic = fs.Bool("allow-public", false, "permit public addresses; you must be authorized to scan them")
 		quiet       = fs.Bool("q", false, "no progress output")
+		snmpUser    = fs.String("snmp-user", "", "enable SNMPv3 (authPriv, read-only) with this username; passphrases are prompted for or read from "+envAuth+" and "+envPriv)
+		snmpAuth    = fs.String("snmp-auth", "SHA-256", "SNMPv3 authentication: "+strings.Join(probe.AuthProtocols, ", "))
+		snmpPriv    = fs.String("snmp-priv", "AES", "SNMPv3 privacy: "+strings.Join(probe.PrivProtocols, ", "))
 	)
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), "Usage: ztg-scanner scan [flags] <target>...")
@@ -157,6 +161,14 @@ func cmdScan(args []string) error {
 	if *noSSDP {
 		cfg.Probes.SSDP = false
 	}
+	if *snmpUser != "" {
+		cred, err := snmpCredentials(*snmpUser, *snmpAuth, *snmpPriv)
+		if err != nil {
+			return err
+		}
+		cfg.Probes.SNMP = true
+		cfg.SNMP = &cred
+	}
 
 	col := &collector{progress: !*quiet, start: time.Now()}
 	if !*quiet {
@@ -205,6 +217,40 @@ func upOnly(hs []scan.Host) []scan.Host {
 		}
 	}
 	return out
+}
+
+// Environment variables for SNMPv3 passphrases in unattended runs.
+// Passphrases are never accepted as flags: those end up in shell history
+// and in the process list.
+const (
+	envAuth = "ZTG_SNMP_AUTH_PASS"
+	envPriv = "ZTG_SNMP_PRIV_PASS"
+)
+
+func snmpCredentials(user, auth, priv string) (probe.SNMPCredentials, error) {
+	c := probe.SNMPCredentials{Username: user, AuthProtocol: strings.ToUpper(auth), PrivProtocol: strings.ToUpper(priv)}
+	var err error
+	if c.AuthPassphrase, err = secret(envAuth, "SNMPv3 authentication passphrase for "+user+": "); err != nil {
+		return c, err
+	}
+	if c.PrivPassphrase, err = secret(envPriv, "SNMPv3 privacy passphrase for "+user+": "); err != nil {
+		return c, err
+	}
+	return c, c.Validate()
+}
+
+func secret(env, prompt string) (string, error) {
+	if v := os.Getenv(env); v != "" {
+		return v, nil
+	}
+	fd := int(os.Stdin.Fd())
+	if !term.IsTerminal(fd) {
+		return "", fmt.Errorf("set %s, or run in a terminal to be prompted", env)
+	}
+	fmt.Fprint(os.Stderr, prompt)
+	b, err := term.ReadPassword(fd)
+	fmt.Fprintln(os.Stderr)
+	return string(b), err
 }
 
 func cmdVendor(args []string) error {

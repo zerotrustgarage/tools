@@ -71,3 +71,19 @@ func TestFindings(t *testing.T) {
 		t.Errorf("clean host flagged: %v", f)
 	}
 }
+
+func TestSNMPEvidence(t *testing.T) {
+	if got := Classify(&Evidence{SNMPMaker: " Fortinet", OpenPorts: ports()}); got.Type != "Firewall" {
+		t.Fatalf("SNMP enterprise Fortinet: %+v", got)
+	}
+	if got := Classify(&Evidence{SNMPDescr: "Synology DiskStation DS920+", OpenPorts: ports()}); got.Type != "NAS / storage" {
+		t.Fatalf("SNMP sysDescr Synology: %+v", got)
+	}
+	found := false
+	for _, f := range Findings(&Evidence{SNMPMaker: "Huawei Technologies Co., Ltd. Huawei", OpenPorts: ports()}, time.Now()) {
+		found = found || f.Code == "ndaa-889"
+	}
+	if !found {
+		t.Fatal("NDAA vendor reported over SNMP not flagged")
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -115,6 +116,22 @@ func TestParsePorts(t *testing.T) {
 	for _, bad := range []string{"", "0", "70000", "90-80", "x", "1-2000"} {
 		if _, err := ParsePorts(bad); err == nil {
 			t.Errorf("%q: want error", bad)
+		}
+	}
+}
+
+func TestSNMPWithoutCredentialsWarns(t *testing.T) {
+	rec := &recorder{}
+	sum := Run(context.Background(), Config{
+		Targets: []netip.Addr{netip.MustParseAddr("127.0.0.1")},
+		Probes:  Probes{SNMP: true},
+	}, rec)
+	if len(sum.Warnings) == 0 || !strings.Contains(strings.Join(sum.Warnings, " "), "SNMP") {
+		t.Fatalf("warnings %v", sum.Warnings)
+	}
+	for _, m := range sum.Methods {
+		if m == "snmpv3-authpriv" {
+			t.Fatal("SNMP listed as a method although it was skipped")
 		}
 	}
 }

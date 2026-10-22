@@ -8,7 +8,7 @@ ZTG Scanner is ZTG's replacement for Advanced IP Scanner: source, build chain an
 remote access software, and nothing installed on the hosts it scans. The design, safety model and roadmap are in
 [docs/design.md](docs/design.md).
 
-Status: slice S1 (engine and CLI). The desktop app is slice S2.
+Status: engine and CLI (S1), Windows desktop app (S2) and SNMPv3 inventory (S3) are built.
 
 ## Usage
 
@@ -46,6 +46,12 @@ Scan flags (`ztg-scanner scan -h`):
 | `--timeout D`        | 800ms           | TCP connect timeout                                            |
 | `--max-hosts N`      | 65536           | Refuse larger target lists                                     |
 | `--allow-public`     | off             | Permit public address space (you must be authorized)           |
+| `--snmp-user NAME`   | off             | Add SNMPv3 inventory (authPriv, read-only) as this user        |
+| `--snmp-auth P`      | SHA-256         | SHA, SHA-224, SHA-256, SHA-384 or SHA-512                      |
+| `--snmp-priv P`      | AES             | AES, AES-192 or AES-256                                        |
+
+SNMPv3 passphrases are prompted for with echo off, or read from `ZTG_SNMP_AUTH_PASS` and `ZTG_SNMP_PRIV_PASS` for
+unattended runs. They are never accepted as flags and never written to output.
 
 ## What it learns
 
@@ -56,6 +62,20 @@ realms, and TLS certificates; device type with the reason it was inferred; findi
 
 No administrator rights are needed on Windows. On Linux, ICMP needs `net.ipv4.ping_group_range` to include your group,
 or root / `CAP_NET_RAW`; without it, liveness falls back to ARP and TCP and the scan says so.
+
+## Desktop app
+
+`app/` is the Windows desktop app: the same engine with a live results grid, filters, a detail pane for every device,
+SNMPv3 settings and CSV or JSON export. Build it from any platform:
+
+```
+cd app
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -tags desktop,production -ldflags "-H windowsgui" -o ZTGScanner.exe .
+go test ./...                                   # bound app logic
+NODE_PATH=$(npm root -g) node uitest/run.mjs    # UI in headless Chromium (needs playwright)
+```
+
+It needs the Microsoft Edge WebView2 runtime, which Windows 10 and 11 include.
 
 ## Building
 

@@ -123,6 +123,8 @@ type Defaults struct {
 	Concurrency int         `json:"concurrency"`
 	TimeoutMs   int         `json:"timeout_ms"`
 	MaxHosts    int         `json:"max_hosts"`
+	SNMPAuth    []string    `json:"snmp_auth_protocols"`
+	SNMPPriv    []string    `json:"snmp_priv_protocols"`
 }
 
 // Defaults returns the engine defaults.
@@ -137,6 +139,8 @@ func (a *App) Defaults() Defaults {
 		Concurrency: 128,
 		TimeoutMs:   800,
 		MaxHosts:    targets.DefaultMaxHosts,
+		SNMPAuth:    probe.AuthProtocols,
+		SNMPPriv:    probe.PrivProtocols,
 	}
 }
 
@@ -150,6 +154,18 @@ type ScanRequest struct {
 	// AllowPublic must be set by the UI only after the user has confirmed
 	// they are authorized to scan public addresses.
 	AllowPublic bool `json:"allow_public"`
+	// SNMP carries SNMPv3 credentials when probes.snmp is set. They are
+	// used for this scan only and never stored.
+	SNMP *SNMPRequest `json:"snmp,omitempty"`
+}
+
+// SNMPRequest is the SNMPv3 part of a scan request from the UI.
+type SNMPRequest struct {
+	Username       string `json:"username"`
+	AuthProtocol   string `json:"auth_protocol"`
+	AuthPassphrase string `json:"auth_passphrase"`
+	PrivProtocol   string `json:"priv_protocol"`
+	PrivPassphrase string `json:"priv_passphrase"`
 }
 
 // Progress is the payload of EventProgress.
@@ -185,6 +201,22 @@ func (a *App) StartScan(req ScanRequest) (int, error) {
 		Probes:         req.Probes,
 		Concurrency:    clamp(req.Concurrency, 1, 512, 128),
 		ConnectTimeout: time.Duration(clamp(req.TimeoutMs, 100, 10000, 800)) * time.Millisecond,
+	}
+	if req.Probes.SNMP {
+		if req.SNMP == nil {
+			return 0, errors.New("SNMPv3 is enabled but no credentials were entered")
+		}
+		cred := probe.SNMPCredentials{
+			Username:       strings.TrimSpace(req.SNMP.Username),
+			AuthProtocol:   req.SNMP.AuthProtocol,
+			AuthPassphrase: req.SNMP.AuthPassphrase,
+			PrivProtocol:   req.SNMP.PrivProtocol,
+			PrivPassphrase: req.SNMP.PrivPassphrase,
+		}
+		if err := cred.Validate(); err != nil {
+			return 0, err
+		}
+		cfg.SNMP = &cred
 	}
 	if strings.TrimSpace(req.Ports) != "" {
 		if cfg.Ports, err = scan.ParsePorts(req.Ports); err != nil {
