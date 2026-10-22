@@ -86,6 +86,54 @@
     },
   };
 
+  // ---------- theme and window ----------
+
+  // "auto" follows the Windows setting; "light" and "dark" are the user's choice and persist.
+  const THEMES = ["auto", "light", "dark"];
+  function applyTheme(choice) {
+    const theme = THEMES.includes(choice) ? choice : "auto";
+    if (theme === "auto") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", theme);
+    // The native window behind the page (shown while opening and resizing) takes the page's
+    // background, so a light theme never flashes dark.
+    if (rt && rt.WindowSetBackgroundColour) {
+      const [r, g, b] = (getComputedStyle(document.documentElement).getPropertyValue("--bg").trim().match(/[0-9a-f]{2}/gi) || ["02", "0c", "1b"]).map((h) => parseInt(h, 16));
+      rt.WindowSetBackgroundColour(r, g, b, 255);
+    }
+    const btn = $("theme-btn");
+    if (btn) {
+      btn.dataset.choice = theme;
+      const label = `Theme: ${theme} (click to change)`;
+      btn.title = label;
+      btn.setAttribute("aria-label", label);
+    }
+    return theme;
+  }
+  applyTheme(store.get("theme", "auto"));
+
+  // The desktop window has no native frame (main_windows.go); these are its caption buttons.
+  function initTitlebar() {
+    if (!rt || !rt.WindowMinimise) return; // browser preview: the browser has its own frame
+    document.body.classList.add("has-titlebar");
+    $("titlebar").hidden = false;
+    const max = $("win-max");
+    const showState = async () => {
+      const maximized = Boolean(await rt.WindowIsMaximised());
+      max.classList.toggle("maximized", maximized);
+      const label = maximized ? "Restore" : "Maximize";
+      max.title = label;
+      max.setAttribute("aria-label", label);
+    };
+    $("win-min").addEventListener("click", () => rt.WindowMinimise());
+    max.addEventListener("click", async () => {
+      await rt.WindowToggleMaximise();
+      showState();
+    });
+    $("win-close").addEventListener("click", () => rt.Quit());
+    window.addEventListener("resize", showState);
+    showState();
+  }
+
   // ---------- derived fields ----------
 
   function ipNum(ip) {
@@ -621,6 +669,11 @@
   }
 
   async function init() {
+    initTitlebar();
+    $("theme-btn").addEventListener("click", () => {
+      const current = $("theme-btn").dataset.choice || "auto";
+      store.set("theme", applyTheme(THEMES[(THEMES.indexOf(current) + 1) % THEMES.length]));
+    });
     state.layout = loadLayout();
     renderHead();
     renderColumnMenu();

@@ -41,6 +41,49 @@ const markdownHighlight = HighlightStyle.define([
   { tag: [t.propertyName, t.attributeName], class: 'cm-tok-property' },
 ]);
 
+/**
+ * Editor chrome in the app's colours. It has to be an EditorView.theme: CodeMirror's base theme
+ * styles the gutter, active line and selection with scoped selectors that outrank ordinary CSS,
+ * which left a light gray line-number strip in the dark theme. The values are the app's CSS
+ * variables, so one theme serves light and dark.
+ */
+const ztgEditorTheme = EditorView.theme({
+  '&': { height: '100%', flex: '1', backgroundColor: 'var(--panel)', color: 'var(--text)', fontSize: '14px' },
+  '&.cm-focused': { outline: 'none' },
+  '.cm-scroller': {
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace",
+    lineHeight: '1.6',
+  },
+  '.cm-content': { padding: '16px 0', caretColor: 'var(--acc)' },
+  '.cm-line': { padding: '0 16px' },
+  '.cm-gutters': {
+    backgroundColor: 'var(--panel)',
+    color: 'var(--dim2)',
+    border: 'none',
+    borderRight: '1px solid var(--line)',
+  },
+  '.cm-lineNumbers .cm-gutterElement': { padding: '0 10px 0 14px', minWidth: '32px' },
+  '.cm-activeLine': { backgroundColor: 'var(--active-line)' },
+  '.cm-activeLineGutter': { backgroundColor: 'var(--active-line)', color: 'var(--text)' },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--acc)', borderLeftWidth: '2px' },
+  '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection':
+    { backgroundColor: 'var(--selection)' },
+  '.cm-selectionMatch': { backgroundColor: 'var(--selection-match)' },
+  '.cm-matchingBracket, &.cm-focused .cm-matchingBracket': { backgroundColor: 'var(--selection-match)', outline: 'none' },
+  '.cm-searchMatch': { backgroundColor: 'color-mix(in srgb, var(--warn) 30%, transparent)', outline: 'none' },
+  '.cm-searchMatch.cm-searchMatch-selected': { backgroundColor: 'color-mix(in srgb, var(--warn) 55%, transparent)' },
+  '.cm-panels': { backgroundColor: 'var(--panel2)', color: 'var(--text)' },
+  '.cm-panels.cm-panels-top': { borderBottom: '1px solid var(--line)' },
+  '.cm-panel input, .cm-panel button, .cm-panel select': {
+    color: 'var(--text)',
+    backgroundColor: 'var(--panel)',
+    border: '1px solid var(--line)',
+    borderRadius: '4px',
+  },
+  '.cm-panel.cm-search label': { color: 'var(--dim)' },
+  '.cm-tooltip': { backgroundColor: 'var(--panel2)', color: 'var(--text)', border: '1px solid var(--line)' },
+});
+
 export interface EditorOptions {
   parent: HTMLElement;
   text: string;
@@ -74,6 +117,7 @@ export function createEditorState(options: Omit<EditorOptions, 'parent'>): Edito
     doc: options.text,
     extensions: [
       lineEndingExtensions(options.format),
+      ztgEditorTheme,
       lineNumbers(),
       highlightActiveLineGutter(),
       highlightActiveLine(),

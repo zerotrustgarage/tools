@@ -77,6 +77,10 @@ NODE_PATH=$(npm root -g) node uitest/run.mjs    # UI in headless Chromium (needs
 
 It needs the Microsoft Edge WebView2 runtime, which Windows 10 and 11 include.
 
+The window draws its own title bar in the app's theme (Wails frameless mode): drag it to move the window,
+double-click it to maximize. The theme button beside Settings switches between Auto (the Windows setting), Light
+and Dark, and the choice is remembered.
+
 ## Building
 
 Go 1.26 or later.

@@ -68,8 +68,21 @@ const IMAGE_TYPES: Record<string, string> = {
   avif: 'image/avif',
 };
 
+const appWindow = getCurrentWindow();
+
 export const desktopPlatform: Platform = {
   kind: 'desktop',
+
+  window: {
+    minimize: () => appWindow.minimize(),
+    toggleMaximize: () => appWindow.toggleMaximize(),
+    close: () => appWindow.close(),
+    onMaximizedChange(handler) {
+      const report = () => void appWindow.isMaximized().then(handler, () => undefined);
+      report();
+      void appWindow.onResized(report);
+    },
+  },
 
   async open() {
     const path = await invoke<string | null>('choose_document');
@@ -138,12 +151,12 @@ export const desktopPlatform: Platform = {
   },
 
   onCloseRequested(handler) {
-    void getCurrentWindow().onCloseRequested(async (event) => {
+    void appWindow.onCloseRequested(async (event) => {
       if (!(await handler())) event.preventDefault();
     });
   },
 
   setTitle(title) {
-    void getCurrentWindow().setTitle(title);
+    void appWindow.setTitle(title);
   },
 };

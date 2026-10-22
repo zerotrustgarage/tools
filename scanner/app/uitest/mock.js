@@ -51,8 +51,14 @@
     OpenWeb: async (ip, port) => calls.push(["OpenWeb", ip, port]),
     ExportTable: async (headers, rows) => { calls.push(["ExportTable", headers, rows]); return "C:\\Users\\tech\\Documents\\ztg-scan-view.csv"; },
   } } };
+  let maximised = false;
   window.runtime = {
     EventsOn: (name, f) => (handlers[name] = handlers[name] || []).push(f),
     ClipboardSetText: async (t) => calls.push(["Clipboard", t]),
+    WindowMinimise: () => calls.push(["WindowMinimise"]),
+    WindowToggleMaximise: async () => { maximised = !maximised; calls.push(["WindowToggleMaximise"]); },
+    WindowIsMaximised: async () => maximised,
+    Quit: () => calls.push(["Quit"]),
+    WindowSetBackgroundColour: (r, g, b, a) => calls.push(["WindowSetBackgroundColour", r, g, b, a]),
   };
 })();

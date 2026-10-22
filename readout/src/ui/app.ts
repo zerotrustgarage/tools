@@ -16,6 +16,7 @@ import { createEditor, documentText, scrollToLine } from './editor';
 import { runFormat, type FormatCommand } from './format';
 import { Sidebar } from './sidebar';
 import { splitter } from './splitter';
+import { titleBar } from './titlebar';
 
 type ViewMode = 'edit' | 'split' | 'preview';
 type ThemeChoice = 'auto' | 'light' | 'dark';
@@ -235,6 +236,10 @@ export class App {
     paneSplitter.classList.add('splitter-panes');
     this.panes.append(this.editorHost, paneSplitter, this.previewPane);
     this.workspace.append(this.sidebar.element, sidebarSplitter, this.panes, this.dropOverlay);
+    if (this.platform.window) {
+      this.root.classList.add('has-titlebar');
+      this.root.append(titleBar(this.platform.window, APP_NAME));
+    }
     this.root.append(top, this.formatBar, this.banner, this.workspace, statusBar);
     this.applySizes();
     return this.root;

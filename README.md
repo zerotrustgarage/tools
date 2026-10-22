@@ -22,6 +22,8 @@ machine.
 | `.github/workflows/scanner.yml` | ZTG Scanner checks (Go), path-filtered to `scanner/`; no secrets |
 | `.github/workflows/release-<tool>.yml` | Manual release per tool: build, sign, package, attest, publish |
 | `docs/signing.md` | Signing design and the one-time owner setup |
+| `docs/roadmap.md` | Open work and recommended improvements for every tool |
+| `design-tokens.json` | The ZTG palette every tool's stylesheet is checked against |
 
 ## Checks
 
@@ -43,6 +45,13 @@ Every workflow runs on the organization's self-hosted pool, `[self-hosted, linux
 GitHub-hosted runners are not assigned to this organization, and Windows executables are
 cross-compiled on Linux (`scripts/ci/build-windows.sh`).
 
+## One look
+
+Every tool uses the ZTG palette. `design-tokens.json` is a byte-identical copy of the canonical
+token file (`zerotrustgarage/ztg`, generated in `zerotrustgarage/infrasec`), and
+`scripts/ci/check-palette.mjs` (CI job "ZTG palette") fails when a tool's stylesheet drifts from
+it. To change a colour, change the canonical file and copy it here.
+
 ## Dependency policy
 
 - Versions are exact (`.npmrc` `save-exact`, `Cargo.toml` `=` pins, both lockfiles committed).
@@ -50,3 +59,6 @@ cross-compiled on Linux (`scripts/ci/build-windows.sh`).
   (`npm install --before=<date>`), except releases that fix a published advisory.
 - Install scripts never run (`.npmrc` `ignore-scripts`).
 - GitHub Actions are pinned by commit SHA.
+- Dependabot (`.github/dependabot.yml`) proposes updates weekly for npm, Cargo, Go modules and
+  Actions with the same 14-day cooldown; minor and patch updates arrive grouped. Each pull request
+  runs CI like any other change.
