@@ -12,7 +12,7 @@ const WEB_CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  "connect-src 'self' blob:",
+  "connect-src 'self' blob: https://api.github.com",
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'none'",

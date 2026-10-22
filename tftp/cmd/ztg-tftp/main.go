@@ -18,6 +18,7 @@ import (
 	"github.com/zerotrustgarage/tools/tftp/internal/client"
 	"github.com/zerotrustgarage/tools/tftp/internal/server"
 	"github.com/zerotrustgarage/tools/tftp/internal/store"
+	"github.com/zerotrustgarage/tools/tftp/internal/update"
 )
 
 var version = "dev"
@@ -34,12 +35,15 @@ func main() {
 }
 func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-		fmt.Fprintln(out, "ZTG TFTP\n\nCommands: serve, get, put, findings, version\nUse <command> --help for flags.\n\n"+warning)
+		fmt.Fprintln(out, "ZTG TFTP\n\nCommands: serve, get, put, findings, version, check-updates [--json]\nUse <command> --help for flags.\n\n"+warning)
 		return nil
 	}
 	if args[0] == "version" {
 		fmt.Fprintln(out, "ztg-tftp", version)
 		return nil
+	}
+	if args[0] == "check-updates" {
+		return update.Command(ctx, "tftp", version, args[1:], out, errOut)
 	}
 	fmt.Fprintln(errOut, warning)
 	switch args[0] {
