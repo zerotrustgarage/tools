@@ -38,7 +38,7 @@ updates:
       prefix: build(deps)
 
   - package-ecosystem: gomod
-    directories: [/scanner, /scanner/app]
+    directories: [/scanner, /scanner/app, /tftp]
     schedule:
       interval: weekly
       day: monday

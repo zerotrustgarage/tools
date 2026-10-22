@@ -1,6 +1,6 @@
 # CLAUDE.md (tftp)
 
-ZTG TFTP, a TFTP server and client for technicians, in Go. Status: proposed; nothing is built. Repository-wide
+ZTG TFTP, a TFTP server and client for technicians, in Go. Status: T1 and T2 implemented, pending review. Repository-wide
 conventions (one folder per tool, GitHub-hosted runners, actions pinned by SHA, dependencies public for at least 14
 days) are in the root README.
 
@@ -25,5 +25,8 @@ Slices (T1 to T6) are built one at a time, each reviewed before the next starts.
 
 ## Checks
 
-None yet. T1 adds a Go module here and `.github/workflows/tftp.yml` with the same checks as ZTG Scanner (gofmt, vet
-for Linux and Windows, race tests, cross builds) plus the fuzz targets' seed corpora and the interop tests.
+The engine uses the standard library; platform upload controls use the Scanner-pinned x/sys version.
+`.github/workflows/tftp.yml` runs gofmt, vet for Linux and
+Windows, race tests, decoder fuzz seeds and bounded fuzzing, curl/tftp-hpa/atftp interop and cross builds for
+Linux and Windows (amd64 and arm64), plus native Windows upload and DACL tests. See README.md for commands and current
+scope. Do not start T3 before T2 review.
