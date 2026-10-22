@@ -116,3 +116,46 @@ func TestActionsValidateScopeAndServices(t *testing.T) {
 		t.Fatal("invalid generated annotation key")
 	}
 }
+
+type blockingPicker struct {
+	*fakePlatform
+	shown, resume chan struct{}
+}
+
+func (f *blockingPicker) SaveFile(string, string, string) (string, error) {
+	close(f.shown)
+	<-f.resume
+	return f.saveTo, nil
+}
+
+func TestSaveCannotMarkLaterEditsClean(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "site.json")
+	f := &blockingPicker{fakePlatform: newFake(path), shown: make(chan struct{}), resume: make(chan struct{})}
+	a := NewApp()
+	a.setPlatform(context.Background(), f)
+	a.hosts = []scan.Host{{IP: "10.0.0.1", Status: "up"}}
+	if err := a.SetAnnotation("10.0.0.1", scan.Annotation{Notes: "original"}); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { _, err := a.SaveScan("Clinic"); done <- err }()
+	select {
+	case <-f.shown:
+	case <-time.After(3 * time.Second):
+		t.Fatal("save dialog not shown")
+	}
+	if err := a.SetAnnotation("10.0.0.1", scan.Annotation{Notes: "later edit"}); err != nil {
+		t.Fatal(err)
+	}
+	close(f.resume)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if !a.UnsavedChanges() {
+		t.Fatal("later edit lost its unsaved marker")
+	}
+	b, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(b), "original") || strings.Contains(string(b), "later edit") {
+		t.Fatal("saved a mixture of revisions", err)
+	}
+}

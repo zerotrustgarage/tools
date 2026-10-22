@@ -310,8 +310,16 @@ try {
     await page.click("#comparison-close");
 
     // A separate site clears annotations; opening the saved file restores them.
+    await page.click("#settings-btn");
+    await page.check("#snmp-on");
+    await page.fill("#snmp-auth-pass", "previous-site-auth");
+    await page.fill("#snmp-priv-pass", "previous-site-priv");
+    await page.click("#settings-close");
     await page.click("#new-site");
     await page.waitForFunction(() => document.querySelectorAll("#rows tr").length === 0);
+    assert.equal(await page.isChecked("#snmp-on"), false);
+    assert.equal(await page.inputValue("#snmp-auth-pass"), "");
+    assert.equal(await page.inputValue("#snmp-priv-pass"), "");
     await page.click("#load-scan");
     await page.waitForFunction(() => document.getElementById("site").value === "Clinic");
     await page.click('#rows tr[data-ip="192.168.50.20"]');

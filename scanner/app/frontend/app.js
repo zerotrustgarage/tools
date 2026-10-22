@@ -600,6 +600,10 @@
       if (action === "load") { path = await api.LoadScan(); if (!path) return; }
       else await api.NewSite();
       state.file = path;
+      state.settings.probes.snmp = false;
+      $("snmp-auth-pass").value = "";
+      $("snmp-priv-pass").value = "";
+      paintSettings();
       state.comparison = null;
       $("comparison").hidden = true;
       $("diagnostics").hidden = true;

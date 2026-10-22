@@ -108,7 +108,8 @@ Notes follow confirmed address moves between consecutive scans, but never transf
 IP or to a duplicate MAC at a new address. For an unresponsive device, a previously learned MAC is labeled
 **Last known MAC**, kept separate from current evidence, and retained with notes and favorites. Full CSV exports
 append `notes`, `tags`, `favorite` and `last_known_mac`; JSON preserves the full annotation history. These files are
-saved only when you choose to save or export. Browser settings contain no inventory or scan credentials. The native
+saved only when you choose to save or export. Browser settings contain no inventory or SNMP passphrases. Opening
+an inventory or starting a new site clears the SNMP passphrase fields and disables SNMP. The native
 close button and Alt+F4 offer Cancel when the current scan has unsaved changes.
 
 The device pane offers browser access, IP/MAC copy, SSH, RDP, ping, traceroute and Wake-on-LAN. SSH and RDP launch
