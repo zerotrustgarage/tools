@@ -24,17 +24,17 @@ $window = [System.Windows.Automation.AutomationElement]::FromHandle($handle)
 $scope = [System.Windows.Automation.TreeScope]::Descendants
 
 function Find-Control([string] $name, [System.Windows.Automation.ControlType] $type) {
-  $condition = [System.Windows.Automation.AndCondition]::new(
-    [System.Windows.Automation.AndCondition]::new(
-      [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, $name),
-      [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, $type)
-    ),
-    [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::FrameworkIdProperty, 'Chrome')
-  )
   # Chromium creates its accessibility tree lazily on the first UIA request.
+  # Inspect the returned tree locally: Chromium's provider can omit nodes from FindFirst filters.
   $found = $null
   for ($attempt = 0; $attempt -lt 100; $attempt++) {
-    $found = $window.FindFirst($scope, $condition)
+    foreach ($node in $window.FindAll($scope, [System.Windows.Automation.Condition]::TrueCondition)) {
+      $current = $node.Current
+      if ($current.Name -eq $name -and $current.ControlType.Id -eq $type.Id -and $current.FrameworkId -eq 'Chrome') {
+        $found = $node
+        break
+      }
+    }
     if ($found -and -not $found.Current.IsOffscreen) { break }
     Start-Sleep -Milliseconds 100
   }
