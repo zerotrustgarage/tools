@@ -8,7 +8,9 @@
   own JavaScript changes it to "<file> - ZTG Readout". Seeing that title therefore proves the
   WebView loaded the frontend and the frontend reached the Rust side. Opening a
   sample file by command line proves the file association path (Rust reads the file, the UI
-  shows its name).
+  shows its name). Launching again without one proves the stored session: the sample reopens.
+  The session is per user (%LOCALAPPDATA%\sh.ztg.readout), so it outlives an uninstall and the
+  MSI launch reopens the sample too.
 
     pwsh scripts/ci/test-installer-windows.ps1 -Setup <Setup.exe> -Msi <.msi> -Sample <file.md> [-Shots <dir>]
 #>
@@ -116,6 +118,7 @@ if ($code -ne 0) { Fail "NSIS silent install exited $code" }
 Assert-Installed 'NSIS'
 Assert-Launches 'NSIS launch' @() 'Untitled.md - ZTG Readout'
 Assert-Launches 'NSIS open file' @("`"$Sample`"") "$(Split-Path $Sample -Leaf) - ZTG Readout"
+Assert-Launches 'NSIS reopen session' @() "$(Split-Path $Sample -Leaf) - ZTG Readout"
 $code = Run (Join-Path $installDir 'uninstall.exe') @('/S')
 if ($code -ne 0) { Fail "NSIS silent uninstall exited $code" }
 Assert-Removed 'NSIS'
@@ -125,7 +128,7 @@ $log = Join-Path $env:RUNNER_TEMP 'readout-msi-install.log'
 $code = Run 'msiexec.exe' @('/i', "`"$Msi`"", '/qn', '/norestart', '/l*v', "`"$log`"")
 if ($code -ne 0) { Get-Content $log -Tail 40; Fail "MSI install exited $code" }
 Assert-Installed 'MSI'
-Assert-Launches 'MSI launch' @() 'Untitled.md - ZTG Readout'
+Assert-Launches 'MSI launch' @() "$(Split-Path $Sample -Leaf) - ZTG Readout"
 $code = Run 'msiexec.exe' @('/x', "`"$Msi`"", '/qn', '/norestart')
 if ($code -ne 0) { Fail "MSI uninstall exited $code" }
 Assert-Removed 'MSI'

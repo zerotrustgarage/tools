@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 64 64" role="img" aria-label="ZTG TFTP">
+  <title>ZTG TFTP: small transfer arrows and ZTG cursor</title>
+  <g transform="translate(3 3) scale(.9)">
+  <g fill="none" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M7 18h36m-9-9 9 9-9 9" stroke="#00FF41"/>
+    <path d="M43 43H7m9-9-9 9 9 9" stroke="#64748b"/>
+  </g>
+  <path d="M54 36h5v20h-5Z" fill="#00FF41"/>
+  </g>
+</svg>

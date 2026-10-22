@@ -12,6 +12,7 @@ const COMMANDS: &[&str] = &[
     "read_image",
     "resolve_link",
     "initial_document",
+    "remember_session",
 ];
 
 fn main() {

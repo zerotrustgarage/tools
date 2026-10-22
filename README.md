@@ -10,7 +10,7 @@ machine.
 | ZTG Scanner | [scanner/](scanner) | Network discovery and device inventory for technicians: CLI and Windows desktop app, ZTG's replacement for Advanced IP Scanner |
 | ZTG TFTP | [tftp/](tftp) | Time-boxed TFTP server and CLI client, read-only by default, with opt-in private collection, configuration findings, hashes and change records (T1 and T2 implemented) |
 
-| ZTG Copy | [copy/](copy) | Planned Windows Robocopy designer and evidence recorder; RC0 synthetic capture harness in progress |
+| ZTG Copy | [copy/](copy) | Robocopy job designer and evidence recorder; Windows feasibility validated on Server 2022/2025, CLI in development |
 
 ## Layout
 
@@ -23,8 +23,10 @@ machine.
 | `.github/workflows/ci.yml` | Checks on every pull request and push to main; no secrets |
 | `.github/workflows/scanner.yml` | ZTG Scanner checks (Go, packaging, portable/MSI lifecycle on Windows), path-filtered; no secrets |
 | `.github/workflows/release-<tool>.yml` | Manual release per tool: build, sign, package, attest, publish |
+| `docs/updates.md` | Supported update checks, per-tool release contract and future updater requirements |
 | `docs/signing.md` | Signing design and the one-time owner setup |
 | `docs/roadmap.md` | Open work and recommended improvements for every tool |
+| `assets/icons/` | Transparent application and tray icons for Scanner, Copy, TFTP and Readout; SVG sources and export instructions |
 | `design-tokens.json` | The ZTG palette every tool's stylesheet is checked against |
 
 ## Checks
@@ -57,6 +59,11 @@ token file (`zerotrustgarage/ztg`, generated in `zerotrustgarage/infrasec`), and
 `scripts/ci/check-palette.mjs` (CI job "ZTG palette") fails when a tool's stylesheet drifts from
 it. To change a colour, change the canonical file and copy it here.
 
+Application icons use distinct glyphs and the green cursor from the ZTG wordmark, with transparent
+backgrounds. See [assets/icons/](assets/icons/) for sources and [docs/icons.html](docs/icons.html) for
+light/dark and small-size previews. Scanner and Readout use the new assets in their executables,
+installers and shortcuts. Copy/TFTP desktop and tray consumers remain in their planned slices.
+
 ## Dependency policy
 
 - Versions are exact (`.npmrc` `save-exact`, `Cargo.toml` `=` pins, both lockfiles committed).
@@ -67,3 +74,10 @@ it. To change a colour, change the canonical file and copy it here.
 - Dependabot (`.github/dependabot.yml`) proposes updates weekly for npm, Cargo, Go modules and
   Actions with the same 14-day cooldown; minor and patch updates arrive grouped. Each pull request
   runs CI like any other change.
+
+## Check for updates
+
+Scanner and Readout expose **Check for updates** in their interfaces. Scanner and TFTP also
+support `check-updates [--json]`. Checks are explicit, use the official per-tool releases, and
+open downloads without installing them. Copy support is included in the shared checker for its
+future application. See [docs/updates.md](docs/updates.md).

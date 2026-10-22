@@ -9,9 +9,9 @@ slices are defined in `scanner/docs/design.md` and ZTG TFTP's in `tftp/docs/desi
 Priority: **High** is visible in daily use or blocks a release; **Medium** is clearly worth doing;
 **Low** is polish or depends on outside changes.
 
-## 1. Owner actions (blocking)
+## 1. Owner actions (completed setup)
 
-These need the repository owner; no code change can do them.
+These actions were completed by the repository owner. New release workflows still need their own successful production run.
 
 | # | Action | Why | Status |
 | --- | --- | --- | --- |
@@ -21,7 +21,7 @@ These need the repository owner; no code change can do them.
 | O4 | Approve accepting Microsoft's license for the CRT and Windows SDK files the cross-compile downloads (`XWIN_ACCEPT_LICENSE`) | It is accepted on the organization's behalf at every Windows build | **Done** |
 | O5 | Build provenance attestations | Public repositories get them on every plan, so every release is attested; the `ATTEST_PROVENANCE` switch is gone | **Done** (repository made public) |
 | O6 | Enable Dependabot security updates (Settings, Code security) | Version updates are configured; security updates are a separate switch and are not held by the 14-day cooldown | **Done** |
-| O7 | Test both apps on real Windows (Windows Sandbox is enough) | CI now installs, launches and uninstalls Readout on a real Windows runner (R8); what still needs a person is the interactive side: dragging the title bar, drag and drop from Explorer, the look of both themes, and all of Scanner | **Done** |
+| O7 | Test both apps on real Windows (Windows Sandbox is enough) | Owner checks are recorded complete. CI also validates Readout and Scanner on Windows. New S5 SSH/RDP handoff, unsaved-close dialogs and physical Wake-on-LAN still need focused checks (SC4) | **Done** |
 | O8 | Keep the organization's self-hosted runner group (`proxmox-ci`) closed to public repositories (Organization settings, Actions, Runner groups: "Allow public repositories" off) | The repository is public, so anyone can open a pull request whose workflow would run on those runners, inside the organization's network and behind the egress IP that infrasec's deploy tokens trust. CI here runs on GitHub-hosted runners instead | **Done** |
 | O9 | Require approval for workflows from outside contributors (Settings, Actions, General, "Fork pull request workflows from outside collaborators": all outside collaborators) | Fork pull requests then run only after a maintainer has read them | **Done** |
 | O10 | Enable secret scanning with push protection and private vulnerability reporting (Settings, Code security) | Free on public repositories; push protection stops a credential from being committed in the first place | **Done** |
@@ -31,24 +31,26 @@ These need the repository owner; no code change can do them.
 
 | # | Item | Priority | Status |
 | --- | --- | --- | --- |
-| R1 | Pull requests, branch protection and required CI on `main`. Two sessions push straight to `main` with no review. These tools are not CUI systems, but change control in the spirit of CMMC CM.L2-3.4.3 is good practice and clients ask how tools are shipped | High | **Done** (O11: `main` requires pull requests) |
+| R1 | Pull requests, branch protection and required CI on `main`; change control supports review of how these tools are shipped | High | **Done** (O11: `main` requires pull requests) |
 | R2 | Downloads page on ztg.sh with the signed installers, checksums and the browser version of Readout. This was the original goal and is not built | High | Open |
 | R3 | One look: both tools use the ZTG palette from `design-tokens.json`; `scripts/ci/check-palette.mjs` fails CI on drift | Medium | **Done** |
-| R4 | Automated dependency updates with the 14-day cooldown (`.github/dependabot.yml`: npm, Cargo, Go modules, Actions) | Medium | **Done** (needs O1 to take effect) |
+| R4 | Automated dependency updates with the 14-day cooldown (`.github/dependabot.yml`: npm, Cargo, Go modules, Actions) | Medium | **Done** (default branch is `main`) |
 | R5 | Retry `apt-get` when a mirror is mid-sync (`scripts/ci/apt-install.sh`) | Medium | **Done** |
 | R6 | CI time: cache the Microsoft SDK download (about 2 GB per Windows build) and the Rust build with `actions/cache`. This affects build time only; nothing cached ships, so installer size does not change | Medium | Open |
 | R7 | Public repository: every workflow runs on GitHub-hosted runners (free for public repositories, isolated from the organization's network); none may use the self-hosted pool (O8) | High | **Done** |
 | R8 | Real Windows in CI: the `windows-install` job installs the NSIS installer and the MSI on `windows-2025`, checks files, shortcut and registry, launches Readout (the window title proves the UI loaded) and opens a file, then uninstalls (`scripts/ci/test-installer-windows.ps1`) | High | **Done** |
+| R9 | Distinct application and tray icon assets using the ZTG palette and wordmark cursor; transparent backgrounds | Medium | **Built** for Scanner, Copy, TFTP and Readout. Scanner and Readout consumers updated; Copy/TFTP desktop consumers remain in their future slices |
+| R10 | Every tool must support Check for updates; shared version/release checks, safe browser handoff and CLI JSON status | High | **Built** for Scanner/Readout UI and Scanner/TFTP CLI; shared Copy support ready, application action required when Copy ships. Automatic installation remains future work; `docs/updates.md` |
 
 ## 3. ZTG Readout
 
-### Not completed
+### Release and validation
 
 | # | Item | Priority |
 | --- | --- | --- |
 | RD1 | Done by the owner (O7): interactive checks on real Windows by a person (title bar dragging and shadow, drag and drop from Explorer, the folder context menu, both themes). Installing, launching and opening a file run in CI (R8) | High |
-| RD2 | No signed release yet. The owner setup (O2 to O4) is done; what remains is the first run of the release workflow, which also proves the credential and the publisher pin | High |
-| RD3 | The MSI is not in the release workflow and is not signed; it has been tested under Wine only, not through Intune or Group Policy | High |
+| RD2 | **Done**: signed Readout `v0.1.0` published October 22, 2026, with the setup EXE, checksums and notices. It uses the shared Azure Artifact Signing identity | High |
+| RD3 | The MSI is not in the release workflow and is not signed. Native Windows CI installs, launches, opens a file and uninstalls it; Intune and Group Policy deployment remain unverified | High |
 | RD4 | THIRD-PARTY-NOTICES.txt lacks the license text for six Rust crates (`alloc-stdlib`, `selectors`, `tauri-plugin`, `webview2-com`, `webview2-com-macros`, `webview2-com-sys`); it names their licenses only. Add standard SPDX license texts as a fallback in `scripts/notices.mjs` | High |
 | RD5 | Browser-driven checks (drag and drop, dividers, folder mode, title bar) ran as one-off scripts. Commit them as a `uitest/` suite in CI, as Scanner has | Medium |
 
@@ -60,7 +62,7 @@ These need the repository owner; no code change can do them.
 | RD7 | Reload when the open file changes on disk (git pull, an AI agent rewriting it), asking first if there are unsaved edits; refresh the folder tree | High | VS Code, Typora |
 | RD8 | Outline panel: the heading tree, click to jump | High | Typora, MarkText |
 | RD9 | Search across the open folder, with results that jump to the line | High | Obsidian, VS Code |
-| RD10 | Tabs or a recent-files list; a single instance (a second file from Explorer opens in the running window); remembered window size and position | Medium | Typora, MarkText |
+| RD10 | Tabs or a recent-files list; a single instance (a second file from Explorer opens in the running window); remembered window size and position. Reopening the last folder and document at start is built | Medium | Typora, MarkText |
 | RD11 | Copy as rich text, so a rendered section pastes into Outlook, Teams or Word with tables and colours | Medium | Typora |
 | RD12 | Export to DOCX and to PDF with bookmarks without the print dialog; a ZTG-branded print template (header, footer, client name) | Medium | Typora (Pandoc) |
 | RD13 | Paste or drop an image into a document: save it beside the file and insert a relative link | Medium | Typora, Obsidian |
@@ -69,7 +71,7 @@ These need the repository owner; no code change can do them.
 | RD16 | Links to non-Markdown files (PDF, scripts) open in the default app after a confirmation | Medium | VS Code |
 | RD17 | Focus and typewriter modes | Low | Typora |
 | RD18 | Two-way scroll sync (preview to editor) | Low | MarkText |
-| RD19 | Auto-update through a signed feed, as the Jackpoint agent has | Low | Typora, Obsidian |
+| RD19 | **Built**: explicit Check for updates through shared per-tool releases. Automatic installation through a verified signed feed remains future work | Medium | `docs/updates.md`; Typora, Obsidian |
 | RD20 | Accessibility pass: screen reader names, keyboard navigation of the file tree, light-theme contrast | Low | |
 | RD21 | Windows 11 Snap Layouts on the custom maximize button; neither Tauri nor Wails supports it yet | Low | |
 | RD22 | Folder mode in Firefox and Safari is an upload and read-only (no File System Access API) | Low | |
@@ -80,10 +82,10 @@ These need the repository owner; no code change can do them.
 
 | # | Item | Priority | Status |
 | --- | --- | --- | --- |
-| SC1 | S4, packaging and trust: Authenticode signing, MSI, portable ZIP, SBOM, release workflow with provenance. Reuses `scripts/signing/` and Readout's MSI approach; CI checks reproducible unsigned EXEs and Windows portable/install/launch/repair/upgrade/uninstall | High | **Built**; first signed release awaits O2 and O3 and a successful release run |
-| SC2 | S5, actions from results: SSH, RDP, Wake-on-LAN, ping and traceroute, saved favorites, compare two scans | High | **Built**; installed Windows clients, bounded diagnostics, explicit on-link wake, local inventory files |
+| SC1 | S4, packaging and trust: Authenticode signing, MSI, portable ZIP, SBOM, release workflow with provenance. Reuses `scripts/signing/` and Readout's MSI approach; CI checks reproducible unsigned EXEs and Windows portable/install/launch/repair/upgrade/uninstall | High | **Built and merged** (#3); O2/O3 complete. First signed Scanner release still needs a successful release run, using the shared `proudlock-signing` / `echowire-public` identity |
+| SC2 | S5, actions from results: SSH, RDP, Wake-on-LAN, ping and traceroute, saved favorites, compare two scans | High | **Built and merged** (#5); installed Windows clients, bounded diagnostics, explicit on-link wake, local inventory files |
 | SC3 | S6: macOS build, IPv6 neighbor discovery | Low | Open |
-| SC4 | The frameless title bar and theme switch have been tested in Chromium only, not on Windows (O7) | High | Open |
+| SC4 | Owner Windows checks are recorded complete (O7); native Windows CI covers install and launch. New S5 SSH/RDP console handoff, the unsaved-close dialog and physical Wake-on-LAN need focused Windows/LAN checks | High | Open for new S5 checks |
 | SC5 | With the Light theme, the native window behind the page could flash dark while opening or resizing | Medium | **Done** (the frontend sets the window background with the theme) |
 
 ### Improvements
@@ -111,15 +113,15 @@ is what makes Scanner easy to approve in client and CMMC environments.
 
 ## 5. ZTG TFTP
 
-T1 and T2 implemented, pending review; later slices remain proposed. The research behind it (Tftpd64, SolarWinds TFTP Server, tftpd-hpa, atftpd,
+T1 and T2 are merged in PRs #2 and #4; later slices remain proposed. The research behind it (Tftpd64, SolarWinds TFTP Server, tftpd-hpa, atftpd,
 dnsmasq, Open TFTP Server, their CVE history and the gaps across them) is in
 `tftp/docs/research.md`, with its sources.
 
 | # | Item | Priority | Status |
 | --- | --- | --- | --- |
 | TF1 | T1 follows the proposed name, own protocol engine and 60-minute session; owner decisions on T6 and retention remain open | High | Partly resolved |
-| TF2 | T1: protocol engine, read-only server, client, scope guard, limits, name policy, audit log, fuzzing, interop tests, `tftp.yml` | High | Implemented, pending review |
-| TF3 | T2: drop box uploads and findings on collected configs | High | Implemented, pending review |
+| TF2 | T1: protocol engine, read-only server, client, scope guard, limits, name policy, audit log, fuzzing, interop tests, `tftp.yml` | High | **Built and merged** |
+| TF3 | T2: drop box uploads and findings on collected configs | High | **Built and merged** |
 | TF4 | T3: Windows desktop app; its stylesheet joins `scripts/ci/check-palette.mjs` | Medium | Open |
 | TF5 | T4 service mode and T5 packaging and signing (reuses Scanner's S4 work, SC1) | Medium | Open |
 
@@ -130,12 +132,13 @@ CRT and SDK and the test browser, used on the build machine while compiling and 
 ships. Caching only keeps those files on the runners between builds. The Readout MSI stays about
 5 MB and the Scanner executable about 13 MB.
 
-## ZTG Copy
+## 7. ZTG Copy
 
-The plan and research are in `copy/docs/design.md`, `copy/docs/research.md` and `copy/docs/flags.md`.
-RC0 has started with a synthetic Windows capture harness, raw pipe evidence, engine identity and native exit
-checks in `.github/workflows/copy.yml`. RC0 is incomplete; the remaining experiments and Windows release/locale
-matrix are tracked in `copy/docs/rc0.md`. RC1 to RC7 remain open and RC1 still requires RC0 review.
+The build plan is in [copy/docs/design.md](../copy/docs/design.md). Owner-selected defaults are
+recorded there. RC0 has passing local, SMB and contained-logon experiments on English Server
+2022 and 2025. Other releases, locales and optimized-copy progress remain validation work.
+RC1 CLI development is next; desktop, reports, credentials UX and packaging follow its slices.
+See [the evidence review](../copy/docs/rc0.md) and [PR #6](https://github.com/zerotrustgarage/tools/pull/6).
 
 ## Sources
 

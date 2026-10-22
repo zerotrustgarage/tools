@@ -1,5 +1,5 @@
 import { LISTED_EXTENSIONS, resolveInFolder, skipFolder } from '../core/paths';
-import type { FileRef, Listing, OpenedFile, Platform } from './types';
+import type { Arrival, FileRef, Listing, OpenedFile, Platform } from './types';
 
 // Browser build. Files never leave the machine: they are read and written locally through the
 // File System Access API (Chromium browsers) or through file inputs and downloads elsewhere.
@@ -19,6 +19,10 @@ type PickerWindow = Window & {
 };
 type IterableDirectory = FileSystemDirectoryHandle & {
   values(): AsyncIterable<FileSystemFileHandle | FileSystemDirectoryHandle>;
+};
+type PermissionHandle = FileSystemHandle & {
+  queryPermission?(options: { mode: 'read' }): Promise<PermissionState>;
+  requestPermission?(options: { mode: 'read' }): Promise<PermissionState>;
 };
 const picker = window as PickerWindow;
 const cancelled = (error: unknown) => error instanceof DOMException && error.name === 'AbortError';
@@ -85,6 +89,65 @@ async function folderFile(listing: Listing, folderPath: string): Promise<{ file:
   const file = entries?.get(folderPath);
   if (!file) throw new Error(`${folderPath} is not in the open folder`);
   return { file };
+}
+
+// The session (what was open last) is kept in IndexedDB, which can store file and folder handles.
+// Only handles from the File System Access API can be kept; a browser asks again for access to
+// them after a restart unless the user allowed it on every visit.
+const SESSION_DB = 'ztg-readout';
+const SESSION_STORE = 'session';
+const SESSION_KEY = 'last';
+
+interface StoredSession {
+  folder?: FileSystemDirectoryHandle;
+  /** The document in the folder, folder-relative. */
+  folderPath?: string;
+  /** A lone document. */
+  file?: FileSystemFileHandle;
+}
+
+function withSessionStore<T>(mode: IDBTransactionMode, use: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const opening = indexedDB.open(SESSION_DB, 1);
+    opening.onupgradeneeded = () => opening.result.createObjectStore(SESSION_STORE);
+    opening.onerror = () => reject(opening.error);
+    opening.onsuccess = () => {
+      const db = opening.result;
+      const request = use(db.transaction(SESSION_STORE, mode).objectStore(SESSION_STORE));
+      request.onsuccess = () => {
+        db.close();
+        resolve(request.result);
+      };
+      request.onerror = () => {
+        db.close();
+        reject(request.error);
+      };
+    };
+  });
+}
+
+async function access(handle: FileSystemHandle, ask: boolean): Promise<boolean> {
+  const h = handle as PermissionHandle;
+  const check = ask ? h.requestPermission : h.queryPermission;
+  return (await check?.call(h, { mode: 'read' })) === 'granted';
+}
+
+/** Reopens a stored session; null when its folder or file has gone. */
+async function restore(session: StoredSession): Promise<Arrival | null> {
+  try {
+    if (session.folder) {
+      const listing: Listing = { folder: { name: session.folder.name, handle: session.folder }, ...(await walk(session.folder)) };
+      const file = session.folderPath ? await webPlatform.readFolderFile(listing, session.folderPath).catch(() => undefined) : undefined;
+      return { listing, file };
+    }
+    if (session.file) {
+      const file = await session.file.getFile();
+      return { file: { ref: { name: file.name, handle: session.file }, bytes: new Uint8Array(await file.arrayBuffer()) } };
+    }
+  } catch {
+    // Moved or deleted since; the start stays empty.
+  }
+  return null;
 }
 
 export const webPlatform: Platform = {
@@ -189,7 +252,30 @@ export const webPlatform: Platform = {
   },
 
   async initial() {
-    return null;
+    if (typeof indexedDB === 'undefined') return null;
+    const session = await withSessionStore<StoredSession | undefined>('readonly', (store) => store.get(SESSION_KEY)).catch(
+      () => undefined,
+    );
+    const handle = session?.folder ?? session?.file;
+    if (!session || !handle) return null;
+    if (await access(handle, false)) return restore(session);
+    return {
+      pending: { name: handle.name, open: async () => ((await access(handle, true)) ? restore(session) : null) },
+    };
+  },
+
+  remember(listing, ref) {
+    if (typeof indexedDB === 'undefined') return;
+    const folder = listing?.folder.handle;
+    const session: StoredSession | null = folder
+      ? { folder, folderPath: ref?.folderPath }
+      : !listing && ref?.handle
+        ? { file: ref.handle }
+        : null;
+    const written = session
+      ? withSessionStore('readwrite', (store) => store.put(session, SESSION_KEY))
+      : withSessionStore('readwrite', (store) => store.delete(SESSION_KEY));
+    void written.catch(() => undefined);
   },
 
   onDrop(handlers) {

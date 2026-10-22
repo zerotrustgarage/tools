@@ -115,7 +115,10 @@ version that is already released.
 
 For Scanner, run **Release ZTG Scanner** (`.github/workflows/release-scanner.yml`) on `main`.
 The numeric version comes from `scanner/VERSION`; its tag is `scanner-v<version>`. It uses the
-same `tools-signing` environment, publisher and verification policy. Its Go cross-compile
+same `tools-signing` environment, `proudlock-signing` account, `echowire-public` certificate
+profile, publisher and verification policy as Readout and Jackpoint. Scanner reads the tenant and client
+IDs from environment variables with the same environment-secret fallback as Readout. Owner setup
+O2/O3 is recorded complete; Scanner still needs its first successful production release run. Its Go cross-compile
 does not download the Microsoft SDK or require `XWIN_ACCEPT_LICENSE`.
 
 Scanner's build job checks reproducible unsigned EXEs and produces the license notices and

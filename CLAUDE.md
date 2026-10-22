@@ -6,9 +6,9 @@ release workflow and `CLAUDE.md`. Read the tool's own file before changing it:
 - `readout/`: ZTG Readout, a source-faithful Markdown editor and viewer (TypeScript, Tauri).
   See `readout/CLAUDE.md`.
 - `scanner/`: ZTG Scanner, network discovery and inventory (Go). See `scanner/CLAUDE.md`.
-- `tftp/`: ZTG TFTP, a TFTP server and client (Go, T1 and T2 implemented, pending review). See `tftp/CLAUDE.md`.
+- `tftp/`: ZTG TFTP, a TFTP server and client (Go, T1 and T2 implemented and merged). See `tftp/CLAUDE.md`.
 
-- `copy/`: ZTG Copy, Windows Robocopy designer and evidence recorder (Go, RC0 in progress). See `copy/CLAUDE.md`.
+- `copy/`: ZTG Copy, Robocopy job designer and evidence recorder (Go). See `copy/CLAUDE.md`.
 
 ## Repository-wide rules
 
@@ -30,3 +30,6 @@ release workflow and `CLAUDE.md`. Read the tool's own file before changing it:
 5. Writing style: no em dashes; plain, specific language. Conventional commits.
 6. One look: every tool uses the ZTG palette in `design-tokens.json`, enforced by
    `scripts/ci/check-palette.mjs`. Open work and recommendations are tracked in `docs/roadmap.md`.
+7. Every application must offer an explicit Check for updates action (or `check-updates` in a CLI).
+   Reuse `scripts/updates/` and its release contract in `docs/updates.md`. Do not introduce background
+   checks or automatic installation without an explicit product decision.

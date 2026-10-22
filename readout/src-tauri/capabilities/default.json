@@ -25,6 +25,7 @@
     "allow-open-external",
     "allow-read-image",
     "allow-resolve-link",
-    "allow-initial-document"
+    "allow-initial-document",
+    "allow-remember-session"
   ]
 }

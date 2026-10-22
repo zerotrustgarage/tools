@@ -18,6 +18,10 @@
 //! - Folder listings never follow symbolic links or junctions, so a repository cannot point the
 //!   walk outside itself or into a loop.
 //! - External links open in the system browser only for http, https and mailto.
+//! - The session (the open folder and document, so the next start reopens them) is kept by Rust
+//!   in the app's local data folder. The WebView can only ask to remember paths that are already
+//!   granted, and a stored path is checked again (it must still exist and be a folder or a
+//!   document) before it is granted at the next start.
 
 use std::collections::HashSet;
 use std::fs;
@@ -26,7 +30,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::ipc::{InvokeBody, Request, Response};
 use tauri::{AppHandle, DragDropEvent, Emitter, Manager, State, WindowEvent};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
@@ -39,6 +43,8 @@ const EXPORT_EXTENSIONS: &[&str] = &["html", "htm"];
 const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "avif"];
 const MAX_DOCUMENT_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_IMAGE_BYTES: u64 = 32 * 1024 * 1024;
+const SESSION_FILE: &str = "session.json";
+const MAX_SESSION_BYTES: u64 = 64 * 1024;
 
 /// Folders a listing never descends into: version control, dependencies and build output.
 /// `.github` and `.gitlab` are kept because they hold templates and contributor guides.
@@ -83,6 +89,16 @@ struct Granted {
 struct Initial {
     path: String,
     folder: bool,
+    /// A restored session's document inside the folder, opened instead of its README.
+    document: Option<String>,
+}
+
+/// What was open when the app last changed document: a folder, a document, or a document in a
+/// folder. Stored as JSON in the app's local data folder.
+#[derive(Serialize, Deserialize, Default, Debug, PartialEq)]
+struct Session {
+    folder: Option<PathBuf>,
+    document: Option<PathBuf>,
 }
 
 impl Granted {
@@ -125,6 +141,32 @@ impl Granted {
         } else {
             Err("That folder was not opened through this window".into())
         }
+    }
+
+    /// The session to store for what the WebView reports as open. Only granted paths qualify,
+    /// so remembering can never widen what the next start may read.
+    fn session(&self, folder: Option<&str>, document: Option<&str>) -> Result<Session, String> {
+        let folder = folder.map(|f| self.check_root(f)).transpose()?;
+        let document = document.map(|d| self.check(d)).transpose()?;
+        if let Some(document) = &document {
+            if !has_extension(document, DOCUMENT_EXTENSIONS) {
+                return Err("Only Markdown and text files can be remembered".into());
+            }
+            if folder.as_ref().is_some_and(|f| !document.starts_with(f)) {
+                return Err("The document is not in the open folder".into());
+            }
+        }
+        Ok(Session { folder, document })
+    }
+
+    /// Grants what a startup argument or a restored session opens.
+    fn grant_initial(&self, initial: Initial) {
+        if initial.folder {
+            self.grant_root(Path::new(&initial.path));
+        } else {
+            self.grant_file(Path::new(&initial.path));
+        }
+        *self.initial.lock().expect("initial lock") = Some(initial);
     }
 }
 
@@ -337,6 +379,58 @@ fn startup_argument(args: impl Iterator<Item = String>) -> Option<(PathBuf, bool
         .and_then(|p| fs::canonicalize(&p).ok().map(|c| (c, p.is_dir())))
 }
 
+fn session_file(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_local_data_dir()
+        .map(|dir| dir.join(SESSION_FILE))
+        .map_err(|e| format!("No folder for the session: {e}"))
+}
+
+fn read_session(file: &Path) -> Option<Session> {
+    serde_json::from_slice(&read_limited(file, MAX_SESSION_BYTES).ok()?).ok()
+}
+
+/// Writes the session, or removes the file when nothing is open.
+fn write_session(file: &Path, session: &Session) -> Result<(), String> {
+    if session.folder.is_none() && session.document.is_none() {
+        return match fs::remove_file(file) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(format!("Could not forget the session: {e}")),
+            _ => Ok(()),
+        };
+    }
+    let folder = file.parent().ok_or("The path has no folder")?;
+    fs::create_dir_all(folder).map_err(|e| format!("Could not create the session folder: {e}"))?;
+    write_atomic(file, &serde_json::to_vec(session).map_err(|e| e.to_string())?)
+}
+
+/// What a stored session reopens, checked as a startup argument would be: the folder must still
+/// be a folder, the document a Markdown or text file, inside the folder when there is one. A
+/// folder whose document has gone opens on its README; a lone document that has gone opens
+/// nothing.
+fn restored(session: Session) -> Option<Initial> {
+    let document = session
+        .document
+        .and_then(|d| fs::canonicalize(d).ok())
+        .filter(|d| d.is_file() && has_extension(d, DOCUMENT_EXTENSIONS));
+    let text = |p: &Path| p.to_string_lossy().into_owned();
+    match session
+        .folder
+        .and_then(|f| fs::canonicalize(f).ok())
+        .filter(|f| f.is_dir())
+    {
+        Some(folder) => Some(Initial {
+            path: text(&folder),
+            folder: true,
+            document: document.filter(|d| d.starts_with(&folder)).map(|d| text(&d)),
+        }),
+        None => document.map(|d| Initial {
+            path: text(&d),
+            folder: false,
+            document: None,
+        }),
+    }
+}
+
 #[derive(Serialize)]
 struct Listing {
     root: String,
@@ -510,23 +604,38 @@ fn initial_document(granted: State<'_, Granted>) -> Option<Initial> {
     granted.initial.lock().expect("initial lock").take()
 }
 
+/// Stores what is open so the next start reopens it; with neither, forgets the session.
+#[tauri::command]
+async fn remember_session(
+    app: AppHandle,
+    folder: Option<String>,
+    document: Option<String>,
+    granted: State<'_, Granted>,
+) -> Result<(), String> {
+    let session = granted.session(folder.as_deref(), document.as_deref())?;
+    write_session(&session_file(&app)?, &session)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(Granted::default())
         .setup(|app| {
-            if let Some((path, folder)) = startup_argument(std::env::args().skip(1)) {
-                let granted = app.state::<Granted>();
-                if folder {
-                    granted.grant_root(&path);
-                } else {
-                    granted.grant_file(&path);
-                }
-                *granted.initial.lock().expect("initial lock") = Some(Initial {
+            // A file or folder named on the command line wins over the stored session.
+            let initial = match startup_argument(std::env::args().skip(1)) {
+                Some((path, folder)) => Some(Initial {
                     path: path.to_string_lossy().into_owned(),
                     folder,
-                });
+                    document: None,
+                }),
+                None => session_file(app.handle())
+                    .ok()
+                    .and_then(|file| read_session(&file))
+                    .and_then(restored),
+            };
+            if let Some(initial) = initial {
+                app.state::<Granted>().grant_initial(initial);
             }
             Ok(())
         })
@@ -552,6 +661,7 @@ pub fn run() {
                             let initial = Initial {
                                 path: path.to_string_lossy().into_owned(),
                                 folder,
+                                document: None,
                             };
                             let _ = window.emit("document-dropped", initial);
                         }
@@ -574,7 +684,8 @@ pub fn run() {
             open_external,
             read_image,
             resolve_link,
-            initial_document
+            initial_document,
+            remember_session
         ])
         .run(tauri::generate_context!())
         .expect("error while running ZTG Readout");
@@ -758,6 +869,107 @@ mod tests {
             Err("main.rs".to_string())
         );
         assert_eq!(dropped_target(&[]), Err(String::new()));
+    }
+
+    #[test]
+    fn only_granted_paths_are_remembered() {
+        let dir = fixture("remember");
+        let root = dir.join("repo");
+        let doc = root.join("docs/setup.md");
+        let (root_s, doc_s) = (root.to_str().unwrap(), doc.to_str().unwrap());
+        let secret = dir.join("outside/secret.md");
+        let granted = Granted::default();
+        assert!(granted.session(Some(root_s), None).is_err());
+        assert!(granted.session(None, Some(doc_s)).is_err());
+        granted.grant_root(&root);
+        assert_eq!(
+            granted.session(Some(root_s), Some(doc_s)).unwrap(),
+            Session {
+                folder: Some(root.clone()),
+                document: Some(doc.clone())
+            }
+        );
+        assert!(granted
+            .session(None, Some(root.join("docs/images/a.png").to_str().unwrap()))
+            .is_err());
+        assert!(granted
+            .session(Some(root.join("docs").to_str().unwrap()), None)
+            .is_err());
+        granted.grant_file(&secret);
+        assert!(granted.session(Some(root_s), Some(secret.to_str().unwrap())).is_err());
+        assert!(granted.session(None, Some(secret.to_str().unwrap())).is_ok());
+        assert_eq!(granted.session(None, None).unwrap(), Session::default());
+    }
+
+    #[test]
+    fn a_session_round_trips_and_an_empty_one_removes_the_file() {
+        let dir = fixture("session");
+        let file = dir.join("data/sh.ztg.readout").join(SESSION_FILE);
+        let session = Session {
+            folder: Some(dir.join("repo")),
+            document: Some(dir.join("repo/README.md")),
+        };
+        write_session(&file, &session).unwrap();
+        assert_eq!(read_session(&file), Some(session));
+        write_session(&file, &Session::default()).unwrap();
+        assert!(!file.exists());
+        write_session(&file, &Session::default()).unwrap();
+        fs::write(&file, "not json").unwrap();
+        assert_eq!(read_session(&file), None);
+    }
+
+    #[test]
+    fn a_restored_session_reopens_only_what_still_qualifies() {
+        let dir = fixture("restore");
+        let root = dir.join("repo");
+        let text = |p: PathBuf| p.to_string_lossy().into_owned();
+        let session = |folder: Option<&str>, document: Option<&str>| Session {
+            folder: folder.map(|f| dir.join(f)),
+            document: document.map(|d| dir.join(d)),
+        };
+        assert_eq!(
+            restored(session(Some("repo"), Some("repo/docs/../docs/setup.md"))),
+            Some(Initial {
+                path: text(root.clone()),
+                folder: true,
+                document: Some(text(root.join("docs/setup.md")))
+            })
+        );
+        let readme_only = Some(Initial {
+            path: text(root.clone()),
+            folder: true,
+            document: None,
+        });
+        assert_eq!(restored(session(Some("repo"), Some("repo/gone.md"))), readme_only);
+        assert_eq!(restored(session(Some("repo"), Some("outside/secret.md"))), readme_only);
+        assert_eq!(restored(session(Some("repo"), Some("repo/src/main.rs"))), readme_only);
+        assert_eq!(
+            restored(session(Some("gone"), Some("outside/secret.md"))),
+            Some(Initial {
+                path: text(dir.join("outside/secret.md")),
+                folder: false,
+                document: None
+            })
+        );
+        assert_eq!(restored(session(Some("repo/README.md"), None)), None);
+        assert_eq!(restored(session(None, Some("repo/docs/images/a.png"))), None);
+        assert_eq!(restored(session(None, Some("gone.md"))), None);
+        assert_eq!(restored(Session::default()), None);
+    }
+
+    #[test]
+    fn a_restored_session_is_granted() {
+        let dir = fixture("grant-initial");
+        let granted = Granted::default();
+        let initial = restored(Session {
+            folder: Some(dir.join("repo")),
+            document: None,
+        })
+        .unwrap();
+        granted.grant_initial(initial.clone());
+        assert!(granted.check(dir.join("repo/docs/setup.md").to_str().unwrap()).is_ok());
+        assert!(granted.check(dir.join("outside/secret.md").to_str().unwrap()).is_err());
+        assert_eq!(granted.initial.lock().unwrap().take(), Some(initial));
     }
 
     #[test]

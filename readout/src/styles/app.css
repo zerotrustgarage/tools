@@ -1,3 +1,5 @@
+@import '../../../scripts/updates/client.css';
+
 /* Application chrome, in the ZTG palette (design-tokens.json in zerotrustgarage/ztg). */
 
 :root,
@@ -173,6 +175,7 @@ button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
   border-bottom: 1px solid var(--line);
   color: var(--bright);
 }
+.banner .banner-action { height: 24px; margin-left: 6px; background: var(--panel); border-color: var(--line); }
 
 .workspace { position: relative; flex: 1; display: flex; min-height: 0; }
 .panes { flex: 1; display: flex; min-width: 0; min-height: 0; }
@@ -228,6 +231,8 @@ body.resizing .pane, body.resizing .sidebar { pointer-events: none; }
 
 .status-bar {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 16px;
   padding: 3px 12px;
   font-size: 12px;
