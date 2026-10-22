@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/netip"
@@ -135,7 +136,7 @@ func OpenDrop(directory, served string, maxBytes int64, floor uint64) (*Drop, er
 	d := &Drop{root: r, directory: f, MaxBytes: maxBytes, FreeFloor: floor, space: freeBytes}
 	if e = private(f, true); e != nil {
 		d.Close()
-		return nil, e
+		return nil, fmt.Errorf("restrict drop box root: %w", e)
 	}
 	d.lock, e = r.OpenFile(".lock", os.O_CREATE|os.O_RDWR, 0600)
 	if e != nil {
@@ -144,7 +145,7 @@ func OpenDrop(directory, served string, maxBytes int64, floor uint64) (*Drop, er
 	}
 	if e = private(d.lock, false); e != nil {
 		d.Close()
-		return nil, e
+		return nil, fmt.Errorf("restrict drop box lock: %w", e)
 	}
 	if e = lockDrop(d.lock); e != nil {
 		d.Close()
@@ -164,7 +165,7 @@ func OpenDrop(directory, served string, maxBytes int64, floor uint64) (*Drop, er
 	// A platform without reliable free-space accounting cannot accept uploads.
 	if _, e = d.space(f); e != nil {
 		d.Close()
-		return nil, e
+		return nil, fmt.Errorf("query drop box free space: %w", e)
 	}
 	if e = d.recoverIndex(); e != nil {
 		d.Close()
