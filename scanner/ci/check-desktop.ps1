@@ -57,7 +57,7 @@ foreach ($choice in @(
 )) {
   $theme.SetFocus()
   $theme.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern).Expand()
-  [System.Windows.Forms.SendKeys]::SendWait($choice.Keys)
+  [System.Windows.Forms.SendKeys]::SendWait($choice['Keys'])
   $matched = $false
   for ($i = 0; $i -lt 50; $i++) {
     Start-Sleep -Milliseconds 100
@@ -79,4 +79,4 @@ foreach ($choice in @(
 $theme.SetFocus()
 $theme.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern).Expand()
 [System.Windows.Forms.SendKeys]::SendWait('{HOME}{ENTER}')
-Write-Host "Desktop $Version: unified controls and actual dark/light pixels verified."
+Write-Host "Desktop ${Version}: unified controls and actual dark/light pixels verified."
