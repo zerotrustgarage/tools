@@ -17,7 +17,7 @@ func TestWindowsArguments(t *testing.T) {
 		t.Fatalf("%q: %q, %v", command, got, err)
 	}
 	got, err = Tokenize(`robocopy "C:\source space" D:\backup /XD "C:\source space\cache" /R:2`)
-	if err != nil || len(got) != 7 || got[1] != `C:\source space` || got[5] != `C:\source space\cache` {
+	if err != nil || len(got) != 6 || got[1] != `C:\source space` || got[4] != `C:\source space\cache` {
 		t.Fatalf("%q, %v", got, err)
 	}
 	for _, bad := range []string{"a\x00b", "a\nb", `"unclosed`} {
