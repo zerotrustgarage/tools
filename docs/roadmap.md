@@ -135,13 +135,13 @@ existing GUIs and alternatives) is in `copy/docs/research.md`, the option refere
 | --- | --- | --- | --- |
 | RB1 | Owner decisions in `copy/docs/design.md` section 16 (wrap versus own engine, defaults, retention, supported Windows releases); the name is decided: ZTG Copy | High | Partly resolved |
 | RB2 | RC0: spike on real Windows releases, output fixtures, ten technical questions answered | High | Open |
-| RB3 | RC1: engine and CLI (catalog, job model, import and explain, runner, parser, metrics and ETA, run record, `copy.yml`) | High | Open |
+| RB3 | RC1: engine and CLI (catalog, job model, saved templates with placeholders, import and explain, runner, parser, metrics and ETA, run record, `copy.yml`) | High | Open |
 | RB4 | RC2: safety guards and previews for destructive options | High | Open |
 | RB5 | RC3: credentials and network context (temporary SMB connections, SMB encryption state, BitLocker state) | High | Open |
-| RB6 | RC4: Windows desktop app; its stylesheet joins `scripts/ci/check-palette.mjs` | Medium | Open |
+| RB6 | RC4: Windows desktop app, including the template library and quick launch; its stylesheet joins `scripts/ci/check-palette.mjs` | Medium | Open |
 | RB7 | RC5: verification and reports | Medium | Open |
 | RB8 | RC6: packaging and signing (reuses SC1 and TF5) | Medium | Open |
-| RB9 | RC7 candidates: migration mode, job queue, Task Scheduler export, Volume Shadow Copy source | Low | Needs owner decision |
+| RB9 | RC7 candidates: migration mode, shared team template library, job queue, Task Scheduler export, Volume Shadow Copy source | Low | Needs owner decision |
 
 ## 7. Questions answered
 

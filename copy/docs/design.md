@@ -10,7 +10,7 @@ ZTG Copy helps a technician design, run and prove a Robocopy job:
 
 - Design: every option explained in plain language, with what it does, when to use it, what it risks and whether the
   installed Windows supports it; source and destination pickers; alternate credentials for shares; a live command
-  preview; import and explanation of an existing command line.
+  preview; import and explanation of an existing command line; saved templates for jobs a technician runs often.
 - Run: an honest overall progress bar, current and average speed, files per second, elapsed time and an ETA for the
   whole job, with retries, failures and their causes shown as they happen.
 - Prove: a structured record of what ran, by whom, with which options, what was copied, skipped, deleted or failed,
@@ -63,6 +63,7 @@ copy to the engine clients already accept. The costs of wrapping are handled by 
 cmd/ztg-copy     CLI: flags, explain, plan, run, verify, report, version
 internal/catalog     embedded option catalog: groups, help, tags, conflicts, implications, privileges
 internal/job         job model (endpoints, file filters, options, metadata), JSON load and save, validation
+internal/template    saved templates: placeholders, substitution, library storage, import and export
 internal/cmdline     argument rendering, Windows command-line tokenizer for import, cmd and PowerShell quoting
                      for display, .RCJ job file read and write (fuzzed)
 internal/probe       robocopy.exe discovery, version, hash and supported options; privileges and elevation;
@@ -208,7 +209,7 @@ connection afterwards.
 
 ## 9. Interface
 
-### CLI
+### 9.1 CLI
 
 ```
 ztg-copy flags [--search text]                       # the catalog, explained
@@ -222,9 +223,9 @@ ztg-copy version
 ```
 
 Jobs are JSON files the app also reads and writes. `/MON` and `/MOT` (which keep Robocopy running) are available
-only through the CLI and exports.
+only through the CLI and exports. Template commands are in section 9.3.
 
-### Desktop app
+### 9.2 Desktop app
 
 - Design: source and destination (folder browser, UNC entry, recent paths, "Connect as" per share), file filters,
   presets, option groups with search. Selecting an option shows its help, risk tags, conflicts, implied options and
@@ -239,12 +240,57 @@ only through the CLI and exports.
 - Presets, each with the reason for every option: Copy tree (safe), Mirror (destructive), File server migration with
   permissions (`/E /COPYALL /DCOPY:DAT /B /MT:16 /R:2 /W:5 /XJ`), NAS target (`/FFT /DST /XJ`), User profile move,
   Move to archive by age, Throttled over WAN (`/IORATE` where detected, else `/IPG` without `/MT`).
+- Templates: a library page and a quick-launch list (section 9.3).
 - Exports: `.cmd` and `.ps1` scripts with exit-code handling (0 to 7 success), an `.RCJ` job file, the job JSON.
 - Elevation: the app runs as invoker; options that need elevation offer "Restart as administrator", which keeps the
   job.
 - Same model as ZTG Scanner: bound methods with no Wails imports, tested on any platform; plain HTML, CSS and
   JavaScript; file names are untrusted text inserted with `textContent` only; a Content-Security-Policy with no
   inline script; the ZTG palette from `design-tokens.json`, added to `scripts/ci/check-palette.mjs`.
+
+### 9.3 Templates
+
+A template is a saved command a technician can reuse in a few clicks: a name, a description, tags, the options, and
+source, destination and other values that are either fixed or left as placeholders to fill in at use.
+
+- Saving: from the designer ("Save as template"), from the history page (a past run's job), or by pasting a Robocopy
+  command string, which goes through the same import and explain step as section 9.2, so unknown options are flagged
+  before it is saved.
+- Placeholders: `{source}`, `{destination}` and named text, path or number fields the template defines (for example
+  `{client}` or `{share}`), plus built-ins filled automatically: `{date}` (`YYYY-MM-DD`), `{time}`, `{computer}` and
+  `{user}`. A field can carry a default, a description and, for paths, the last values used. Placeholders are
+  substituted into individual arguments, never into a command string, and each argument is validated after
+  substitution, so a value cannot add options or break quoting.
+- Quick use: pinned templates appear on the start page and in a search box (type part of the name or a tag); choosing
+  one asks only for its empty placeholders, then opens the preview. Every option, guard and confirmation applies as
+  for a hand-built job: a template never skips the preview, the deletion confirmation or the `/QUIT` check, and a
+  template that contains a destructive option carries a badge in the library.
+- Copy as command: any template, filled in, can be copied as a plain Robocopy command line (cmd or PowerShell
+  quoting) for use in a script or an RMM tool, with the safe defaults it holds (`/R:2 /W:5`).
+- Credentials: a template may name the account for "Connect as" per share, never a password; the password is asked
+  for each time (principle 4).
+- Built-in presets (section 9.2) are read-only templates; a technician can duplicate and edit them.
+- Storage: one JSON file per template in `%APPDATA%\ZTG\Copy\templates\`, with a schema version and the catalog
+  version it was written with. On load, options this Windows build does not support, or that the catalog no longer
+  knows, are flagged rather than dropped.
+- Sharing: export and import of template files, so a team can pass standard commands around. An imported template is
+  untrusted: it is shown in full with the explain view and risk tags, and saved only after the technician accepts it.
+  A shared read-only team library (a folder on a file share that the app lists beside the local one) is an RC7
+  candidate.
+
+CLI:
+
+```
+ztg-copy template list [--tag migration]
+ztg-copy template show nas-mirror                          # options, placeholders, risk tags
+ztg-copy template save nas-mirror --from job.json          # or --command "robocopy ..." to import a string
+ztg-copy template run nas-mirror --set source=D:\Shares\Finance --set client=acme --max-delete 0
+ztg-copy template command nas-mirror --set source=D:\Shares\Finance   # print the filled Robocopy command line
+ztg-copy template export nas-mirror nas-mirror.json
+ztg-copy template import nas-mirror.json                   # explains it and asks before saving
+```
+
+`template run` refuses to start while a placeholder without a default is unfilled.
 
 ## 10. Run record and reports
 
@@ -304,6 +350,10 @@ turns the transport and media warnings in S13 into acknowledgments.
   names in the output.
 - Metrics: replayed fixtures under a fake clock; ETA error on recorded jobs; stall and retry detection.
 - Guards: each S1 to S13 case with a fake file system.
+- Templates: substitution of every placeholder kind; values containing quotes, spaces, `/` options and trailing
+  backslashes stay one argument; a template run still triggers the preview and guards; an imported template with an
+  unknown or unsupported option is flagged; a template file containing a password field is rejected; fuzzing of the
+  template reader.
 - Windows integration (`windows-2025` runner, real Robocopy): copy, mirror with deletions, `/MT`, a locked file with
   `/R:0` (exit 8), a junction loop with `/XJ`, paths over 260 characters, Unicode names, preview totals equal to
   copy totals, every exit code bit reproduced, a tampered byte caught by hash verification, empty-source mirror
@@ -320,13 +370,13 @@ Each slice is reviewed before the next starts. Sizes are relative (S small, M me
 | Slice | What | Done when | Size |
 | --- | --- | --- | --- |
 | RC0 | Spike on real Windows (10 22H2, 11 24H2 and 25H2, Server 2016, 2019, 2022, 2025): capture output fixtures; answer the open technical questions below; record decisions in this file | Fixtures committed under `testdata/`; each question answered | S |
-| RC1 | Engine and CLI: catalog with its `flags.md` check, job model, argument rendering, import and explain, probes, runner in a job object, parser, metrics, run record, normalized exit codes; CI workflow `copy.yml` (gofmt, vet for Linux and Windows, race tests, fuzz seeds, Windows integration job) | `plan`, `run`, `explain`, `flags` work against real Robocopy on the Windows runner; ETA within 15% on the fixture jobs after the first minute | L |
+| RC1 | Engine and CLI: catalog with its `flags.md` check, job model, templates with placeholders and the `template` commands, argument rendering, import and explain, probes, runner in a job object, parser, metrics, run record, normalized exit codes; CI workflow `copy.yml` (gofmt, vet for Linux and Windows, race tests, fuzz seeds, Windows integration job) | `plan`, `run`, `explain`, `flags` work against real Robocopy on the Windows runner; ETA within 15% on the fixture jobs after the first minute | L |
 | RC2 | Safety: guards S1 to S12, previews for every destructive option, `--max-delete`, junction listing | Every guard case tested; no destructive run without a preview | M |
 | RC3 | Credentials and network context: "Connect as", network-only logon (if RC0 allows), cleanup, 1219 and 1326 handling, SMB dialect, encryption and signing, BitLocker state, guard S13 | SMB tests pass on the runner; no credential reachable from any file, log or export (tested) | M |
-| RC4 | Desktop app: design, preview, run dashboard, history, presets, exports, elevation restart; palette check | UI tests pass; owner tests on real Windows | L |
+| RC4 | Desktop app: design, preview, run dashboard, history, template library and quick launch, presets, exports, elevation restart; palette check | UI tests pass; owner tests on real Windows | L |
 | RC5 | Verification and reports: convergence, sample and full hash, ACL comparison, HTML and CSV reports, run comparison | A tampered file and a changed-at-source file are told apart in tests | M |
 | RC6 | Packaging and trust: Authenticode through `scripts/signing/`, MSI, portable ZIP, SBOM, `release-copy.yml` with provenance; reuses Scanner's S4 work (roadmap SC1) and TFTP's T5 | A signed release published by the workflow | M |
-| RC7 | Candidates needing an owner decision: migration mode (planned pre-seed, delta and cutover passes with the delta trend and a cutover estimate); a job queue; Task Scheduler export with gMSA guidance; a Volume Shadow Copy source for locked files (needs administrator rights) | Per candidate | |
+| RC7 | Candidates needing an owner decision: migration mode (planned pre-seed, delta and cutover passes with the delta trend and a cutover estimate); a shared read-only team template library on a file share; a job queue; Task Scheduler export with gMSA guidance; a Volume Shadow Copy source for locked files (needs administrator rights) | Per candidate | |
 
 RC0 questions:
 
@@ -364,3 +414,5 @@ RC0 questions:
 8. Supported Windows releases: Windows 10 22H2 (where under extended security updates), Windows 11, and Server 2016
    onward is proposed, with option detection covering the differences.
 9. Which RC7 candidates, if any, are wanted.
+10. Template storage: per user in the roaming profile (proposed, follows the technician between machines in a domain),
+    or per machine.

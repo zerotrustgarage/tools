@@ -22,6 +22,8 @@ reference the catalog is built from. Its principles are requirements:
 7. Safe defaults: `/R:2 /W:5`, `/XJ`, a log on every run; `/REG` is never offered.
 8. Never claim a transfer is encrypted or compliant when the tool cannot tell; `/COMPRESS` is not encryption.
 9. Local only: no telemetry, no cloud reporting.
+10. Templates never hold a password and never skip the preview, guards or confirmations; placeholders are substituted
+    into single arguments, never into a command string, and imported templates are explained before they are saved.
 
 Dependencies: standard library, `golang.org/x/sys`, and Wails v2 for the app; justify any other in the commit
 message. Writing style: no em dashes. Slices (RC0 to RC7) are built one at a time, each reviewed before the next
