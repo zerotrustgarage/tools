@@ -15,6 +15,7 @@ import (
 	"github.com/zerotrustgarage/tools/copy/internal/catalog"
 	"github.com/zerotrustgarage/tools/copy/internal/job"
 	"github.com/zerotrustgarage/tools/copy/internal/private"
+	copyrun "github.com/zerotrustgarage/tools/copy/internal/run"
 	"github.com/zerotrustgarage/tools/copy/internal/template"
 	"github.com/zerotrustgarage/tools/copy/internal/update"
 )
@@ -25,6 +26,10 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	if err := run(ctx, os.Args[1:], os.Stdout, os.Stderr); err != nil {
+		var exit commandExit
+		if errors.As(err, &exit) {
+			os.Exit(int(exit))
+		}
 		fmt.Fprintln(os.Stderr, "ztg-copy:", err)
 		os.Exit(3)
 	}
@@ -32,7 +37,7 @@ func main() {
 
 func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-		fmt.Fprintln(out, "ZTG Copy\n\nCommands:\n  flags [--search TEXT] [--json]\n  explain [--json] 'robocopy SOURCE DESTINATION [options]'\n  import [--output FILE] 'robocopy SOURCE DESTINATION [options]'\n  validate JOB.json\n  template list|show|save|command|export|import\n  version\n  check-updates [--json]\n\nCLI designer preview. Production plan/run, desktop and release packaging are in development.\nCommands never invoke a shell. Printed commands use direct Windows process quoting.")
+		fmt.Fprintln(out, "ZTG Copy\n\nCommands:\n  flags [--search TEXT] [--json]\n  explain [--json] 'robocopy SOURCE DESTINATION [options]'\n  import [--output FILE] 'robocopy SOURCE DESTINATION [options]'\n  validate JOB.json\n  plan [--report DIRECTORY] JOB.json\n  run [--report DIRECTORY] [--native-exit] JOB.json\n  template list|show|save|command|export|import\n  version\n  check-updates [--json]\n\nInitial copy runner: existing local fixed-drive folders, DAT only, no reparse points or destructive options. Desktop and full roadmap features are in development.\nCommands never invoke a shell. Printed commands use direct Windows process quoting.")
 		return nil
 	}
 	switch args[0] {
@@ -60,6 +65,8 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 			return err
 		}
 		return validate(j)
+	case "plan", "run":
+		return executeJob(ctx, args[0], args[1:], out, errOut)
 	case "template":
 		return templates(args[1:], out, errOut)
 	default:
@@ -360,4 +367,50 @@ func contains(values []string, value string) bool {
 		}
 	}
 	return false
+}
+
+type commandExit int
+
+func (code commandExit) Error() string { return fmt.Sprintf("exit %d", code) }
+
+func executeJob(ctx context.Context, command string, args []string, out, errOut io.Writer) error {
+	fs := flag.NewFlagSet(command, flag.ContinueOnError)
+	fs.SetOutput(errOut)
+	report := fs.String("report", "", "record root outside both copy trees; default LOCALAPPDATA/ZTG/Copy/runs")
+	native := fs.Bool("native-exit", false, "return the copy engine bitmap after a completed run; tool errors/cancellation remain 3")
+	if err := fs.Parse(args); err != nil {
+		return helpError(err)
+	}
+	if fs.NArg() != 1 {
+		return errors.New("expected JOB.json; flags go before the filename")
+	}
+	j, err := readJob(fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	if *report == "" {
+		*report, err = copyrun.DefaultRecords()
+		if err != nil {
+			return err
+		}
+	}
+	record, err := copyrun.Execute(ctx, j, *report, version, command == "run", out)
+	if record.Directory != "" {
+		fmt.Fprintf(out, "Outcome: %s; normalized exit %d; record %s\n", record.State, record.NormalizedExit, record.Directory)
+	}
+	if err != nil {
+		return err
+	}
+	code := record.NormalizedExit
+	if *native && code < 3 {
+		for _, phase := range record.Phases {
+			if phase.Name == "copy" || command == "plan" && phase.Name == "preview" {
+				code = int(phase.Process.NativeExit)
+			}
+		}
+	}
+	if code != 0 {
+		return commandExit(code)
+	}
+	return nil
 }
