@@ -18,11 +18,6 @@ $shortcut = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\ZT
 $files = @('ZTGScanner.exe', 'ztg-scanner.exe', 'README.txt', 'THIRD-PARTY-NOTICES.txt', 'scanner.cdx.json')
 $unpack = Join-Path $env:RUNNER_TEMP 'scanner-portable'
 if ($UpgradeMsi -and -not $UpgradeVersion) { throw 'UpgradeVersion is required for a real binary upgrade check' }
-if ($env:ZTG_SCANNER_DESKTOP_CHECK -eq '1') {
-  # Test-process-only setting. Production app builds do not enable remote debugging.
-  $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9227 --remote-debugging-address=127.0.0.1'
-  $env:NODE_PATH = (npm root --global).Trim()
-}
 
 function Run-Msi([string] $file, [string] $operation, [int] $expected = 0) {
   $log = Join-Path $env:RUNNER_TEMP "scanner-msi-$([guid]::NewGuid()).log"
@@ -58,7 +53,7 @@ function Assert-Payload([string] $dir, [string] $version) {
     }
     if (-not $ready) { throw 'Desktop frontend did not become ready' }
     if ($env:ZTG_SCANNER_DESKTOP_CHECK -eq '1') {
-      node (Join-Path $PSScriptRoot 'check-desktop.mjs') $version (Join-Path $env:RUNNER_TEMP 'scanner-shots')
+      & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -File (Join-Path $PSScriptRoot 'check-desktop.ps1') -AppProcessId $p.Id -Version $version -Shots (Join-Path $env:RUNNER_TEMP 'scanner-shots')
       if ($LASTEXITCODE -ne 0) { throw 'Desktop theme/app-bar verification failed' }
     }
   } finally {

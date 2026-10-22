@@ -160,8 +160,9 @@ signatures and launch both installed and portable apps before publication. Downl
 SBOM and notices, with provenance attested for every asset. See [../docs/signing.md](../docs/signing.md) for setup
 and verification. PR CI uses unsigned packages and also checks MSI upgrades and downgrade refusal on `windows-2025`.
 The upgrade test builds different old/new executable versions and verifies replacement. Windows CI and the
-release test inspect the real WebView2 page for the unified bar, visible build and explicit light/dark themes;
-the debug port used for that inspection is enabled only by the test runner.
+release test use Windows UI Automation to operate the real app's Theme selector, check the unified controls,
+and verify dark/light screen pixels. No remote debugging is enabled. To replace an installed test build,
+increase the numeric `scanner/VERSION`; changing a filename or commit label does not create an MSI upgrade.
 
 ## Building
 
