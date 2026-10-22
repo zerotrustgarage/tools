@@ -11,8 +11,10 @@ import (
 	"log"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -59,12 +61,32 @@ func (p wailsPlatform) Launch(action, ip string) (string, error) {
 		program = filepath.Join(dir, program)
 	}
 	if action == "ssh" || action == "rdp" {
-		cmd := exec.Command(program, args...)
-		cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x00000010} // CREATE_NEW_CONSOLE; no command shell
-		if err := cmd.Start(); err != nil {
+		// os/exec supplies NUL for unspecified standard handles. CreateProcess
+		// without STARTF_USESTDHANDLES lets Windows attach SSH to a real console
+		// with keyboard input and visible output, while still avoiding a shell.
+		appName, err := winapi.UTF16PtrFromString(program)
+		if err != nil {
+			return "", err
+		}
+		argv := append([]string{program}, args...)
+		for i := range argv {
+			argv[i] = winapi.EscapeArg(argv[i])
+		}
+		commandLine, err := winapi.UTF16PtrFromString(strings.Join(argv, " "))
+		if err != nil {
+			return "", err
+		}
+		startup := winapi.StartupInfo{Cb: uint32(unsafe.Sizeof(winapi.StartupInfo{}))}
+		var process winapi.ProcessInformation
+		var flags uint32
+		if action == "ssh" {
+			flags = winapi.CREATE_NEW_CONSOLE
+		}
+		if err := winapi.CreateProcess(appName, commandLine, nil, nil, false, flags, nil, nil, &startup, &process); err != nil {
 			return "", fmt.Errorf("could not launch the installed %s client: %w", action, err)
 		}
-		go func() { _ = cmd.Wait() }()
+		_ = winapi.CloseHandle(process.Thread)
+		_ = winapi.CloseHandle(process.Process)
 		return "Opened the installed " + action + " client for " + ip, nil
 	}
 	ctx, cancel := context.WithTimeout(p.ctx, 30*time.Second)
