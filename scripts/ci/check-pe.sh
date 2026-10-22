@@ -2,7 +2,9 @@
 # Checks that a file is a 64-bit Windows executable with the expected
 # subsystem, using only coreutils (the CI pool has no `file` command).
 #
-#   ci/check-pe.sh <exe> <gui|console> [amd64|arm64]
+# Shared by every tool's Windows build (moved here from scanner/ci when Readout needed it too).
+#
+#   scripts/ci/check-pe.sh <exe> <gui|console> [amd64|arm64]
 set -euo pipefail
 
 f="${1:?usage: check-pe.sh <exe> <gui|console> [amd64|arm64]}"

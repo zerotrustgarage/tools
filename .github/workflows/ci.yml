@@ -61,7 +61,8 @@ jobs:
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq clang lld llvm
       - run: npm ci
       - run: scripts/ci/build-windows.sh readout
-      - run: file readout/src-tauri/target/x86_64-pc-windows-msvc/release/ztg-readout.exe | grep -q 'PE32+ executable (GUI) x86-64'
+      # Coreutils only: the pool has no `file` command.
+      - run: scripts/ci/check-pe.sh readout/src-tauri/target/x86_64-pc-windows-msvc/release/ztg-readout.exe gui amd64
 
   signing:
     name: Signing and installer mechanics
