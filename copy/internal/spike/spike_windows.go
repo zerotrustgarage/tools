@@ -97,7 +97,7 @@ func writeJSON(path string, value any) error {
 
 // runCase captures exact pipe bytes and the time each chunk was received. These
 // are observations, not completed-file events or trustworthy copy progress.
-func runCase(ctx context.Context, engine, output, name string, args []string) (capture, error) {
+func runCase(ctx context.Context, engine, output, name string, args []string, watch ...watchedFile) (capture, error) {
 	result := capture{Name: name, Arguments: args}
 	stdout, err := os.OpenFile(filepath.Join(output, name+".stdout.bin"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
@@ -131,18 +131,23 @@ func runCase(ctx context.Context, engine, output, name string, args []string) (c
 		handle, err := syscall.OpenProcess(0x0400, false, uint32(command.Process.Pid))
 		if err != nil {
 			o.event(map[string]any{"kind": "io_unavailable", "error": err.Error()})
-			return
+		} else {
+			defer syscall.CloseHandle(handle)
 		}
-		defer syscall.CloseHandle(handle)
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
 		for {
-			var count counters
-			ok, _, callErr := getIOCounters.Call(uintptr(handle), uintptr(unsafe.Pointer(&count)))
-			if ok != 0 {
-				o.event(map[string]any{"kind": "io", "counters": count})
-			} else {
-				o.event(map[string]any{"kind": "io_unavailable", "error": callErr.Error()})
+			if handle != 0 {
+				var count counters
+				ok, _, callErr := getIOCounters.Call(uintptr(handle), uintptr(unsafe.Pointer(&count)))
+				if ok != 0 {
+					o.event(map[string]any{"kind": "io", "counters": count})
+				} else {
+					o.event(map[string]any{"kind": "io_unavailable", "error": callErr.Error()})
+				}
+			}
+			for _, file := range watch {
+				o.event(file.snapshot())
 			}
 			select {
 			case <-done:
@@ -154,6 +159,9 @@ func runCase(ctx context.Context, engine, output, name string, args []string) (c
 	runErr := command.Wait()
 	close(done)
 	<-sampled
+	for _, file := range watch {
+		o.event(file.snapshot())
+	}
 	result.DurationMS = time.Since(o.start).Milliseconds()
 	if caseCtx.Err() != nil {
 		return result, fmt.Errorf("%s: %w", name, caseCtx.Err())
@@ -261,7 +269,15 @@ func Run(ctx context.Context, output string) error {
 		if mode == "mt8" {
 			args = append(args, "/MT:8")
 		}
-		preview, err := execute(mode+"-preview", append(append([]string{}, args...), "/L", "/X")...)
+		previewArgs := append(append([]string{}, args...), "/L", "/X")
+		if mode == "native-log" {
+			for i, arg := range previewArgs {
+				if strings.HasPrefix(arg, "/UNILOG:") {
+					previewArgs[i] = "/UNILOG:" + filepath.Join(output, "native-log-preview.native.log")
+				}
+			}
+		}
+		preview, err := execute(mode+"-preview", previewArgs...)
 		if err != nil {
 			return err
 		}
@@ -293,6 +309,9 @@ func Run(ctx context.Context, output string) error {
 	}
 	m.Checks["quit-valid-success"] = valid.NativeExit < 8
 	m.Checks["quit-invalid-16"] = invalid.NativeExit == 16
+	if err := runLocalExperiments(ctx, engine, root, output, execute, &m); err != nil {
+		return err
+	}
 	if err := writeJSON(filepath.Join(output, "manifest.json"), m); err != nil {
 		return err
 	}

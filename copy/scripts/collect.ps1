@@ -54,4 +54,10 @@ $nativeLog = Join-Path $Output 'native-log.native.log'
 if (Test-Path -LiteralPath $nativeLog) {
     Write-Output ('RC0_FIXTURE ' + (@{ name = 'native-log'; base64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($nativeLog)) } | ConvertTo-Json -Compress))
 }
+foreach ($name in @('timing-serial.timing.json', 'timing-mt8.timing.json', 'preview-copy-totals.json')) {
+    $path = Join-Path $Output $name
+    if (Test-Path -LiteralPath $path) {
+        Write-Output ('RC0_OBSERVATION ' + (@{ name = $name; data = (Get-Content -Raw -LiteralPath $path | ConvertFrom-Json) } | ConvertTo-Json -Depth 8 -Compress))
+    }
+}
 if ($spikeExit -ne 0) { throw "RC0 observations need investigation (spike exit $spikeExit)." }
