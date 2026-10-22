@@ -104,6 +104,45 @@ func csvRow(h scan.Host) []string {
 	}
 }
 
+// MaxTableRows and MaxTableCols bound a CSVTable export.
+const (
+	MaxTableRows = 70000
+	MaxTableCols = 64
+)
+
+// CSVTable writes caller-chosen columns (for example the desktop app's
+// current view). Every cell, headers included, is neutralized against
+// spreadsheet formula injection, because the values come from devices.
+func CSVTable(w io.Writer, headers []string, rows [][]string) error {
+	if len(headers) == 0 || len(headers) > MaxTableCols {
+		return fmt.Errorf("a table export needs 1 to %d columns", MaxTableCols)
+	}
+	if len(rows) > MaxTableRows {
+		return fmt.Errorf("a table export holds at most %d rows", MaxTableRows)
+	}
+	cw := csv.NewWriter(w)
+	line := make([]string, len(headers))
+	for i, h := range headers {
+		line[i] = safe(h)
+	}
+	if err := cw.Write(line); err != nil {
+		return err
+	}
+	for n, row := range rows {
+		if len(row) != len(headers) {
+			return fmt.Errorf("row %d has %d cells, want %d", n+1, len(row), len(headers))
+		}
+		for i, v := range row {
+			line[i] = safe(v)
+		}
+		if err := cw.Write(line); err != nil {
+			return err
+		}
+	}
+	cw.Flush()
+	return cw.Error()
+}
+
 // safe neutralizes spreadsheet formula injection: device-supplied text (a
 // hostname, a web page title) must not run as a formula when a technician
 // opens the CSV in Excel.

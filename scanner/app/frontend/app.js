@@ -18,6 +18,8 @@
     settings: null,
     renderQueued: false,
     startedAt: 0,
+    layout: null, // { order: [keys], hidden: [keys], widths: {key: px} }
+    resizedAt: 0,
   };
 
   // ---------- DOM helpers ----------
@@ -94,16 +96,74 @@
   const vendorOf = (h) => (h.mac_randomized ? "(private MAC)" : h.vendor || "");
   const worst = (h) => Math.max(0, ...(h.findings || []).map((f) => sevRank[f.severity] || 0));
 
-  const sorters = {
-    status: (h) => (h.status === "up" ? 0 : 1),
-    name: (h) => (h.name || "~").toLowerCase(),
-    ip: (h) => ipNum(h.ip),
-    type: (h) => h.type || "~",
-    vendor: (h) => vendorOf(h).toLowerCase() || "~",
-    mac: (h) => h.mac || "~",
-    ports: (h) => ports(h).length,
-    flags: (h) => -worst(h),
-  };
+  const modelOf = (h) => (h.upnp && [h.upnp.model_name, h.upnp.model_number].filter(Boolean).join(" ")) || (h.snmp && h.snmp.model) || "";
+  const serviceSummary = (h) =>
+    (h.services || []).map((s) => s.port + "/" + s.name + (s.http && s.http.title ? ' "' + s.http.title + '"' : s.product ? " " + s.product : "")).join("; ");
+
+  // One definition per grid column drives the header, the cells, sorting and the
+  // "current view" CSV export. text() is the plain value; cell() overrides display.
+  const COLUMNS = [
+    { key: "status", label: "", title: "Status", width: 34, fixed: true, text: (h) => h.status, sort: (h) => (h.status === "up" ? 0 : 1),
+      cell: (h) => el("span", { class: "dot " + (h.status === "up" ? "up" : ""), title: h.status }) },
+    { key: "name", label: "Name", width: 190, text: (h) => h.name || "" },
+    { key: "ip", label: "IP address", width: 132, mono: true, text: (h) => h.ip, sort: (h) => ipNum(h.ip) },
+    { key: "type", label: "Type", width: 190, text: (h) => h.type || "", tip: (h) => h.type_reason },
+    { key: "flags", label: "Findings", width: 160, sort: (h) => -worst(h), cell: findingBadges,
+      text: (h) => (h.findings || []).map((f) => f.severity + ":" + f.code).join(" ") },
+    { key: "vendor", label: "Manufacturer", width: 210, text: vendorOf },
+    { key: "mac", label: "MAC address", width: 140, mono: true, text: (h) => h.mac || "" },
+    { key: "ports", label: "Open ports", width: 150, mono: true, text: (h) => ports(h).join(" "), sort: (h) => ports(h).length },
+    // Optional columns, hidden until chosen in the Columns menu.
+    { key: "dns", label: "DNS name", width: 200, hidden: true, text: (h) => h.dns_name || "" },
+    { key: "netbios", label: "NetBIOS name", width: 150, hidden: true, text: (h) => (h.netbios && h.netbios.computer) || "" },
+    { key: "workgroup", label: "Workgroup", width: 120, hidden: true, text: (h) => (h.netbios && h.netbios.workgroup) || "" },
+    { key: "mdns", label: "mDNS name", width: 180, hidden: true, text: (h) => (h.mdns && h.mdns.hostname) || "" },
+    { key: "model", label: "Model", width: 170, hidden: true, text: modelOf },
+    { key: "serial", label: "Serial", width: 150, hidden: true, mono: true, text: (h) => (h.snmp && h.snmp.serial) || "" },
+    { key: "firmware", label: "Firmware", width: 130, hidden: true, text: (h) => (h.snmp && (h.snmp.firmware_rev || h.snmp.software_rev)) || "" },
+    { key: "location", label: "Location", width: 150, hidden: true, text: (h) => (h.snmp && h.snmp.sys_location) || "" },
+    { key: "os", label: "OS hint", width: 200, hidden: true, text: (h) => h.os_hint || "" },
+    { key: "rtt", label: "Ping (ms)", width: 80, hidden: true, mono: true, text: (h) => (h.rtt_ms ? String(h.rtt_ms) : ""), sort: (h) => h.rtt_ms || 1e9 },
+    { key: "ttl", label: "TTL", width: 60, hidden: true, mono: true, text: (h) => (h.ttl ? String(h.ttl) : ""), sort: (h) => h.ttl || 999 },
+    { key: "services", label: "Services", width: 300, hidden: true, text: serviceSummary },
+    { key: "evidence", label: "Found by", width: 160, hidden: true, text: (h) => (h.evidence || []).join(", ") },
+  ];
+  const COL = Object.fromEntries(COLUMNS.map((c) => [c.key, c]));
+  const MIN_WIDTH = 44;
+  const MAX_WIDTH = 900;
+
+  function sortValue(col, h) {
+    if (col.sort) return col.sort(h);
+    const t = col.text(h);
+    return t ? t.toLowerCase() : "\uffff"; // empty values sort last
+  }
+
+  function defaultLayout() {
+    return { order: COLUMNS.map((c) => c.key), hidden: COLUMNS.filter((c) => c.hidden).map((c) => c.key), widths: {} };
+  }
+
+  // Saved layouts are merged with the current column list, so columns added in a
+  // later version appear (with their default visibility) and removed ones vanish.
+  function loadLayout() {
+    const d = defaultLayout();
+    const saved = store.get("layout", null);
+    if (!saved || !Array.isArray(saved.order)) return d;
+    const known = (k) => Object.prototype.hasOwnProperty.call(COL, k);
+    const order = saved.order.filter(known);
+    for (const k of d.order) if (!order.includes(k)) order.push(k);
+    const savedHidden = Array.isArray(saved.hidden) ? saved.hidden.filter(known) : [];
+    const added = d.order.filter((k) => !saved.order.includes(k));
+    const hidden = [...new Set([...savedHidden, ...added.filter((k) => COL[k].hidden)])].filter((k) => k !== "status");
+    const widths = {};
+    for (const [k, w] of Object.entries(saved.widths || {})) {
+      if (known(k) && Number.isFinite(w)) widths[k] = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(w)));
+    }
+    return { order, hidden, widths };
+  }
+
+  const saveLayout = () => store.set("layout", state.layout);
+  const visibleCols = () => state.layout.order.filter((k) => !state.layout.hidden.includes(k)).map((k) => COL[k]);
+  const widthOf = (c) => state.layout.widths[c.key] || c.width;
 
   function matches(h, q) {
     if (!q) return true;
@@ -124,7 +184,8 @@
     const type = $("type-filter").value;
     const findingsOnly = $("findings-only").checked;
     const showDown = $("show-down").checked;
-    const key = sorters[state.sortKey];
+    const col = COL[state.sortKey] || COL.ip;
+    const key = (h) => sortValue(col, h);
     return [...state.hosts.values()]
       .filter((h) => (showDown || h.status === "up") && (!type || h.type === type) && (!findingsOnly || (h.findings || []).length) && matches(h, q))
       .sort((a, b) => {
@@ -137,24 +198,123 @@
     return (h.findings || []).map((f) => el("span", { class: "badge " + f.severity, title: f.message, text: f.code }));
   }
 
-  function row(h) {
-    const tr = el("tr", { class: (h.status === "up" ? "" : "down ") + (state.selected === h.ip ? "selected" : ""), "data-ip": h.ip, tabindex: 0 },
-      el("td", null, el("span", { class: "dot " + (h.status === "up" ? "up" : ""), title: h.status })),
-      el("td", { title: h.name || "", text: h.name || "" }),
-      el("td", { class: "mono", text: h.ip }),
-      el("td", { title: h.type_reason || "", text: h.type || "" }),
-      el("td", null, findingBadges(h)),
-      el("td", { title: vendorOf(h), text: vendorOf(h) }),
-      el("td", { class: "mono", text: h.mac || "" }),
-      el("td", { class: "mono", title: ports(h).join(", "), text: ports(h).join(" ") }),
+  function cell(c, h) {
+    if (c.cell) return el("td", { "data-col": c.key }, c.cell(h));
+    const t = c.text(h);
+    return el("td", { "data-col": c.key, class: c.mono ? "mono" : null, title: (c.tip && c.tip(h)) || t || null, text: t });
+  }
+
+  function row(h, cols) {
+    return el("tr", { class: (h.status === "up" ? "" : "down ") + (state.selected === h.ip ? "selected" : ""), "data-ip": h.ip, tabindex: 0 },
+      cols.map((c) => cell(c, h)));
+  }
+
+  // ---------- columns: header, resizing, chooser ----------
+
+  function applyTableWidth() {
+    const total = visibleCols().reduce((n, c) => n + widthOf(c), 0);
+    $("grid").style.width = total + "px";
+  }
+
+  function renderHead() {
+    const tr = el("tr");
+    for (const c of visibleCols()) {
+      const th = el("th", { "data-sort": c.key, "data-col": c.key, title: c.title || c.label },
+        el("span", { class: "th-label", text: c.label }));
+      // Set through CSSOM: the Content-Security-Policy blocks inline style attributes.
+      th.style.width = widthOf(c) + "px";
+      if (c.title && !c.label) th.setAttribute("aria-label", c.title);
+      if (!c.fixed) {
+        th.append(el("span", { class: "resize", role: "separator", "aria-orientation": "vertical", "aria-label": "Resize " + c.label + " column", title: "Drag to resize, double-click to fit" }));
+      }
+      tr.append(th);
+    }
+    $("grid").querySelector("thead").replaceChildren(tr);
+    applyTableWidth();
+  }
+
+  function setWidth(key, w) {
+    const px = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(w)));
+    state.layout.widths[key] = px;
+    const th = $("grid").querySelector('th[data-col="' + key + '"]');
+    if (th) th.style.width = px + "px";
+    applyTableWidth();
+  }
+
+  // Double-click a handle: fit the column to its widest visible value.
+  function autoFit(key) {
+    const probe = el("span", { class: "measure" });
+    document.body.append(probe);
+    let w = 0;
+    const th = $("grid").querySelector('th[data-col="' + key + '"] .th-label');
+    if (th) {
+      probe.className = "measure th";
+      probe.textContent = th.textContent;
+      w = probe.offsetWidth + 18;
+    }
+    for (const td of $("rows").querySelectorAll('td[data-col="' + key + '"]')) {
+      probe.className = "measure" + (td.classList.contains("mono") ? " mono" : "");
+      probe.replaceChildren(...[...td.childNodes].map((n) => n.cloneNode(true)));
+      w = Math.max(w, probe.offsetWidth);
+    }
+    probe.remove();
+    setWidth(key, w + 22); // cell padding
+    saveLayout();
+  }
+
+  function startResize(e, handle) {
+    const th = handle.closest("th");
+    const key = th.dataset.col;
+    const startX = e.clientX;
+    const startW = th.getBoundingClientRect().width;
+    handle.setPointerCapture(e.pointerId);
+    document.body.classList.add("resizing");
+    const move = (ev) => setWidth(key, startW + ev.clientX - startX);
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", up);
+      handle.removeEventListener("pointercancel", up);
+      document.body.classList.remove("resizing");
+      state.resizedAt = Date.now();
+      saveLayout();
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up);
+    handle.addEventListener("pointercancel", up);
+  }
+
+  function renderColumnMenu() {
+    const menu = $("columns-menu");
+    const items = state.layout.order.filter((k) => k !== "status").map((k) => {
+      const c = COL[k];
+      const box = el("input", { type: "checkbox", "data-col": k });
+      box.checked = !state.layout.hidden.includes(k);
+      return el("li", { role: "none" }, el("label", { class: "check menu-check" }, box, c.label));
+    });
+    menu.replaceChildren(
+      ...items,
+      el("li", { role: "separator", class: "menu-sep" }),
+      el("li", { role: "none" }, el("button", { role: "menuitem", id: "columns-fit", text: "Fit all columns to content" })),
+      el("li", { role: "none" }, el("button", { role: "menuitem", id: "columns-reset", text: "Reset columns" })),
     );
-    return tr;
+  }
+
+  function toggleColumn(key, show) {
+    const hidden = new Set(state.layout.hidden);
+    if (show) hidden.delete(key);
+    else hidden.add(key);
+    if (visibleCols().length <= 2 && !show) return; // keep the grid usable
+    state.layout.hidden = [...hidden];
+    saveLayout();
+    renderHead();
+    render();
   }
 
   function render() {
     state.renderQueued = false;
     const list = visibleHosts();
-    $("rows").replaceChildren(...list.map(row));
+    const cols = visibleCols();
+    $("rows").replaceChildren(...list.map((h) => row(h, cols)));
     $("empty").hidden = list.length > 0;
     $("empty").textContent = state.hosts.size ? "No devices match the filters." : state.running ? "Scanning…" : "No results yet.";
     const up = [...state.hosts.values()].filter((h) => h.status === "up").length;
@@ -442,17 +602,72 @@
   function closeMenus() {
     toggle($("suggest-btn"), $("suggest-menu"), false);
     toggle($("export-btn"), $("export-menu"), false);
+    toggle($("columns-btn"), $("columns-menu"), false);
   }
 
   // ---------- wiring ----------
 
+  async function exportView() {
+    const cols = visibleCols();
+    const headers = cols.map((c) => c.label || c.title);
+    const rows = visibleHosts().map((h) => cols.map((c) => c.text(h)));
+    if (!rows.length) return toast("There are no rows in this view to export.");
+    try {
+      const path = await api.ExportTable(headers, rows);
+      if (path) toast("Saved " + path);
+    } catch (err) {
+      toast(String(err && err.message ? err.message : err));
+    }
+  }
+
   async function init() {
-    document.querySelector("thead").addEventListener("click", (e) => {
+    state.layout = loadLayout();
+    renderHead();
+    renderColumnMenu();
+
+    const head = $("grid").querySelector("thead");
+    head.addEventListener("click", (e) => {
+      if (e.target.closest(".resize") || Date.now() - state.resizedAt < 250) return;
       const th = e.target.closest("th[data-sort]");
       if (!th) return;
       if (state.sortKey === th.dataset.sort) state.sortDir = -state.sortDir;
       else (state.sortKey = th.dataset.sort), (state.sortDir = 1);
       render();
+    });
+    head.addEventListener("pointerdown", (e) => {
+      const handle = e.target.closest(".resize");
+      if (!handle || e.button !== 0) return;
+      e.preventDefault();
+      startResize(e, handle);
+    });
+    head.addEventListener("dblclick", (e) => {
+      const handle = e.target.closest(".resize");
+      if (handle) autoFit(handle.closest("th").dataset.col);
+    });
+
+    $("columns-btn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      const open = $("columns-menu").hidden;
+      closeMenus();
+      toggle($("columns-btn"), $("columns-menu"), open);
+    });
+    $("columns-menu").addEventListener("change", (e) => {
+      const box = e.target.closest("input[data-col]");
+      if (!box) return;
+      toggleColumn(box.dataset.col, box.checked);
+      renderColumnMenu();
+    });
+    $("columns-menu").addEventListener("click", (e) => {
+      if (e.target.id === "columns-reset") {
+        state.layout = defaultLayout();
+        saveLayout();
+        renderHead();
+        renderColumnMenu();
+        render();
+        toast("Columns restored to defaults");
+      } else if (e.target.id === "columns-fit") {
+        for (const c of visibleCols()) if (!c.fixed) autoFit(c.key);
+      }
     });
     $("rows").addEventListener("click", (e) => {
       const tr = e.target.closest("tr[data-ip]");
@@ -494,6 +709,7 @@
       const b = e.target.closest("button[data-export]");
       if (!b || !api) return;
       closeMenus();
+      if (b.dataset.export === "view") return exportView();
       try {
         const path = await api.Export(b.dataset.export, $("show-down").checked);
         if (path) toast("Saved " + path);

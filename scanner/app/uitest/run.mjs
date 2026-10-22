@@ -35,6 +35,8 @@ try {
     const page = await browser.newPage({ viewport: { width: 1320, height: 820 }, colorScheme: scheme });
     const errors = [];
     page.on("pageerror", (e) => errors.push(String(e)));
+    // A Content-Security-Policy violation means the UI silently lost a style or script.
+    page.on("console", (m) => m.type() === "error" && /Content Security Policy/i.test(m.text()) && errors.push(m.text()));
     await page.addInitScript({ path: join(here, "mock.js") });
     await page.goto(url);
 
@@ -146,6 +148,83 @@ try {
     await page.check("#snmp-on");
     assert.equal(await page.inputValue("#snmp-user"), "noc-ro");
     assert.equal(await page.inputValue("#snmp-auth-pass"), "");
+
+    // ---------- Columns ----------
+    await page.uncheck("#snmp-on");
+    await page.click("#settings-close");
+    await page.click("#scan-btn");
+    await page.waitForFunction(() => document.getElementById("status-text").textContent.startsWith("Done:"));
+    await page.keyboard.press("Escape"); // no detail pane
+    const thWidth = (key) => page.evaluate((k) => document.querySelector(`#grid th[data-col="${k}"]`).getBoundingClientRect().width, key);
+
+    // The table is exactly as wide as its columns; it does not stretch to the window.
+    const widths = await page.evaluate(() => ({
+      grid: document.getElementById("grid").getBoundingClientRect().width,
+      cols: [...document.querySelectorAll("#grid thead th")].reduce((n, th) => n + th.getBoundingClientRect().width, 0),
+      wrap: document.querySelector(".grid-wrap").getBoundingClientRect().width,
+    }));
+    assert.ok(Math.abs(widths.grid - widths.cols) < 2, `grid ${widths.grid} vs columns ${widths.cols}`);
+    assert.ok(widths.grid < widths.wrap - 50, `grid ${widths.grid} stretched to ${widths.wrap}`);
+
+    // Drag the Name column's edge 80px to the right; sorting must not change.
+    const sortBefore = await page.getAttribute('th[data-sort="name"]', "aria-sort");
+    const w0 = await thWidth("name");
+    const handle = await page.locator('#grid th[data-col="name"] .resize').boundingBox();
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(handle.x + handle.width / 2 + 40, handle.y + handle.height / 2, { steps: 4 });
+    await page.mouse.move(handle.x + handle.width / 2 + 80, handle.y + handle.height / 2, { steps: 4 });
+    await page.mouse.up();
+    const w1 = await thWidth("name");
+    assert.ok(Math.abs(w1 - (w0 + 80)) <= 3, `name width ${w0} -> ${w1}, want +80`);
+    assert.equal(await page.getAttribute('th[data-sort="name"]', "aria-sort"), sortBefore);
+
+    // Double-click the edge: fit to the widest name (shorter than the dragged width).
+    await page.dblclick('#grid th[data-col="name"] .resize');
+    const w2 = await thWidth("name");
+    assert.ok(w2 < w1 && w2 >= 100, `fit width ${w2} (dragged ${w1})`);
+    const names = await page.evaluate(() => [...document.querySelectorAll('#rows td[data-col="name"]')].every((td) => td.scrollWidth <= td.clientWidth));
+    assert.ok(names, "a name is clipped after fitting");
+
+    // Column chooser: hide MAC, show Serial.
+    await page.click("#columns-btn");
+    await page.uncheck('#columns-menu input[data-col="mac"]');
+    await page.check('#columns-menu input[data-col="serial"]');
+    await page.keyboard.press("Escape");
+    assert.equal(await page.locator('#grid th[data-col="mac"]').count(), 0);
+    assert.equal(await page.locator('#rows td[data-col="mac"]').count(), 0);
+    assert.equal((await page.textContent('#rows tr[data-ip="192.168.50.1"] td[data-col="serial"]')).trim(), "FGT60FTK2309XXXX");
+
+    // Export this view: exactly the visible columns and the filtered rows, in order.
+    await page.fill("#filter", "192.168.50.");
+    await page.selectOption("#type-filter", "Firewall");
+    await page.click("#export-btn");
+    await page.click('button[data-export="view"]');
+    await page.waitForFunction(() => window.__calls.some((c) => c[0] === "ExportTable"));
+    const [, headers, rows] = (await page.evaluate(() => window.__calls)).filter((c) => c[0] === "ExportTable").at(-1);
+    const shownHeaders = await page.$$eval("#grid thead th", (ths) => ths.map((th) => th.dataset.col));
+    assert.equal(headers.length, shownHeaders.length);
+    assert.ok(headers.includes("Serial") && !headers.includes("MAC address"), "headers " + headers);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0][headers.indexOf("IP address")], "192.168.50.1");
+    assert.equal(rows[0][headers.indexOf("Serial")], "FGT60FTK2309XXXX");
+    await page.fill("#filter", "");
+    await page.selectOption("#type-filter", "");
+    if (shots) await page.screenshot({ path: join(shots, `ui-columns-${scheme}.png`) });
+
+    // The layout survives a restart.
+    await page.reload();
+    await page.waitForSelector('#grid th[data-col="serial"]');
+    assert.equal(await page.locator('#grid th[data-col="mac"]').count(), 0);
+    const restored = await thWidth("name");
+    assert.ok(Math.abs(restored - w2) <= 1, `name width not restored: ${restored} vs ${w2}; saved ${await page.evaluate(() => localStorage.getItem("ztg-scanner:layout"))}`);
+
+    // Reset columns restores the defaults.
+    await page.click("#columns-btn");
+    await page.click("#columns-reset");
+    assert.equal(await page.locator('#grid th[data-col="mac"]').count(), 1);
+    assert.equal(await page.locator('#grid th[data-col="serial"]').count(), 0);
+    assert.equal(Math.round(await thWidth("name")), 190);
 
     assert.deepEqual(errors, [], "page errors");
     console.log(`ok  ${scheme} scheme`);

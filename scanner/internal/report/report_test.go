@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -75,5 +76,34 @@ func TestTableAndJSON(t *testing.T) {
 	var back Document
 	if err := json.Unmarshal(buf.Bytes(), &back); err != nil || len(back.Hosts) != 4 {
 		t.Fatalf("round trip: %v, %d hosts", err, len(back.Hosts))
+	}
+}
+
+func TestCSVTable(t *testing.T) {
+	var buf bytes.Buffer
+	err := CSVTable(&buf, []string{"Name", "IP address", "=Header"}, [][]string{
+		{"=cmd|' /C calc'!A0", "10.0.0.1", "ok"},
+		{"printer, 2nd floor", "10.0.0.2", "@SUM(A1)"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := csv.NewReader(&buf).ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{
+		{"Name", "IP address", "'=Header"},
+		{"'=cmd|' /C calc'!A0", "10.0.0.1", "ok"},
+		{"printer, 2nd floor", "10.0.0.2", "'@SUM(A1)"},
+	}
+	if fmt.Sprint(rows) != fmt.Sprint(want) {
+		t.Fatalf("got %q", rows)
+	}
+	if err := CSVTable(&buf, nil, nil); err == nil {
+		t.Fatal("no columns accepted")
+	}
+	if err := CSVTable(&buf, []string{"a", "b"}, [][]string{{"only one"}}); err == nil {
+		t.Fatal("ragged row accepted")
 	}
 }

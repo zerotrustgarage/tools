@@ -49,6 +49,7 @@
     StopScan: async () => calls.push(["StopScan"]),
     Export: async (fmt, all) => { calls.push(["Export", fmt, all]); return "C:\\Users\\tech\\Documents\\ztg-scan." + fmt; },
     OpenWeb: async (ip, port) => calls.push(["OpenWeb", ip, port]),
+    ExportTable: async (headers, rows) => { calls.push(["ExportTable", headers, rows]); return "C:\\Users\\tech\\Documents\\ztg-scan-view.csv"; },
   } } };
   window.runtime = {
     EventsOn: (name, f) => (handlers[name] = handlers[name] || []).push(f),

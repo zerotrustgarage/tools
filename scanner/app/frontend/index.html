@@ -26,8 +26,9 @@
       <button type="button" id="settings-btn" class="ghost" aria-controls="settings" aria-expanded="false">Settings</button>
       <button type="button" id="export-btn" class="ghost" aria-haspopup="menu" aria-expanded="false">Export ▾</button>
       <ul id="export-menu" class="menu right" role="menu" hidden>
-        <li role="none"><button role="menuitem" data-export="csv">CSV (spreadsheet)</button></li>
-        <li role="none"><button role="menuitem" data-export="json">JSON (full detail)</button></li>
+        <li role="none"><button role="menuitem" data-export="view">CSV, this view<span class="sub">Visible columns and filtered rows, in this order</span></button></li>
+        <li role="none"><button role="menuitem" data-export="csv">CSV, all fields<span class="sub">Every column for every device</span></button></li>
+        <li role="none"><button role="menuitem" data-export="json">JSON, full detail<span class="sub">Everything the scan learned</span></button></li>
       </ul>
     </div>
   </header>
@@ -44,24 +45,17 @@
     <select id="type-filter" aria-label="Device type"><option value="">All types</option></select>
     <label class="check"><input type="checkbox" id="findings-only"> Findings only</label>
     <label class="check"><input type="checkbox" id="show-down"> Show unresponsive</label>
+    <span class="col-picker">
+      <button type="button" id="columns-btn" class="ghost" aria-haspopup="menu" aria-expanded="false">Columns ▾</button>
+      <ul id="columns-menu" class="menu" role="menu" hidden></ul>
+    </span>
     <span id="count" class="muted"></span>
   </section>
 
   <main class="workspace">
     <div class="grid-wrap">
       <table id="grid" aria-label="Scan results">
-        <thead>
-          <tr>
-            <th data-sort="status" class="col-status" aria-label="Status"></th>
-            <th data-sort="name">Name</th>
-            <th data-sort="ip">IP address</th>
-            <th data-sort="type">Type</th>
-            <th data-sort="flags">Findings</th>
-            <th data-sort="vendor">Manufacturer</th>
-            <th data-sort="mac">MAC address</th>
-            <th data-sort="ports">Open ports</th>
-          </tr>
-        </thead>
+        <thead></thead>
         <tbody id="rows"></tbody>
       </table>
       <div id="empty" class="empty">No results yet.</div>

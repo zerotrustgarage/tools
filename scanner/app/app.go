@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"os"
@@ -326,6 +327,36 @@ func (a *App) Export(format string, all bool) (string, error) {
 		err = report.JSON(f, doc)
 	}
 	if err != nil {
+		return "", err
+	}
+	return path, f.Close()
+}
+
+// ExportTable writes the grid as the user sees it (visible columns,
+// filtered and sorted rows) to a CSV file the user picks. The report
+// package neutralizes formula injection in every cell.
+func (a *App) ExportTable(headers []string, rows [][]string) (string, error) {
+	if a.platform == nil {
+		return "", errors.New("export is not available")
+	}
+	if len(rows) == 0 {
+		return "", errors.New("there are no rows in this view to export")
+	}
+	// Validate before showing a dialog, so a bad request never creates a file.
+	if err := report.CSVTable(io.Discard, headers, rows); err != nil {
+		return "", err
+	}
+	name := "ztg-scan-view-" + time.Now().Format("2006-01-02-1504") + ".csv"
+	path, err := a.platform.SaveFile(name, "CSV (*.csv)", "*.csv")
+	if err != nil || path == "" {
+		return "", err
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	if err := report.CSVTable(f, headers, rows); err != nil {
 		return "", err
 	}
 	return path, f.Close()

@@ -194,3 +194,28 @@ func TestSNMPRequestValidation(t *testing.T) {
 		t.Fatalf("protocol lists missing: %+v", d)
 	}
 }
+
+func TestExportTable(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "view.csv")
+	a, f := NewApp(), newFake(out)
+	a.setPlatform(context.Background(), f)
+	path, err := a.ExportTable([]string{"Name", "IP address"}, [][]string{{"=evil()", "10.0.0.1"}, {"nas", "10.0.0.2"}})
+	if err != nil || path != out {
+		t.Fatalf("export: %q %v", path, err)
+	}
+	b, _ := os.ReadFile(out)
+	if got := string(b); got != "Name,IP address\n'=evil(),10.0.0.1\nnas,10.0.0.2\n" {
+		t.Fatalf("csv %q", got)
+	}
+	if _, err := a.ExportTable([]string{"a"}, nil); err == nil {
+		t.Fatal("empty view accepted")
+	}
+	bad := filepath.Join(t.TempDir(), "bad.csv")
+	f.saveTo = bad
+	if _, err := a.ExportTable([]string{"a", "b"}, [][]string{{"x"}}); err == nil {
+		t.Fatal("ragged rows accepted")
+	}
+	if _, err := os.Stat(bad); err == nil {
+		t.Fatal("a file was created for an invalid export")
+	}
+}

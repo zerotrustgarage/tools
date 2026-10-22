@@ -99,14 +99,32 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
 
 .workspace { display: grid; grid-template-columns: 1fr auto; min-height: 0; border-top: 1px solid var(--line); }
 .grid-wrap { overflow: auto; min-height: 0; position: relative; }
-table { width: 100%; border-collapse: collapse; }
+/* Fixed layout: columns keep the widths the user set instead of stretching to
+   fill the window; the table is exactly as wide as its columns. */
+table { width: max-content; table-layout: fixed; border-collapse: collapse; }
 thead th {
   position: sticky; top: 0; z-index: 1; background: var(--panel); text-align: left; font-weight: 600;
   padding: 7px 10px; border-bottom: 1px solid var(--line); cursor: pointer; user-select: none; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
 }
+/* Column dividers on hover use a shadow: borders would add width that the
+   fixed layout then spreads across columns, drifting from the saved widths. */
+thead tr:hover th { box-shadow: inset -1px 0 0 var(--line); }
+.resize { position: absolute; top: 0; right: 0; width: 8px; height: 100%; cursor: col-resize; z-index: 2; touch-action: none; }
+.resize::after { content: ""; position: absolute; top: 25%; bottom: 25%; right: 0; width: 1px; background: transparent; }
+.resize:hover::after, body.resizing .resize::after { background: var(--accent); width: 2px; }
+body.resizing, body.resizing * { cursor: col-resize !important; user-select: none !important; }
+.measure { position: absolute; visibility: hidden; white-space: nowrap; left: -9999px; top: 0; }
+.measure.th { font-weight: 600; }
+.measure.mono { font-family: var(--mono); font-size: 12px; }
+.col-picker { position: relative; }
+.col-picker .menu { left: 0; min-width: 220px; max-height: 60vh; overflow: auto; }
+.menu-check { display: flex; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+.menu-check:hover { background: var(--panel-2); }
+.menu-sep { border-top: 1px solid var(--line); margin: 4px 0; }
 thead th[aria-sort=ascending]::after { content: " ▲"; color: var(--muted); font-size: 10px; }
 thead th[aria-sort=descending]::after { content: " ▼"; color: var(--muted); font-size: 10px; }
-tbody td { padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+tbody td { padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 tbody tr { cursor: default; }
 tbody tr:hover { background: var(--row-hover); }
 tbody tr.selected { background: var(--row-sel); }
