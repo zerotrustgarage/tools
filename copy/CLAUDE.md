@@ -1,6 +1,6 @@
 # CLAUDE.md (copy)
 
-ZTG Copy, a designer, runner and evidence recorder for Windows Robocopy jobs, in Go. Status: RC0 capture harness implemented; Windows evidence and RC0 review are still in progress. Repository-wide conventions (one folder per tool, GitHub-hosted runners, actions pinned by SHA, dependencies
+ZTG Copy, a designer, runner and evidence recorder for Windows Robocopy jobs, in Go. Status: RC0 core evidence reviewed on Server 2022/2025; RC1 CLI foundation in progress. See docs/rc0.md for the review scope and outstanding release gates. Repository-wide conventions (one folder per tool, GitHub-hosted runners, actions pinned by SHA, dependencies
 public for at least 14 days) are in the root README.
 
 Read `docs/design.md` before changing anything here, `docs/research.md` for why, and `docs/flags.md` for the option
@@ -26,4 +26,4 @@ reference the catalog is built from. Its principles are requirements:
 
 Dependencies: standard library, `golang.org/x/sys`, and Wails v2 for the app; justify any other in the commit
 message. Writing style: no em dashes. Slices (RC0 to RC7) are built one at a time, each reviewed before the next
-starts; do not start RC1 before the owner answers design section 16 and RC0 is reviewed.
+starts; owner-selected defaults and the scoped RC0 engineering review are recorded in docs/design.md and docs/rc0.md. Remaining release/locale coverage and support decisions stay explicit release gates.

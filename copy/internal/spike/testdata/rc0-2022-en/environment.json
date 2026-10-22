@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "captured_at": "2026-10-22T18:48:40.5500761Z",
+  "os_description": "Microsoft Windows 10.0.20348",
+  "display_version": "21H2",
+  "build": "20348",
+  "revision": 5622,
+  "culture": "en-US",
+  "ui_culture": "en-US",
+  "powershell": "7.6.6",
+  "engine": "C:\\Windows\\system32\\Robocopy.exe",
+  "file_version": "10.0.20348.1 (WinBuild.160101.0800)",
+  "product_version": "10.0.20348.1",
+  "sha256": "6BE326F6ACCAC4AF27C2D16D9289D1197D42B4DE709A22E17C6773A936F6619A",
+  "signature_status": "Valid",
+  "signature_type": "Catalog",
+  "spike_exit": 0
+}
