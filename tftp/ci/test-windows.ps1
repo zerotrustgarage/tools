@@ -86,13 +86,25 @@ function Test-Service {
     if ($LASTEXITCODE -ne 0) { throw 'Windows service did not serve a file' }
     & $cli put --port 49699 --timeout 1 --for 15s 127.0.0.1 "$base\images\boot.txt" startup-config
     if ($LASTEXITCODE -ne 0) { throw 'LocalService upload failed' }
-    $receipt = @(Get-ChildItem "$base\drop" -Filter receipt.json -Recurse)
-    if ($receipt.Count -ne 1) { throw 'Service upload receipt missing' }
-    $record = Get-Content $receipt[0].FullName -Raw | ConvertFrom-Json
+    # The runner is a different identity from LocalService. Read the audit (not
+    # private receipts) to locate the committed payload, then prove read denial.
+    $record = $null
+    for ($i=0; $i -lt 30 -and -not $record; $i++) {
+      Start-Sleep -Milliseconds 100
+      foreach ($log in Get-ChildItem "$base\audit" -Filter audit.jsonl -Recurse) {
+        foreach ($line in Get-Content $log.FullName) {
+          if (-not $line) { continue }
+          $entry = $line | ConvertFrom-Json
+          if ($entry.op -eq 'write' -and $entry.result -eq 'complete') { $record=$entry }
+        }
+      }
+    }
+    if (-not $record -or -not $record.stored_as) { throw 'Service upload did not commit' }
     $payload = Join-Path "$base\drop" $record.stored_as
-    $acl = Get-Acl $payload
-    $sid = ([System.Security.Principal.NTAccount]::new($acl.Owner)).Translate([System.Security.Principal.SecurityIdentifier]).Value
-    if ($sid -ne 'S-1-5-19' -or -not $acl.AreAccessRulesProtected) { throw 'Service upload is not privately owned by LocalService' }
+    $denied = $false
+    try { [void][System.IO.File]::ReadAllBytes($payload) }
+    catch { $denied = $_.Exception -is [UnauthorizedAccessException] -or $_.Exception.InnerException -is [UnauthorizedAccessException] }
+    if (-not $denied) { throw 'Another identity could read the LocalService upload' }
     & sc.exe control ZTGTFTP 6 | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'SCM configuration reload failed' }
   } finally {
