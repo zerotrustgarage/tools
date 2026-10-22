@@ -76,7 +76,12 @@ describe('the stored session', () => {
     const { host, remembered } = await started({ listing, file: inFolder('docs/setup.md') });
     expect(title(host)).toBe('docs/setup.md');
     expect(host.querySelector('.sidebar')!.hasAttribute('hidden')).toBe(false);
-    expect(remembered).toEqual([]);
+    expect(remembered).toEqual([[listing, inFolder('docs/setup.md').ref]]);
+  });
+
+  it('remembers a file the app was started with', async () => {
+    const { remembered } = await started({ file: lone });
+    expect(remembered).toEqual([[null, lone.ref]]);
   });
 
   it('remembers a lone file, then a folder with its document, then forgets on close', async () => {

@@ -78,7 +78,7 @@ export class App {
   private renderGeneration = 0;
   private objectUrls: string[] = [];
   private syncLine = 0;
-  /** Off until the stored session has been read, so the empty start cannot overwrite it. */
+  /** Off until the stored session has been read, so the empty first load cannot overwrite it. */
   private remembering = false;
 
   private readonly root = el('div', { class: 'app' });
@@ -128,6 +128,8 @@ export class App {
     this.preview.addEventListener('dblclick', (event) => this.previewDoubleClick(event));
     try {
       const initial = await this.platform.initial();
+      // A file named on the command line is remembered too; only the empty start is not.
+      this.remembering = true;
       if (initial) await this.arrive(initial, true);
     } catch (error) {
       this.notify(`Could not open: ${message(error)}`);
