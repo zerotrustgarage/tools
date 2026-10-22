@@ -155,6 +155,7 @@ func runLocalExperiments(ctx context.Context, engine, root, output string, execu
 	if err != nil {
 		return err
 	}
+	m.Checks["mismatch-bit4"] = mismatch.NativeExit&4 != 0
 	m.Notes = append(m.Notes, fmt.Sprintf("File/directory collision preview: native exit %d, mismatch bit present: %t", mismatch.NativeExit, mismatch.NativeExit&4 != 0))
 
 	lockedSource, err := mkdir("locked source")
@@ -205,14 +206,26 @@ func runLocalExperiments(ctx context.Context, engine, root, output string, execu
 	}
 	actual, readErr := os.ReadFile(filepath.Join(longDest, relative, longName))
 	m.Checks["long-tree-content"] = result.NativeExit < 8 && readErr == nil && bytes.Equal(actual, longData)
-	extendedSource := "\\\\?\\" + filepath.Join(longSource, relative) + "\\"
-	extendedDest := filepath.Join(root, "extended argument destination")
-	result, err = run("long-extended-argument", extendedSource, extendedDest, "/E", "/XJ")
-	if err != nil {
-		return err
+	for _, variant := range []string{"absolute", "extended", "extended-trailing"} {
+		sourceArg := filepath.Join(longSource, relative)
+		if variant != "absolute" {
+			sourceArg = "\\\\?\\" + sourceArg
+		}
+		if variant == "extended-trailing" {
+			sourceArg += "\\"
+		}
+		destArg := filepath.Join(root, variant+" argument destination")
+		result, err := run("long-"+variant+"-argument", sourceArg, destArg, "/E", "/XJ")
+		if err != nil {
+			return err
+		}
+		actual, readErr := os.ReadFile(filepath.Join(destArg, longName))
+		preserved := result.NativeExit < 8 && readErr == nil && bytes.Equal(actual, longData)
+		if variant != "extended-trailing" {
+			m.Checks[variant+"-argument-content"] = preserved
+		}
+		m.Notes = append(m.Notes, fmt.Sprintf("Long %s argument: content preserved %t; native exit %d", variant, preserved, result.NativeExit))
 	}
-	actual, readErr = os.ReadFile(filepath.Join(extendedDest, longName))
-	m.Checks["extended-argument-content"] = result.NativeExit < 8 && readErr == nil && bytes.Equal(actual, longData)
 	volumeRoot := filepath.VolumeName(root) + "\\"
 	result, err = run("volume-root-quit", volumeRoot, filepath.Join(root, "root quit destination"), "/QUIT")
 	if err != nil {

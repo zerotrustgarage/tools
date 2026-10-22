@@ -44,9 +44,13 @@ jobs:
           retention-days: 7
 
   windows:
-    name: RC0 real Robocopy captures
+    name: RC0 real Robocopy captures (${{ matrix.os }})
     needs: spike
-    runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -56,11 +60,11 @@ jobs:
           path: spike
       - name: Capture synthetic fixtures and environment facts
         shell: pwsh
-        run: ./copy/scripts/collect.ps1 -Spike ./spike/ztg-copy-spike.exe -Output ./copy/testdata/captures/windows-2025
+        run: ./copy/scripts/collect.ps1 -Spike ./spike/ztg-copy-spike.exe -Output ./copy/testdata/captures/${{ matrix.os }}
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: copy-rc0-windows-2025
-          path: copy/testdata/captures/windows-2025/
+          name: copy-rc0-${{ matrix.os }}
+          path: copy/testdata/captures/${{ matrix.os }}/
           if-no-files-found: error
           retention-days: 14

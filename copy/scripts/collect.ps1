@@ -43,7 +43,7 @@ if (Test-Path -LiteralPath $Output) {
 }
 $manifestPath = Join-Path $Output 'manifest.json'
 if (Test-Path -LiteralPath $manifestPath) { Get-Content -LiteralPath $manifestPath }
-foreach ($name in @('help-default', 'help-unicode', 'serial-copy', 'mt8-copy')) {
+foreach ($name in @('help-default', 'help-unicode', 'serial-copy', 'mt8-copy', 'long-extended-trailing-argument')) {
     $path = Join-Path $Output ($name + '.stdout.bin')
     if (Test-Path -LiteralPath $path) {
         $encoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes($path))
