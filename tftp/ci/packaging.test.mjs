@@ -44,6 +44,11 @@ test('packages preserve the binaries, ZIP is reproducible and MSI is signable', 
     assert.match(actions, /firewall install/);
     assert.match(actions, /firewall remove/);
     assert.match(actions, /FirewallRestore/);
+    const sequence = run('msiinfo', ['export', msi, 'InstallExecuteSequence']);
+    const rows = new Map(sequence.trim().split(/\r?\n/).slice(3).map(line => { const fields=line.split('\t'); return [fields[0],Number(fields[2])]; }));
+    assert.ok(rows.get('RemoveExistingProducts') < rows.get('InstallFiles'), 'remove old firewall rules before installing new ones');
+    assert.ok(rows.get('FirewallInstall') > rows.get('InstallFiles'));
+    assert.ok(rows.get('FirewallRemove') < rows.get('RemoveFiles'));
     const registry = run('msiinfo', ['export', msi, 'Registry']);
     assert.doesNotMatch(registry, /RunOnce|CurrentVersion\\Run\b/);
     assert.notEqual(spawnSync(msiScript, [resolve(payload), '256.0.0', msi]).status, 0);

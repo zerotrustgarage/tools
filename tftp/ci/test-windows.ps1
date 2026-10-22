@@ -138,6 +138,7 @@ try {
   if ($UpgradeMsi) {
     Run-Msi $UpgradeMsi '/i'
     $currentMsi = $UpgradeMsi
+    Assert-Firewall
     Assert-Payload $installDir $Version
     Run-Msi $Msi '/i' 1603 # downgrade is refused
   }

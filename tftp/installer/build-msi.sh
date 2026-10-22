@@ -23,3 +23,9 @@ message='ZTG TFTP needs the Microsoft Edge WebView2 Runtime. Install it from htt
 printf '%s\t%s\r\n' "$condition" "$message" >> "$work/LaunchCondition.idt"
 msibuild "$out" -i "$work/LaunchCondition.idt"
 msiinfo export "$out" LaunchCondition | grep -q WEBVIEW2_VERSION
+
+# wixl moves RemoveExistingProducts after custom actions unless its compiled
+# sequence is pinned explicitly. MSI requires it before script-generating actions.
+msiinfo export "$out" InstallExecuteSequence > "$work/InstallExecuteSequence.idt"
+python3 "$here/sequence.py" "$work/InstallExecuteSequence.idt"
+msibuild "$out" -i "$work/InstallExecuteSequence.idt"

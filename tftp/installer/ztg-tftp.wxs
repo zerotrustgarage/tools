@@ -7,6 +7,7 @@
     <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine"
              Description="ZTG TFTP $(var.Version)" Comments="Scoped TFTP transfers and configuration collection" />
     <Media Id="1" Cabinet="tftp.cab" EmbedCab="yes" />
+    <!-- build-msi.sh fixes the upgrade sequence; wixl lacks MajorUpgrade.Schedule. -->
     <MajorUpgrade DowngradeErrorMessage="A newer version of ZTG TFTP is already installed." />
     <Property Id="WEBVIEW2_VERSION">
       <RegistrySearch Id="WebView2Machine" Root="HKLM" Win64="no" Type="raw" Name="pv"
@@ -53,9 +54,11 @@
     <CustomAction Id="FirewallRemove" FileKey="TFTPCLI" ExeCommand="firewall remove" Execute="deferred" Impersonate="no" Return="check" />
     <CustomAction Id="FirewallRollback" FileKey="TFTPCLI" ExeCommand="firewall remove" Execute="rollback" Impersonate="no" Return="ignore" />
     <CustomAction Id="FirewallRestore" FileKey="TFTPCLI" ExeCommand="firewall install" Execute="rollback" Impersonate="no" Return="ignore" />
+    <CustomAction Id="FirewallRepairRollback" FileKey="TFTPCLI" ExeCommand="firewall install" Execute="rollback" Impersonate="no" Return="ignore" />
     <InstallExecuteSequence>
-      <Custom Action="FirewallRollback" After="InstallFiles">NOT REMOVE~="ALL"</Custom>
-      <Custom Action="FirewallInstall" After="FirewallRollback">NOT REMOVE~="ALL"</Custom>
+      <Custom Action="FirewallRollback" After="InstallFiles">NOT Installed AND NOT REMOVE~="ALL"</Custom>
+      <Custom Action="FirewallRepairRollback" After="FirewallRollback">Installed AND NOT REMOVE~="ALL"</Custom>
+      <Custom Action="FirewallInstall" After="FirewallRepairRollback">NOT REMOVE~="ALL"</Custom>
       <Custom Action="FirewallRestore" Before="FirewallRemove">REMOVE~="ALL"</Custom>
       <Custom Action="FirewallRemove" Before="RemoveFiles">REMOVE~="ALL"</Custom>
     </InstallExecuteSequence>
