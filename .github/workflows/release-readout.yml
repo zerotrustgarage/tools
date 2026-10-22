@@ -1,4 +1,4 @@
-name: Release ZTG Markdown
+name: Release ZTG Readout
 
 # Builds, signs and publishes the Windows installer. Run it by hand from main.
 #
@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-markdown
+  group: release-readout
   cancel-in-progress: false
 
 jobs:
@@ -36,30 +36,30 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version=$(node -p "require('./apps/markdown/package.json').version")
-          cargo_version=$(grep -m1 '^version' apps/markdown/src-tauri/Cargo.toml | cut -d'"' -f2)
+          version=$(node -p "require('./readout/package.json').version")
+          cargo_version=$(grep -m1 '^version' readout/src-tauri/Cargo.toml | cut -d'"' -f2)
           [ "$version" = "$cargo_version" ] || { echo "package.json $version and Cargo.toml $cargo_version differ"; exit 1; }
-          if git ls-remote --exit-code --tags origin "refs/tags/markdown-v$version" >/dev/null; then
-            echo "markdown-v$version is already released; bump the version first"; exit 1
+          if git ls-remote --exit-code --tags origin "refs/tags/readout-v$version" >/dev/null; then
+            echo "readout-v$version is already released; bump the version first"; exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - run: npm ci
-      - run: npm run check --workspace @ztg-tools/markdown
+      - run: npm run check --workspace @ztg-tools/readout
       - run: rustup toolchain install
-        working-directory: apps/markdown/src-tauri
+        working-directory: readout/src-tauri
       - run: npx tauri build --no-bundle
-        working-directory: apps/markdown
+        working-directory: readout
       - name: Collect the unsigned build and its notices
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p .release
-          cp apps/markdown/src-tauri/target/release/ztg-markdown.exe .release/
-          node scripts/notices.mjs apps/markdown .release/THIRD-PARTY-NOTICES.txt
-          (cd .release && sha256sum ztg-markdown.exe THIRD-PARTY-NOTICES.txt > build.sha256)
+          cp readout/src-tauri/target/release/ztg-readout.exe .release/
+          node scripts/notices.mjs readout .release/THIRD-PARTY-NOTICES.txt
+          (cd .release && sha256sum ztg-readout.exe THIRD-PARTY-NOTICES.txt > build.sha256)
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: markdown-unsigned
+          name: readout-unsigned
           path: .release/
           if-no-files-found: error
           retention-days: 3
@@ -78,7 +78,7 @@ jobs:
           node-version: '22'
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: markdown-unsigned
+          name: readout-unsigned
           path: .release
       - name: Check the build output against the build job's digests
         run: cd .release && sha256sum --check --strict build.sha256
@@ -93,33 +93,33 @@ jobs:
           AZURE_SIGNING_TENANT_ID: ${{ vars.AZURE_SIGNING_TENANT_ID }}
           AZURE_SIGNING_CLIENT_ID: ${{ vars.AZURE_SIGNING_CLIENT_ID }}
           AZURE_SIGNING_CLIENT_SECRET: ${{ secrets.AZURE_SIGNING_CLIENT_SECRET }}
-          ZTG_SIGN_NAME: ZTG Markdown
+          ZTG_SIGN_NAME: ZTG Readout
           ZTG_SIGN_URL: https://ztg.sh
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
-          node scripts/signing/sign.mjs sign .release/ztg-markdown.exe
+          node scripts/signing/sign.mjs sign .release/ztg-readout.exe
           mkdir -p dist
           makensis -V2 \
             "-DVERSION=$VERSION" \
-            "-DAPP_EXE=$GITHUB_WORKSPACE/.release/ztg-markdown.exe" \
+            "-DAPP_EXE=$GITHUB_WORKSPACE/.release/ztg-readout.exe" \
             "-DNOTICES=$GITHUB_WORKSPACE/.release/THIRD-PARTY-NOTICES.txt" \
-            "-DOUTFILE=$GITHUB_WORKSPACE/dist/ZTG-Markdown-$VERSION-Setup.exe" \
+            "-DOUTFILE=$GITHUB_WORKSPACE/dist/ZTG-Readout-$VERSION-Setup.exe" \
             "-DSIGN_SCRIPT=$GITHUB_WORKSPACE/scripts/signing/sign-file.sh" \
-            installer/windows/ztg-markdown.nsi
+            readout/installer/ztg-readout.nsi
       - name: Verify again, without credentials
         env:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
-          node scripts/signing/sign.mjs verify .release/ztg-markdown.exe
-          node scripts/signing/sign.mjs verify "dist/ZTG-Markdown-$VERSION-Setup.exe"
-          cp .release/ztg-markdown.exe "dist/ztg-markdown-$VERSION.exe"
+          node scripts/signing/sign.mjs verify .release/ztg-readout.exe
+          node scripts/signing/sign.mjs verify "dist/ZTG-Readout-$VERSION-Setup.exe"
+          cp .release/ztg-readout.exe "dist/ztg-readout-$VERSION.exe"
           cp .release/THIRD-PARTY-NOTICES.txt dist/
           (cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: markdown-signed
+          name: readout-signed
           path: dist/
           if-no-files-found: error
           retention-days: 7
@@ -134,7 +134,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: markdown-signed
+          name: readout-signed
           path: dist
       - run: cd dist && sha256sum --check --strict SHA256SUMS.txt
       # Attestations on private repositories need GitHub Enterprise Cloud. Set the repository
@@ -149,8 +149,8 @@ jobs:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
-          gh release create "markdown-v$VERSION" dist/* \
+          gh release create "readout-v$VERSION" dist/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "ZTG Markdown $VERSION" \
-            --notes "Signed Windows installer for ZTG Markdown $VERSION. Verify downloads against SHA256SUMS.txt; build provenance is attested (gh attestation verify <file> --repo $GITHUB_REPOSITORY)."
+            --title "ZTG Readout $VERSION" \
+            --notes "Signed Windows installer for ZTG Readout $VERSION. Verify downloads against SHA256SUMS.txt; build provenance is attested (gh attestation verify <file> --repo $GITHUB_REPOSITORY)."

@@ -1,4 +1,4 @@
-# ZTG Markdown
+# ZTG Readout
 
 A Markdown editor and viewer built for documents that AI tools and engineers produce: tables,
 colour, alerts, task lists, math, diagrams and code, shown the way GitHub shows them, and saved
@@ -22,7 +22,7 @@ source.
 
 ## Folders and repositories
 
-Open a folder (Ctrl+Shift+O, a drop onto the window, or "Open in ZTG Markdown" on a folder in
+Open a folder (Ctrl+Shift+O, a drop onto the window, or "Open in ZTG Readout" on a folder in
 Explorer) to browse every Markdown file in it. The folder's README opens first. Links between
 files work the way they do on GitHub, including `docs/setup.md#section`, `../README.md`,
 repository-root links such as `/docs/x.md`, and links to a folder, which open its README.
@@ -76,10 +76,10 @@ npm run check                # typecheck and tests
 
 ## Release
 
-Releases are built and signed only by `.github/workflows/release-markdown.yml`, run by hand
-from `main`. See [docs/signing.md](../../docs/signing.md).
+Releases are built and signed only by `.github/workflows/release-readout.yml`, run by hand
+from `main`. See [docs/signing.md](../docs/signing.md).
 
 Installer switches for RMM and Intune: `/S` installs silently per machine; uninstall with
-`"%ProgramFiles%\ZTG Markdown\uninstall.exe" /S`. Exit code 4 means the Microsoft Edge WebView2
+`"%ProgramFiles%\ZTG Readout\uninstall.exe" /S`. Exit code 4 means the Microsoft Edge WebView2
 Runtime is missing (Windows 11 and current Windows 10 include it). Close the app before an
 upgrade; a running copy holds its executable open.

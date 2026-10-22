@@ -122,11 +122,11 @@ test('jsign gets the token by file, never on the command line', () => {
     config: { endpoint: 'eus.codesigning.azure.net', account: 'a', profile: 'p' },
     tokenFile: '/tmp/t',
     executable: 'x.exe',
-    name: 'ZTG Markdown',
+    name: 'ZTG Readout',
     url: 'https://ztg.sh',
   });
   assert.equal(args[args.indexOf('--storepass') + 1], 'file:/tmp/t');
-  assert.equal(args[args.indexOf('--name') + 1], 'ZTG Markdown');
+  assert.equal(args[args.indexOf('--name') + 1], 'ZTG Readout');
   assert.equal(args[args.indexOf('--url') + 1], 'https://ztg.sh');
   assert.equal(args[args.indexOf('--tsmode') + 1], 'RFC3161');
   assert.equal(args.at(-1), 'x.exe');

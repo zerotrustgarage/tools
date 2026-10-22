@@ -109,7 +109,7 @@ export const webPlatform: Platform = {
   async openFolder() {
     if (picker.showDirectoryPicker) {
       try {
-        const handle = await picker.showDirectoryPicker({ id: 'ztg-markdown', mode: 'read' });
+        const handle = await picker.showDirectoryPicker({ id: 'ztg-readout', mode: 'read' });
         return { folder: { name: handle.name, handle }, ...(await walk(handle)) };
       } catch (error) {
         if (cancelled(error)) return null;

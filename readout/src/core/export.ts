@@ -48,7 +48,7 @@ export async function exportHtml(source: string, options: ExportOptions): Promis
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">
-<meta name="generator" content="ZTG Markdown">
+<meta name="generator" content="ZTG Readout">
 <title>${escapeText(options.title)}</title>
 <style>
 ${previewCss}

@@ -1,8 +1,8 @@
-; ZTG Markdown Windows installer.
+; ZTG Readout Windows installer.
 ;
 ; Built with makensis (NSIS 3.08 or later), on Linux in CI. Required defines:
 ;   VERSION      e.g. 0.1.0
-;   APP_EXE      path to the signed ztg-markdown.exe
+;   APP_EXE      path to the signed ztg-readout.exe
 ;   NOTICES      path to THIRD-PARTY-NOTICES.txt
 ;   OUTFILE      installer path to write
 ; Optional:
@@ -12,7 +12,7 @@
 ;                binary this installer puts on disk carries the publisher's signature.
 ;
 ; Per-machine install (RMM and Intune friendly). Silent install: /S. Silent uninstall:
-;   "%ProgramFiles%\ZTG Markdown\uninstall.exe" /S
+;   "%ProgramFiles%\ZTG Readout\uninstall.exe" /S
 ; Exit codes: 0 success, 2 cancelled, 3 not 64-bit Windows, 4 WebView2 Runtime missing.
 
 Unicode true
@@ -30,12 +30,12 @@ RequestExecutionLevel admin
 !insertmacro ZTG_REQUIRE NOTICES
 !insertmacro ZTG_REQUIRE OUTFILE
 
-!define PRODUCT "ZTG Markdown"
+!define PRODUCT "ZTG Readout"
 !define PUBLISHER "Proudlock Technology LLC"
 !define WEBSITE "https://ztg.sh"
-!define EXE "ztg-markdown.exe"
-!define PROGID "ZTGMarkdown.Document"
-!define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\ZTGMarkdown"
+!define EXE "ztg-readout.exe"
+!define PROGID "ZTGReadout.Document"
+!define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\ZTGReadout"
 ; Microsoft Edge WebView2 Runtime client id (evergreen).
 !define WEBVIEW2_GUID "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 
@@ -63,8 +63,8 @@ VIAddVersionKey "FileDescription" "${PRODUCT} Setup"
 VIAddVersionKey "FileVersion" "${VERSION}"
 VIAddVersionKey "ProductVersion" "${VERSION}"
 
-!define MUI_ICON "../../apps/markdown/src-tauri/icons/icon.ico"
-!define MUI_UNICON "../../apps/markdown/src-tauri/icons/icon.ico"
+!define MUI_ICON "../src-tauri/icons/icon.ico"
+!define MUI_UNICON "../src-tauri/icons/icon.ico"
 !define MUI_ABORTWARNING
 !define MUI_FINISHPAGE_RUN "$INSTDIR\${EXE}"
 !define MUI_FINISHPAGE_RUN_TEXT "Start ${PRODUCT}"
@@ -129,12 +129,12 @@ Section "Install"
   WriteRegStr HKLM "Software\Classes\Applications\${EXE}\shell\open\command" "" '"$INSTDIR\${EXE}" "%1"'
 
   ; Folder context menu: open a repository or docs folder.
-  WriteRegStr HKLM "Software\Classes\Directory\shell\ZTGMarkdown" "" "Open in ${PRODUCT}"
-  WriteRegStr HKLM "Software\Classes\Directory\shell\ZTGMarkdown" "Icon" '"$INSTDIR\${EXE}",0'
-  WriteRegStr HKLM "Software\Classes\Directory\shell\ZTGMarkdown\command" "" '"$INSTDIR\${EXE}" "%1"'
-  WriteRegStr HKLM "Software\Classes\Directory\Background\shell\ZTGMarkdown" "" "Open in ${PRODUCT}"
-  WriteRegStr HKLM "Software\Classes\Directory\Background\shell\ZTGMarkdown" "Icon" '"$INSTDIR\${EXE}",0'
-  WriteRegStr HKLM "Software\Classes\Directory\Background\shell\ZTGMarkdown\command" "" '"$INSTDIR\${EXE}" "%V"'
+  WriteRegStr HKLM "Software\Classes\Directory\shell\ZTGReadout" "" "Open in ${PRODUCT}"
+  WriteRegStr HKLM "Software\Classes\Directory\shell\ZTGReadout" "Icon" '"$INSTDIR\${EXE}",0'
+  WriteRegStr HKLM "Software\Classes\Directory\shell\ZTGReadout\command" "" '"$INSTDIR\${EXE}" "%1"'
+  WriteRegStr HKLM "Software\Classes\Directory\Background\shell\ZTGReadout" "" "Open in ${PRODUCT}"
+  WriteRegStr HKLM "Software\Classes\Directory\Background\shell\ZTGReadout" "Icon" '"$INSTDIR\${EXE}",0'
+  WriteRegStr HKLM "Software\Classes\Directory\Background\shell\ZTGReadout\command" "" '"$INSTDIR\${EXE}" "%V"'
 
   ; Programs and Features entry.
   WriteRegStr HKLM "${UNINSTALL_KEY}" "DisplayName" "${PRODUCT}"
@@ -169,8 +169,8 @@ Section "Uninstall"
   !insertmacro ZTG_REMOVE_OPEN_WITH ".mdown"
   !insertmacro ZTG_REMOVE_OPEN_WITH ".mkd"
   DeleteRegKey HKLM "Software\Classes\Applications\${EXE}"
-  DeleteRegKey HKLM "Software\Classes\Directory\shell\ZTGMarkdown"
-  DeleteRegKey HKLM "Software\Classes\Directory\Background\shell\ZTGMarkdown"
+  DeleteRegKey HKLM "Software\Classes\Directory\shell\ZTGReadout"
+  DeleteRegKey HKLM "Software\Classes\Directory\Background\shell\ZTGReadout"
   DeleteRegKey HKLM "${UNINSTALL_KEY}"
 
   System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'

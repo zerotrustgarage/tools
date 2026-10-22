@@ -1,4 +1,4 @@
-//! ZTG Markdown desktop shell.
+//! ZTG Readout desktop shell.
 //!
 //! The WebView renders documents from untrusted sources, so it is given no file system, dialog
 //! or shell permission (capabilities/default.json). Everything that touches the machine is one
@@ -553,7 +553,7 @@ pub fn run() {
             initial_document
         ])
         .run(tauri::generate_context!())
-        .expect("error while running ZTG Markdown");
+        .expect("error while running ZTG Readout");
 }
 
 #[cfg(test)]
@@ -561,7 +561,7 @@ mod tests {
     use super::*;
 
     fn fixture(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("ztg-md-test-{name}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("ztg-readout-test-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         for d in [
             "repo/docs/images",

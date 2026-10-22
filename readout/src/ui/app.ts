@@ -19,7 +19,7 @@ import { Sidebar } from './sidebar';
 type ViewMode = 'edit' | 'split' | 'preview';
 type ThemeChoice = 'auto' | 'light' | 'dark';
 
-const APP_NAME = 'ZTG Markdown';
+const APP_NAME = 'ZTG Readout';
 const PREVIEW_DELAY_MS = 120;
 const MAX_HISTORY = 50;
 
@@ -53,8 +53,8 @@ export class App {
   private listing: Listing | null = null;
   private history: FileRef[] = [];
   private pendingFragment: string | null = null;
-  private mode: ViewMode = stored('ztg-md-mode', ['edit', 'split', 'preview'], 'split');
-  private theme: ThemeChoice = stored('ztg-md-theme', ['auto', 'light', 'dark'], 'auto');
+  private mode: ViewMode = stored('ztg-readout-mode', ['edit', 'split', 'preview'], 'split');
+  private theme: ThemeChoice = stored('ztg-readout-theme', ['auto', 'light', 'dark'], 'auto');
   private renderTimer: number | undefined;
   private renderGeneration = 0;
   private objectUrls: string[] = [];
@@ -121,7 +121,7 @@ export class App {
 
     this.themeButton.addEventListener('click', () => {
       this.theme = this.theme === 'auto' ? 'light' : this.theme === 'light' ? 'dark' : 'auto';
-      store('ztg-md-theme', this.theme);
+      store('ztg-readout-theme', this.theme);
       this.applyTheme();
     });
     this.backButton.addEventListener('click', () => void this.back());
@@ -129,7 +129,7 @@ export class App {
     const top = el(
       'header',
       { class: 'top-bar' },
-      el('span', { class: 'brand', 'aria-hidden': 'true' }, el('span', { class: 'brand-mark' }, 'ZTG'), ' Markdown'),
+      el('span', { class: 'brand', 'aria-hidden': 'true' }, el('span', { class: 'brand-mark' }, 'ZTG'), ' Readout'),
       this.backButton,
       el('div', { class: 'file-name' }, this.titleEl, this.dirtyEl),
       el(
@@ -194,7 +194,7 @@ export class App {
 
   private setMode(mode: ViewMode): void {
     this.mode = mode;
-    store('ztg-md-mode', mode);
+    store('ztg-readout-mode', mode);
     this.root.dataset.mode = mode;
     for (const [m, b] of this.modeButtons) b.setAttribute('aria-pressed', String(m === mode));
     this.formatBar.hidden = mode === 'preview' || this.doc.readOnly !== null;

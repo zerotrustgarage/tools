@@ -4,20 +4,19 @@ Downloadable tools offered from [ztg.sh](https://ztg.sh). Each tool ships as a s
 installer, and where it makes sense as a browser version that runs entirely on the user's
 machine.
 
-| Tool | Path | What it is |
+| Tool | Folder | What it is |
 | --- | --- | --- |
-| ZTG Markdown | [apps/markdown](apps/markdown) | Source-faithful Markdown editor and viewer for files and whole folders (git repositories, docs trees, Obsidian vaults) |
+| ZTG Readout | [readout/](readout) | Source-faithful Markdown editor and viewer for files and whole folders (git repositories, docs trees, Obsidian vaults) |
 
 ## Layout
 
 | Path | Purpose |
 | --- | --- |
-| `apps/<tool>/` | Each tool's source (npm workspace) |
-| `installer/windows/` | NSIS installer scripts, built with makensis on Linux |
+| `<tool>/` | One top-level folder per tool, named after it: the app, its `installer/` script and its README. Each is an npm workspace listed in the root `package.json` |
 | `scripts/signing/` | Authenticode signing and verification through Azure Artifact Signing, shared by every tool |
 | `scripts/notices.mjs` | Generates THIRD-PARTY-NOTICES.txt from the npm and Rust dependency graphs |
 | `.github/workflows/ci.yml` | Checks on every pull request and push to main; no secrets |
-| `.github/workflows/release-markdown.yml` | Manual release: build, sign, package, attest, publish |
+| `.github/workflows/release-<tool>.yml` | Manual release per tool: build, sign, package, attest, publish |
 | `docs/signing.md` | Signing design and the one-time owner setup |
 
 ## Checks
@@ -25,7 +24,7 @@ machine.
 ```bash
 npm ci
 npm run check                      # editor typecheck and tests, signing tests
-cd apps/markdown/src-tauri && cargo test --locked && cargo clippy --all-targets -- -D warnings
+cd readout/src-tauri && cargo test --locked && cargo clippy --all-targets -- -D warnings
 ```
 
 The signing tests need `makensis`, `osslsigncode` and `openssl` (on Ubuntu:

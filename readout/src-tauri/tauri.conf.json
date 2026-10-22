@@ -1,9 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ZTG Markdown",
-  "mainBinaryName": "ztg-markdown",
+  "productName": "ZTG Readout",
+  "mainBinaryName": "ztg-readout",
   "version": "../package.json",
-  "identifier": "sh.ztg.markdown",
+  "identifier": "sh.ztg.readout",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -15,7 +15,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "ZTG Markdown",
+        "title": "ZTG Readout",
         "width": 1320,
         "height": 860,
         "minWidth": 480,

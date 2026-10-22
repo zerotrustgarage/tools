@@ -14,7 +14,7 @@ import { createTestCa, hasTool } from './test-ca.mjs';
 // fails verification replace the original file.
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const nsi = join(repo, 'installer', 'windows', 'ztg-markdown.nsi');
+const nsi = join(repo, 'readout', 'installer', 'ztg-readout.nsi');
 const tools = hasTool('makensis') && hasTool('osslsigncode') && hasTool('openssl');
 const skip = !tools && 'makensis, osslsigncode and openssl are required';
 
@@ -24,7 +24,7 @@ function testSigner(ca, dir) {
     script,
     `#!/bin/sh
 set -e
-osslsigncode sign -certs '${ca.publisher.cert}' -key '${ca.publisher.key}' -n 'ZTG Markdown' -i https://ztg.sh -in "$1" -out "$1.signed" >/dev/null
+osslsigncode sign -certs '${ca.publisher.cert}' -key '${ca.publisher.key}' -n 'ZTG Readout' -i https://ztg.sh -in "$1" -out "$1.signed" >/dev/null
 osslsigncode verify -CAfile '${ca.ca}' -in "$1.signed" | grep -q 'Signature verification: ok'
 mv "$1.signed" "$1"
 echo "$1" >> '${join(dir, 'signed.log')}'
@@ -114,7 +114,7 @@ test('a signature without a timestamp never replaces the original', { skip }, as
     AZURE_SIGNING_CLIENT_ID: '66666666-7777-8888-9999-000000000000',
     ACTIONS_ID_TOKEN_REQUEST_URL: 'https://token.actions.example/t',
     ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'runner',
-    ZTG_SIGN_NAME: 'ZTG Markdown',
+    ZTG_SIGN_NAME: 'ZTG Readout',
     ZTG_SIGN_URL: 'https://ztg.sh',
   };
   await assert.rejects(sign(target, trust, { env, runner, fetcher, jsign }), /no timestamp/);

@@ -1,17 +1,17 @@
 [package]
-name = "ztg-markdown"
+name = "ztg-readout"
 version = "0.1.0"
-description = "ZTG Markdown: a source-faithful Markdown editor and viewer"
+description = "ZTG Readout: a source-faithful Markdown editor and viewer"
 edition = "2021"
 rust-version = "1.85"
 publish = false
 
 [lib]
-name = "ztg_markdown_lib"
+name = "ztg_readout_lib"
 path = "src/lib.rs"
 
 [[bin]]
-name = "ztg-markdown"
+name = "ztg-readout"
 path = "src/main.rs"
 
 [build-dependencies]

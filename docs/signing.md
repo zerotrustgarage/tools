@@ -35,13 +35,13 @@ pins.
 
 ## Release pipeline
 
-`.github/workflows/release-markdown.yml`, run by hand from `main`:
+`.github/workflows/release-readout.yml`, run by hand from `main`:
 
 | Job | Runner | Sees | Does |
 | --- | --- | --- | --- |
 | build | windows-latest | nothing secret | Compiles all third-party code (npm, cargo), runs the tests, writes the unsigned exe, the notices file and their SHA-256 digests |
 | sign | ubuntu-latest, environment `tools-signing` | the signing identity, in one step | Checks the digests, signs the exe, runs makensis, which signs the uninstaller (`!uninstfinalize`) and the installer (`!finalize`) through `sign-file.sh`, then verifies everything again with no credential in scope |
-| publish | ubuntu-latest | `contents: write` | Attests build provenance and creates the release `markdown-v<version>` with `SHA256SUMS.txt` |
+| publish | ubuntu-latest | `contents: write` | Attests build provenance and creates the release `readout-v<version>` with `SHA256SUMS.txt` |
 
 The split matters. A malicious dependency would run during build, which holds no signing
 identity. The sign job runs only this repository's scripts, official actions, and makensis,
@@ -95,16 +95,16 @@ If the organization's plan does not include artifact attestations for private re
 
 ### 3. Release
 
-Actions, Release ZTG Markdown, Run workflow on `main`. The version comes from
-`apps/markdown/package.json` (it must match `src-tauri/Cargo.toml`), and the run refuses a
+Actions, Release ZTG Readout, Run workflow on `main`. The version comes from
+`readout/package.json` (it must match `src-tauri/Cargo.toml`), and the run refuses a
 version that is already released.
 
 ## Verifying a download
 
 ```powershell
-Get-AuthenticodeSignature .\ZTG-Markdown-0.1.0-Setup.exe | Format-List Status, SignerCertificate, TimeStamperCertificate
-(Get-FileHash .\ZTG-Markdown-0.1.0-Setup.exe -Algorithm SHA256).Hash   # compare with SHA256SUMS.txt
-gh attestation verify .\ZTG-Markdown-0.1.0-Setup.exe --repo zerotrustgarage/tools
+Get-AuthenticodeSignature .\ZTG-Readout-0.1.0-Setup.exe | Format-List Status, SignerCertificate, TimeStamperCertificate
+(Get-FileHash .\ZTG-Readout-0.1.0-Setup.exe -Algorithm SHA256).Hash   # compare with SHA256SUMS.txt
+gh attestation verify .\ZTG-Readout-0.1.0-Setup.exe --repo zerotrustgarage/tools
 ```
 
 `Status` must be `Valid` and the signer `CN=Proudlock Technology LLC`.
