@@ -1,4 +1,4 @@
-# ZTG Robocopy
+# ZTG Copy
 
 Design, run and prove Robocopy jobs. A proposed Windows tool for technicians that wraps the in-box `robocopy.exe`:
 

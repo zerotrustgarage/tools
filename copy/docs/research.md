@@ -1,4 +1,4 @@
-# ZTG Robocopy: research
+# ZTG Copy: research
 
 Status (October 22, 2026): research for the design in [design.md](design.md). The full option reference is in
 [flags.md](flags.md). Facts are cited; statements marked "assessment" are ZTG's reading and should be rechecked on a

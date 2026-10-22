@@ -1,11 +1,11 @@
 # Roadmap: open work and recommended improvements
 
 Status as of October 22, 2026. This file lists what is not finished and what is recommended for
-ZTG Readout, ZTG Scanner, ZTG TFTP, ZTG Robocopy and the repository as a whole. The recommendations come from the work so
-far and from comparing both tools with established products in their categories (sources at the
-end). Each tool's own design and checks are in its folder (`readout/`, `scanner/`, `tftp/`, `robocopy/`); Scanner's
-slices are defined in `scanner/docs/design.md`, ZTG TFTP's in `tftp/docs/design.md` and ZTG Robocopy's in
-`robocopy/docs/design.md`.
+ZTG Readout, ZTG Scanner, ZTG TFTP, ZTG Copy and the repository as a whole. The recommendations
+come from the work so far and from comparing both tools with established products in their
+categories (sources at the end). Each tool's own design and checks are in its folder (`readout/`, `scanner/`, `tftp/`, `copy/`); Scanner's
+slices are defined in `scanner/docs/design.md`, ZTG TFTP's in `tftp/docs/design.md` and ZTG Copy's in
+`copy/docs/design.md`.
 
 Priority: **High** is visible in daily use or blocks a release; **Medium** is clearly worth doing;
 **Low** is polish or depends on outside changes.
@@ -124,18 +124,18 @@ dnsmasq, Open TFTP Server, their CVE history and the gaps across them) is in
 | TF4 | T3: Windows desktop app; its stylesheet joins `scripts/ci/check-palette.mjs` | Medium | Open |
 | TF5 | T4 service mode and T5 packaging and signing (reuses Scanner's S4 work, SC1) | Medium | Open |
 
-## 6. ZTG Robocopy
+## 6. ZTG Copy
 
 Proposed; no code yet. A Windows tool that wraps the in-box `robocopy.exe`: an explained option designer, alternate
 credentials without passwords on command lines, an overall ETA and live metrics, previews and guards before anything
 is deleted, run records and optional hash verification. The research (Robocopy's capabilities, eighteen shortcomings,
-existing GUIs and alternatives) is in `robocopy/docs/research.md`, the option reference in `robocopy/docs/flags.md`.
+existing GUIs and alternatives) is in `copy/docs/research.md`, the option reference in `copy/docs/flags.md`.
 
 | # | Item | Priority | Status |
 | --- | --- | --- | --- |
-| RB1 | Owner decisions in `robocopy/docs/design.md` section 16 (name, wrap versus own engine, defaults, retention, supported Windows releases) | High | Open |
+| RB1 | Owner decisions in `copy/docs/design.md` section 16 (wrap versus own engine, defaults, retention, supported Windows releases); the name is decided: ZTG Copy | High | Partly resolved |
 | RB2 | RC0: spike on real Windows releases, output fixtures, ten technical questions answered | High | Open |
-| RB3 | RC1: engine and CLI (catalog, job model, import and explain, runner, parser, metrics and ETA, run record, `robocopy.yml`) | High | Open |
+| RB3 | RC1: engine and CLI (catalog, job model, import and explain, runner, parser, metrics and ETA, run record, `copy.yml`) | High | Open |
 | RB4 | RC2: safety guards and previews for destructive options | High | Open |
 | RB5 | RC3: credentials and network context (temporary SMB connections, SMB encryption state, BitLocker state) | High | Open |
 | RB6 | RC4: Windows desktop app; its stylesheet joins `scripts/ci/check-palette.mjs` | Medium | Open |

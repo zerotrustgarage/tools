@@ -1,6 +1,6 @@
-# CLAUDE.md (robocopy)
+# CLAUDE.md (copy)
 
-ZTG Robocopy, a designer, runner and evidence recorder for Windows Robocopy jobs, in Go. Status: proposed; no code
+ZTG Copy, a designer, runner and evidence recorder for Windows Robocopy jobs, in Go. Status: proposed; no code
 yet. Repository-wide conventions (one folder per tool, GitHub-hosted runners, actions pinned by SHA, dependencies
 public for at least 14 days) are in the root README.
 

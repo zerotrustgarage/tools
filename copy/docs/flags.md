@@ -1,4 +1,4 @@
-# ZTG Robocopy: option reference
+# ZTG Copy: option reference
 
 Status (October 22, 2026): the source for the embedded flag catalog (design section 4). Descriptions follow
 Microsoft's reference ([Microsoft Learn](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/robocopy),

@@ -1,4 +1,4 @@
-# ZTG Robocopy: design and build plan
+# ZTG Copy: design and build plan
 
 Status (October 22, 2026): proposed. No code yet; slice RC0 is the first step once the owner answers section 16. The
 research is in [research.md](research.md) (its gaps are cited here as G1 to G18) and the option reference in
@@ -6,7 +6,7 @@ research is in [research.md](research.md) (its gaps are cited here as G1 to G18)
 
 ## 1. Purpose
 
-ZTG Robocopy helps a technician design, run and prove a Robocopy job:
+ZTG Copy helps a technician design, run and prove a Robocopy job:
 
 - Design: every option explained in plain language, with what it does, when to use it, what it risks and whether the
   installed Windows supports it; source and destination pickers; alternate credentials for shares; a live command
@@ -60,7 +60,7 @@ copy to the engine clients already accept. The costs of wrapping are handled by 
 ## 4. Architecture
 
 ```
-cmd/ztg-robocopy     CLI: flags, explain, plan, run, verify, report, version
+cmd/ztg-copy     CLI: flags, explain, plan, run, verify, report, version
 internal/catalog     embedded option catalog: groups, help, tags, conflicts, implications, privileges
 internal/job         job model (endpoints, file filters, options, metadata), JSON load and save, validation
 internal/cmdline     argument rendering, Windows command-line tokenizer for import, cmd and PowerShell quoting
@@ -211,14 +211,14 @@ connection afterwards.
 ### CLI
 
 ```
-ztg-robocopy flags [--search text]                       # the catalog, explained
-ztg-robocopy explain "robocopy C:\data \\nas\data /MIR"  # import a command and explain each option and its risks
-ztg-robocopy plan job.json                               # probes and preview; changes nothing
-ztg-robocopy run job.json --report .\runs                # preview, guards, copy, record
-ztg-robocopy run job.json --max-delete 50 --verify sample
-ztg-robocopy verify <run folder> --hash full
-ztg-robocopy report <run folder> --html report.html
-ztg-robocopy version
+ztg-copy flags [--search text]                       # the catalog, explained
+ztg-copy explain "robocopy C:\data \\nas\data /MIR"  # import a command and explain each option and its risks
+ztg-copy plan job.json                               # probes and preview; changes nothing
+ztg-copy run job.json --report .\runs                # preview, guards, copy, record
+ztg-copy run job.json --max-delete 50 --verify sample
+ztg-copy verify <run folder> --hash full
+ztg-copy report <run folder> --html report.html
+ztg-copy version
 ```
 
 Jobs are JSON files the app also reads and writes. `/MON` and `/MOT` (which keep Robocopy running) are available
@@ -248,7 +248,7 @@ only through the CLI and exports.
 
 ## 10. Run record and reports
 
-Each run gets a folder under `%LOCALAPPDATA%\ZTG\Robocopy\runs\<date>\<run id>\` with an owner-only DACL, holding:
+Each run gets a folder under `%LOCALAPPDATA%\ZTG\Copy\runs\<date>\<run id>\` with an owner-only DACL, holding:
 
 - `run.json`: run id, tool version, Robocopy file version and SHA-256, host, technician (account and SID), elevation,
   the job, the exact argument list, connections (share, account name, SMB dialect, encryption, signing; never a
@@ -277,7 +277,7 @@ that do not resolve on the destination (G13).
 
 ## 12. Compliance mapping
 
-NIST SP 800-171 Rev 2, as CMMC 2.0 Level 2 uses it. ZTG Robocopy supports these practices; it is not an assessment
+NIST SP 800-171 Rev 2, as CMMC 2.0 Level 2 uses it. ZTG Copy supports these practices; it is not an assessment
 of them, and it does not decide whether data is CUI. A job can be marked "contains CUI" by the technician, which
 turns the transport and media warnings in S13 into acknowledgments.
 
@@ -320,12 +320,12 @@ Each slice is reviewed before the next starts. Sizes are relative (S small, M me
 | Slice | What | Done when | Size |
 | --- | --- | --- | --- |
 | RC0 | Spike on real Windows (10 22H2, 11 24H2 and 25H2, Server 2016, 2019, 2022, 2025): capture output fixtures; answer the open technical questions below; record decisions in this file | Fixtures committed under `testdata/`; each question answered | S |
-| RC1 | Engine and CLI: catalog with its `flags.md` check, job model, argument rendering, import and explain, probes, runner in a job object, parser, metrics, run record, normalized exit codes; CI workflow `robocopy.yml` (gofmt, vet for Linux and Windows, race tests, fuzz seeds, Windows integration job) | `plan`, `run`, `explain`, `flags` work against real Robocopy on the Windows runner; ETA within 15% on the fixture jobs after the first minute | L |
+| RC1 | Engine and CLI: catalog with its `flags.md` check, job model, argument rendering, import and explain, probes, runner in a job object, parser, metrics, run record, normalized exit codes; CI workflow `copy.yml` (gofmt, vet for Linux and Windows, race tests, fuzz seeds, Windows integration job) | `plan`, `run`, `explain`, `flags` work against real Robocopy on the Windows runner; ETA within 15% on the fixture jobs after the first minute | L |
 | RC2 | Safety: guards S1 to S12, previews for every destructive option, `--max-delete`, junction listing | Every guard case tested; no destructive run without a preview | M |
 | RC3 | Credentials and network context: "Connect as", network-only logon (if RC0 allows), cleanup, 1219 and 1326 handling, SMB dialect, encryption and signing, BitLocker state, guard S13 | SMB tests pass on the runner; no credential reachable from any file, log or export (tested) | M |
 | RC4 | Desktop app: design, preview, run dashboard, history, presets, exports, elevation restart; palette check | UI tests pass; owner tests on real Windows | L |
 | RC5 | Verification and reports: convergence, sample and full hash, ACL comparison, HTML and CSV reports, run comparison | A tampered file and a changed-at-source file are told apart in tests | M |
-| RC6 | Packaging and trust: Authenticode through `scripts/signing/`, MSI, portable ZIP, SBOM, `release-robocopy.yml` with provenance; reuses Scanner's S4 work (roadmap SC1) and TFTP's T5 | A signed release published by the workflow | M |
+| RC6 | Packaging and trust: Authenticode through `scripts/signing/`, MSI, portable ZIP, SBOM, `release-copy.yml` with provenance; reuses Scanner's S4 work (roadmap SC1) and TFTP's T5 | A signed release published by the workflow | M |
 | RC7 | Candidates needing an owner decision: migration mode (planned pre-seed, delta and cutover passes with the delta trend and a cutover estimate); a job queue; Task Scheduler export with gMSA guidance; a Volume Shadow Copy source for locked files (needs administrator rights) | Per candidate | |
 
 RC0 questions:
@@ -353,8 +353,8 @@ RC0 questions:
 
 ## 16. Open questions for the owner
 
-1. Name: "ZTG Robocopy" with folder `robocopy/` and binary `ztg-robocopy`, or a name without Microsoft's tool name
-   (for example "ZTG Copy"). Using "Robocopy" in a product name may need a trademark check; ZTG has not verified it.
+1. Name: resolved October 22, 2026. "ZTG Copy", folder `copy/`, binary `ztg-copy`. The product name avoids
+   Microsoft's tool name; the documentation still says plainly that it runs Robocopy.
 2. Wrap Robocopy (recommended) or write an own engine.
 3. Default retries `/R:2 /W:5`.
 4. Normalized CLI exit codes by default, with `--native-exit` as the option.
