@@ -6,7 +6,8 @@ runner are not implemented yet.
 
 The first executable is **ztg-copy-spike**, an RC0 evidence collector. It accepts only an
 output folder, creates its own synthetic source and destination under the Windows temporary
-directory, and never accepts real copy endpoints or credentials. It resolves the in-box
+directory, and never accepts real copy endpoints or credentials. An additional RC0 script tests
+native SMB and network-only logon APIs on disposable elevated Windows runners. It resolves the in-box
 Robocopy with GetSystemDirectoryW, never PATH.
 
 ## Run the spike on Windows
@@ -24,6 +25,8 @@ creates:
 
 - Exact stdout and stderr bytes for help, list-only previews, serial and multithreaded
   copies, trailing backslashes in paths with spaces, and valid/invalid /QUIT commands.
+- Locked-file failures, native exit bits, long paths, destination-junction purge behavior,
+  preview/copy summary equality, and throttled copies with destination observations.
 - UTF-16LE decode attempts when /UNICODE is requested, with errors recorded. This is an
   experiment: captured console output on Server 2025 mixes encodings despite a BOM.
 - A /UNILOG copy with Unicode filename checks against the native log.
@@ -34,7 +37,8 @@ creates:
 
 Synthetic fixture files are removed afterwards; evidence is preserved. Capture collection
 stops if a command takes more than 45 seconds. The CI workflow builds on Linux and executes
-the unsigned spike on the GitHub-hosted windows-2025 runner, retaining evidence for 14 days.
+the unsigned spike on GitHub-hosted windows-2022 and windows-2025 runners, retaining evidence
+for 14 days. Selected raw fixtures and provenance are committed under internal/spike/testdata.
 
 ## Checks
 
@@ -49,3 +53,11 @@ GOOS=windows GOARCH=amd64 go build ./cmd/ztg-copy-spike
 There are no third-party Go dependencies. Unit tests cover Unicode decoding, help-token
 extraction and every native exit bitmap. Raw Windows captures are experimental evidence,
 not invented golden fixtures. See [docs/rc0.md](docs/rc0.md) for the remaining questions.
+
+The CI-only network experiment runs `scripts/collect-network.ps1` after collection. It requires
+an elevated disposable Windows machine: it creates and deletes two synthetic local users and
+SMB shares, uses temporary deviceless connections, tests error 1219 and cleanup, and starts
+network-only Robocopy processes suspended before assigning them to a job object. It also
+tests that closing the job stops a monitoring child. Passwords stay in allocated native
+buffers, are cleared after use, and never enter PowerShell, command lines or evidence.
+It reads SMB dialect/encryption/signing where available; missing facts remain unknown.

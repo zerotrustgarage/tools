@@ -402,18 +402,17 @@ RC0 questions:
 - Platforms other than Windows. The CLI builds on Linux only so unit tests run there.
 - Deciding what data is CUI.
 
-## 16. Open questions for the owner
+## 16. Owner decisions
 
 1. Name: resolved October 22, 2026. "ZTG Copy", folder `copy/`, binary `ztg-copy`. The product name avoids
    Microsoft's tool name; the documentation still says plainly that it runs Robocopy.
-2. Wrap Robocopy (recommended) or write an own engine.
-3. Default retries `/R:2 /W:5`.
-4. Normalized CLI exit codes by default, with `--native-exit` as the option.
-5. Preview before every run (recommended), or only before destructive runs.
-6. Verification default: convergence always (recommended); hashing opt-in.
-7. Retention and location of run records, since they list file names.
+2. Resolved October 22, 2026: wrap the in-box Robocopy.
+3. Resolved October 22, 2026: default retries `/R:2 /W:5`.
+4. Resolved October 22, 2026: normalized CLI exit codes by default, with `--native-exit` as the option.
+5. Resolved October 22, 2026: preview before every run.
+6. Resolved October 22, 2026: convergence after every copy; hashing opt-in.
+7. Resolved October 22, 2026: local per-user run records under `%LOCALAPPDATA%\\ZTG\\Copy\\runs`, kept until manually deleted.
 8. Supported Windows releases: Windows 10 22H2 (where under extended security updates), Windows 11, and Server 2016
    onward is proposed, with option detection covering the differences.
 9. Which RC7 candidates, if any, are wanted.
-10. Template storage: per user in the roaming profile (proposed, follows the technician between machines in a domain),
-    or per machine.
+10. Resolved October 22, 2026: per-user templates in `%APPDATA%\\ZTG\\Copy\\templates`.

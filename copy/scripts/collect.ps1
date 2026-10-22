@@ -47,7 +47,7 @@ if (Test-Path -LiteralPath $environmentPath) {
 }
 $manifestPath = Join-Path $Output 'manifest.json'
 if (Test-Path -LiteralPath $manifestPath) { Get-Content -LiteralPath $manifestPath }
-foreach ($name in @('help-default', 'help-unicode', 'serial-copy', 'mt8-copy', 'long-extended-trailing-argument')) {
+foreach ($name in @('help-default', 'help-unicode', 'serial-copy', 'mt8-copy', 'long-extended-trailing-argument', 'exit-locked', 'exit-mismatch', 'purge-junction-control', 'purge-junction-source-xj', 'purge-junction-excluded')) {
     $path = Join-Path $Output ($name + '.stdout.bin')
     if (Test-Path -LiteralPath $path) {
         $encoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes($path))
@@ -62,6 +62,12 @@ foreach ($name in @('timing-serial.timing.json', 'timing-mt8.timing.json', 'prev
     $path = Join-Path $Output $name
     if (Test-Path -LiteralPath $path) {
         Write-Output ('RC0_OBSERVATION ' + (@{ name = $name; data = (Get-Content -Raw -LiteralPath $path | ConvertFrom-Json) } | ConvertTo-Json -Depth 8 -Compress))
+    }
+}
+foreach ($name in @('timing-serial', 'timing-mt8')) {
+    $path = Join-Path $Output ($name + '.events.jsonl')
+    if (Test-Path -LiteralPath $path) {
+        Write-Output ('RC0_FIXTURE ' + (@{ name = ($name + '.events'); base64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($path)) } | ConvertTo-Json -Compress))
     }
 }
 if ($spikeExit -ne 0) { throw "RC0 observations need investigation (spike exit $spikeExit)." }

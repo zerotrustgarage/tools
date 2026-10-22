@@ -61,6 +61,9 @@ jobs:
       - name: Capture synthetic fixtures and environment facts
         shell: pwsh
         run: ./copy/scripts/collect.ps1 -Spike ./spike/ztg-copy-spike.exe -Output ./copy/testdata/captures/${{ matrix.os }}
+      - name: Temporary SMB credentials and contained network-only logon
+        shell: pwsh
+        run: ./copy/scripts/collect-network.ps1 -Output ./copy/testdata/captures/${{ matrix.os }}
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
