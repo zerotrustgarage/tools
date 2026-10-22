@@ -86,12 +86,13 @@ jobs:
       # against a pinned SHA-256. makensis packages. All from Ubuntu's signed archive.
       - run: scripts/ci/apt-install.sh nsis osslsigncode openjdk-17-jre-headless
       - run: node scripts/signing/sign.mjs check
-      # The only step that sees signing credentials. With no client secret configured it uses
-      # the job's GitHub OIDC token through an Entra federated credential.
+      # The only step that sees signing credentials: the tools-signing client secret, or, with no
+      # secret configured, the job's GitHub OIDC token through an Entra federated credential. The
+      # tenant and client IDs are identifiers, read from environment variables or secrets alike.
       - name: Sign the app, build and sign the installer
         env:
-          AZURE_SIGNING_TENANT_ID: ${{ vars.AZURE_SIGNING_TENANT_ID }}
-          AZURE_SIGNING_CLIENT_ID: ${{ vars.AZURE_SIGNING_CLIENT_ID }}
+          AZURE_SIGNING_TENANT_ID: ${{ vars.AZURE_SIGNING_TENANT_ID || secrets.AZURE_SIGNING_TENANT_ID }}
+          AZURE_SIGNING_CLIENT_ID: ${{ vars.AZURE_SIGNING_CLIENT_ID || secrets.AZURE_SIGNING_CLIENT_ID }}
           AZURE_SIGNING_CLIENT_SECRET: ${{ secrets.AZURE_SIGNING_CLIENT_SECRET }}
           ZTG_SIGN_NAME: ZTG Readout
           ZTG_SIGN_URL: https://ztg.sh
