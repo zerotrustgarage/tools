@@ -14,9 +14,10 @@ on:
 permissions:
   contents: read
 
+# As in ci.yml: superseded pull request runs are cancelled; runs on main always finish.
 concurrency:
-  group: scanner-${{ github.ref }}
-  cancel-in-progress: true
+  group: scanner-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   engine:
@@ -59,11 +60,13 @@ jobs:
           GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go vet ./...
       - name: test
         run: go test -race ./...
+      # The release build path: manifest, version resource and icon embedded (winres/).
+      # check-pe.sh uses coreutils only; the pool has no `file` command.
       - name: Windows build (cross-compiled, unsigned)
         run: |
-          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -tags desktop,production \
-            -ldflags "-s -w -H windowsgui" -o ZTGScanner.exe .
-          file ZTGScanner.exe | grep -q 'PE32+ executable (GUI) x86-64'
+          ./build-windows.sh 0.0.0-ci amd64 dist
+          ../ci/check-pe.sh dist/ZTGScanner.exe gui amd64
+          ../ci/check-pe.sh dist/ztg-scanner.exe console amd64
 
   ui:
     name: Scanner desktop UI (headless Chromium, binding mock)
