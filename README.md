@@ -41,9 +41,12 @@ The signing tests need `makensis`, `osslsigncode` and `openssl` (on Ubuntu:
 
 ## Runners
 
-Every workflow runs on the organization's self-hosted pool, `[self-hosted, linux, ephemeral]`.
-GitHub-hosted runners are not assigned to this organization, and Windows executables are
-cross-compiled on Linux (`scripts/ci/build-windows.sh`).
+The repository is public, so every workflow runs on GitHub-hosted runners (`ubuntu-24.04` and
+`windows-2025`, free for public repositories). The organization's self-hosted pool must never
+serve this repository: anyone can open a pull request, and its workflow would run inside the
+organization's network. Windows executables are cross-compiled on Linux
+(`scripts/ci/build-windows.sh`), then installed, launched and uninstalled on a real Windows runner
+(`scripts/ci/test-installer-windows.ps1`).
 
 ## One look
 

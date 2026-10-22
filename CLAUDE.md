@@ -13,9 +13,10 @@ release workflow and `CLAUDE.md`. Read the tool's own file before changing it:
 1. A new tool gets its own folder named after it, its own `CLAUDE.md`, and its own
    `.github/workflows/release-<tool>.yml`. Shared code lives in `scripts/` only when a second
    tool uses it.
-2. Every workflow runs on `[self-hosted, linux, ephemeral]`; GitHub-hosted runners are not
-   assigned to this organization and there is no Windows runner. Windows executables are
-   cross-compiled. Actions are pinned by commit SHA.
+2. The repository is public. Every workflow runs on GitHub-hosted runners (`ubuntu-24.04`,
+   `windows-2025`), never on the organization's self-hosted pool: anyone can open a pull request
+   here, and its workflow would run inside the organization's network. Windows executables are
+   cross-compiled on Linux and tested on a Windows runner. Actions are pinned by commit SHA.
 3. Dependencies: exact versions, lockfiles committed, new versions only after 14 days public
    unless they fix a published advisory, no install scripts, and each new dependency justified
    in its commit message. Dependabot (`.github/dependabot.yml`) applies the same cooldown.

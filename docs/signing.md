@@ -37,10 +37,11 @@ pins.
 
 `.github/workflows/release-readout.yml`, run by hand from `main`:
 
-All three jobs run on the organization's self-hosted ephemeral pool,
-`[self-hosted, linux, ephemeral]`. GitHub-hosted runners are not assigned to `zerotrustgarage`
-repositories (infrasec `docs/releases/runner-routing-review-2026-10-05.md`), and there is no
-Windows runner, so the Windows executable is cross-compiled on Linux.
+All three jobs run on GitHub-hosted runners. The repository is public, so the organization's
+self-hosted pool must never serve it: anyone can open a pull request, and its workflow would run
+inside the organization's network. GitHub-hosted runners are free for public repositories and
+isolated from it. The Windows executable is cross-compiled on Linux, and CI installs and launches
+it on a real Windows runner (`windows-install` in `ci.yml`).
 
 | Job | Sees | Does |
 | --- | --- | --- |
@@ -95,8 +96,8 @@ In `zerotrustgarage/tools`, Settings, Environments, New environment `tools-signi
   - `AZURE_SIGNING_TENANT_ID`: the Directory (tenant) ID
   - `AZURE_SIGNING_CLIENT_ID`: the app registration's Application (client) ID
 
-If the organization's plan does not include artifact attestations for private repositories
-(GitHub Enterprise Cloud does), set the repository variable `ATTEST_PROVENANCE` to `false`.
+Build provenance attestations need no setting: the repository is public, and public repositories
+get them on every plan.
 
 ### 3. Release
 
@@ -121,10 +122,11 @@ Windows build runner (see below).
 
 - `scripts/ci/test-installer-wine.sh <Setup.exe>` checks the installer under Wine: the WebView2
   refusal, silent install, files, shortcut, registry entries, reinstall and a clean uninstall.
-- The app UI needs a real Windows machine, because WebView2 does not run under Wine. Windows
-  Sandbox on a technician's PC is the quickest check. For automated checks, register a Windows
-  machine (for example a VM in the Proxmox pool) as a self-hosted runner, as infrasec's
-  `JACKPOINT_WINDOWS_RUNNER_LABELS` anticipates.
+- `scripts/ci/test-installer-windows.ps1` runs in CI on a GitHub-hosted `windows-2025` runner:
+  both installers, the files, shortcut and registry entries, launching the app (its window title
+  proves the UI loaded on WebView2), opening a file, and uninstalling.
+- Interactive checks (dragging the title bar, drag and drop from Explorer, the look of each theme)
+  still need a person; Windows Sandbox on a technician's PC is the quickest way.
 
 ## Verifying a download
 

@@ -15,13 +15,17 @@ These need the repository owner; no code change can do them.
 
 | # | Action | Why | Status |
 | --- | --- | --- | --- |
-| O1 | Set the default branch to `main` (Settings, General, Default branch) | It still points at a working branch. GitHub shows it on the front page, new clones start from it, and Dependabot reads its configuration only from the default branch | Open |
+| O1 | Set the default branch to `main` (Settings, General, Default branch) | GitHub shows it on the front page, new clones start from it, and Dependabot reads its configuration only from the default branch | **Done** |
 | O2 | Create the Entra app registration and federated credential for signing (`docs/signing.md`, section "One-time owner setup") | No signed release can exist without it | Open |
 | O3 | Create the `tools-signing` environment (main only, required reviewers) with `AZURE_SIGNING_TENANT_ID` and `AZURE_SIGNING_CLIENT_ID` | Same | Open |
 | O4 | Approve accepting Microsoft's license for the CRT and Windows SDK files the cross-compile downloads (`XWIN_ACCEPT_LICENSE`) | It is accepted on the organization's behalf at every Windows build | Open |
-| O5 | Decide on build provenance attestations for this private repository (repository variable `ATTEST_PROVENANCE`) | They need GitHub Enterprise Cloud | Open |
+| O5 | Build provenance attestations | Public repositories get them on every plan, so every release is attested; the `ATTEST_PROVENANCE` switch is gone | **Done** (repository made public) |
 | O6 | Enable Dependabot security updates (Settings, Code security) | Version updates are configured; security updates are a separate switch and are not held by the 14-day cooldown | Open |
-| O7 | Test both apps on real Windows (Windows Sandbox is enough) | Every UI check so far ran in Chromium stand-ins; installers were checked under Wine | Open |
+| O7 | Test both apps on real Windows (Windows Sandbox is enough) | CI now installs, launches and uninstalls Readout on a real Windows runner (R8); what still needs a person is the interactive side: dragging the title bar, drag and drop from Explorer, the look of both themes, and all of Scanner | Open |
+| O8 | Keep the organization's self-hosted runner group (`proxmox-ci`) closed to public repositories (Organization settings, Actions, Runner groups: "Allow public repositories" off) | The repository is public, so anyone can open a pull request whose workflow would run on those runners, inside the organization's network and behind the egress IP that infrasec's deploy tokens trust. CI here runs on GitHub-hosted runners instead | Open (verify) |
+| O9 | Require approval for workflows from outside contributors (Settings, Actions, General, "Fork pull request workflows from outside collaborators": all outside collaborators) | Fork pull requests then run only after a maintainer has read them | Open |
+| O10 | Enable secret scanning with push protection and private vulnerability reporting (Settings, Code security) | Free on public repositories; push protection stops a credential from being committed in the first place | Open |
+| O11 | Protect `main`: require pull requests and the CI checks (Settings, Branches or Rules) | Free on public repositories; see R1 | Open |
 
 ## 2. Repository and CI
 
@@ -32,7 +36,9 @@ These need the repository owner; no code change can do them.
 | R3 | One look: both tools use the ZTG palette from `design-tokens.json`; `scripts/ci/check-palette.mjs` fails CI on drift | Medium | **Done** |
 | R4 | Automated dependency updates with the 14-day cooldown (`.github/dependabot.yml`: npm, Cargo, Go modules, Actions) | Medium | **Done** (needs O1 to take effect) |
 | R5 | Retry `apt-get` when a mirror is mid-sync (`scripts/ci/apt-install.sh`) | Medium | **Done** |
-| R6 | CI time: cache the Microsoft SDK download (about 2 GB per Windows build), the Rust build and Scanner's Chromium download (14 minutes of a 14-minute job), or bake them into the runner image. This affects build time only; nothing cached ships, so installer size does not change | Medium | Open |
+| R6 | CI time: cache the Microsoft SDK download (about 2 GB per Windows build) and the Rust build with `actions/cache`. This affects build time only; nothing cached ships, so installer size does not change | Medium | Open |
+| R7 | Public repository: every workflow runs on GitHub-hosted runners (free for public repositories, isolated from the organization's network); none may use the self-hosted pool (O8) | High | **Done** |
+| R8 | Real Windows in CI: the `windows-install` job installs the NSIS installer and the MSI on `windows-2025`, checks files, shortcut and registry, launches Readout (the window title proves the UI loaded) and opens a file, then uninstalls (`scripts/ci/test-installer-windows.ps1`) | High | **Done** |
 
 ## 3. ZTG Readout
 
@@ -40,8 +46,8 @@ These need the repository owner; no code change can do them.
 
 | # | Item | Priority |
 | --- | --- | --- |
-| RD1 | Never run on real Windows: window UI, title bar dragging and shadow, drag and drop from Explorer, Open with, the folder context menu (see O7) | High |
-| RD2 | No signed release yet (O2 to O5) | High |
+| RD1 | Interactive checks on real Windows by a person: title bar dragging and shadow, drag and drop from Explorer, the folder context menu, both themes (O7). Installing, launching and opening a file run in CI (R8) | High |
+| RD2 | No signed release yet (O2 to O4) | High |
 | RD3 | The MSI is not in the release workflow and is not signed; it has been tested under Wine only, not through Intune or Group Policy | High |
 | RD4 | THIRD-PARTY-NOTICES.txt lacks the license text for six Rust crates (`alloc-stdlib`, `selectors`, `tauri-plugin`, `webview2-com`, `webview2-com-macros`, `webview2-com-sys`); it names their licenses only. Add standard SPDX license texts as a fallback in `scripts/notices.mjs` | High |
 | RD5 | Browser-driven checks (drag and drop, dividers, folder mode, title bar) ran as one-off scripts. Commit them as a `uitest/` suite in CI, as Scanner has | Medium |

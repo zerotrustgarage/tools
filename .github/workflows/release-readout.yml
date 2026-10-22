@@ -2,9 +2,9 @@ name: Release ZTG Readout
 
 # Builds, signs and publishes the Windows installer. Run it by hand from main.
 #
-# Every job runs on the organization's self-hosted ephemeral pool (GitHub-hosted runners are
-# not assigned to zerotrustgarage repositories, and there is no Windows runner). The Windows
-# executable is cross-compiled on Linux (scripts/ci/build-windows.sh).
+# Every job runs on GitHub-hosted runners (the repository is public; the organization's
+# self-hosted pool must never serve it). The Windows executable is cross-compiled on Linux
+# (scripts/ci/build-windows.sh).
 #
 # Trust boundaries (docs/signing.md):
 # - build compiles all third-party code (npm and cargo) and sees no secret and no signing
@@ -28,7 +28,7 @@ concurrency:
 jobs:
   build:
     if: github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, linux, ephemeral]
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -66,7 +66,7 @@ jobs:
 
   sign:
     needs: build
-    runs-on: [self-hosted, linux, ephemeral]
+    runs-on: ubuntu-24.04
     environment: tools-signing
     permissions:
       contents: read
@@ -126,7 +126,7 @@ jobs:
 
   publish:
     needs: [build, sign]
-    runs-on: [self-hosted, linux, ephemeral]
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       id-token: write
@@ -137,10 +137,8 @@ jobs:
           name: readout-signed
           path: dist
       - run: cd dist && sha256sum --check --strict SHA256SUMS.txt
-      # Attestations on private repositories need GitHub Enterprise Cloud. Set the repository
-      # variable ATTEST_PROVENANCE to false only if the plan does not include them.
-      - if: vars.ATTEST_PROVENANCE != 'false'
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      # Public repository: attestations are available on every plan, so every release is attested.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/*.exe
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

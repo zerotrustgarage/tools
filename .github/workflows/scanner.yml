@@ -1,8 +1,8 @@
 name: Scanner
 
 # ZTG Scanner checks: CLI and engine (scanner/), desktop app (scanner/app/) and its UI.
-# Like ci.yml, every job runs on the organization's self-hosted ephemeral pool (no
-# GitHub-hosted runners are assigned to zerotrustgarage), actions are pinned by commit SHA,
+# Like ci.yml, every job runs on GitHub-hosted runners (the repository is public; the
+# organization's self-hosted pool must never serve it), actions are pinned by commit SHA,
 # Go comes from go.dev verified against a committed checksum, and no secret is used.
 on:
   pull_request:
@@ -22,7 +22,7 @@ concurrency:
 jobs:
   engine:
     name: Scanner engine and CLI (fmt, vet, race tests, cross builds)
-    runs-on: [self-hosted, linux, ephemeral]
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: scanner
@@ -45,7 +45,7 @@ jobs:
 
   app:
     name: Scanner desktop app (fmt, vet, tests, Windows build)
-    runs-on: [self-hosted, linux, ephemeral]
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: scanner/app
@@ -70,7 +70,7 @@ jobs:
 
   ui:
     name: Scanner desktop UI (headless Chromium, binding mock)
-    runs-on: [self-hosted, linux, ephemeral]
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: scanner/app

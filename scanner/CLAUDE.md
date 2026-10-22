@@ -1,7 +1,7 @@
 # CLAUDE.md (scanner)
 
 ZTG Scanner, a network discovery and inventory tool in Go. Repository-wide conventions (one folder per tool,
-self-hosted runners, actions pinned by SHA, dependencies public for at least 14 days) are in the root README.
+GitHub-hosted runners, actions pinned by SHA, dependencies public for at least 14 days) are in the root README.
 
 Read `docs/design.md` before changing anything here. Its safety principles are requirements:
 

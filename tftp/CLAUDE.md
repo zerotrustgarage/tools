@@ -1,7 +1,7 @@
 # CLAUDE.md (tftp)
 
 ZTG TFTP, a TFTP server and client for technicians, in Go. Status: proposed; nothing is built. Repository-wide
-conventions (one folder per tool, self-hosted runners, actions pinned by SHA, dependencies public for at least 14
+conventions (one folder per tool, GitHub-hosted runners, actions pinned by SHA, dependencies public for at least 14
 days) are in the root README.
 
 Read `docs/design.md` before changing anything here, and `docs/research.md` for why. Its principles are requirements:
