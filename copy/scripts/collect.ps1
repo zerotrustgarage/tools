@@ -43,4 +43,11 @@ if (Test-Path -LiteralPath $Output) {
 }
 $manifestPath = Join-Path $Output 'manifest.json'
 if (Test-Path -LiteralPath $manifestPath) { Get-Content -LiteralPath $manifestPath }
+foreach ($name in @('help-default', 'help-unicode', 'serial-copy', 'mt8-copy')) {
+    $path = Join-Path $Output ($name + '.stdout.bin')
+    if (Test-Path -LiteralPath $path) {
+        $encoded = [Convert]::ToBase64String([IO.File]::ReadAllBytes($path))
+        Write-Output ('RC0_FIXTURE ' + (@{ name = $name; base64 = $encoded } | ConvertTo-Json -Compress))
+    }
+}
 if ($spikeExit -ne 0) { throw "RC0 observations need investigation (spike exit $spikeExit)." }
