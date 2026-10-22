@@ -10,7 +10,7 @@ import { exportHtml } from '../core/export';
 import { defaultDocument, documentFor, resolveInFolder, resolveWikiLink, splitHref } from '../core/paths';
 import { postprocess } from '../core/postprocess';
 import { renderMarkdown } from '../core/render';
-import type { Arrival, FileRef, Listing, OpenedFile, Platform } from '../platform/types';
+import type { Arrival, FileRef, Listing, OpenedFile, PendingSession, Platform } from '../platform/types';
 import { el, icon } from './dom';
 import { createEditor, documentText, scrollToLine } from './editor';
 import { runFormat, type FormatCommand } from './format';
@@ -78,6 +78,8 @@ export class App {
   private renderGeneration = 0;
   private objectUrls: string[] = [];
   private syncLine = 0;
+  /** Off until the stored session has been read, so the empty start cannot overwrite it. */
+  private remembering = false;
 
   private readonly root = el('div', { class: 'app' });
   private readonly titleEl = el('span', { class: 'doc-title' });
@@ -130,6 +132,7 @@ export class App {
     } catch (error) {
       this.notify(`Could not open: ${message(error)}`);
     }
+    this.remembering = true;
   }
 
   // ---- chrome ---------------------------------------------------------------------------
@@ -308,6 +311,27 @@ export class App {
     this.banner.textContent = text ?? '';
   }
 
+  /** A browser session waits for a click, which is what lets the page ask for access again. */
+  private offerSession(pending: PendingSession): void {
+    const reopen = el('button', { type: 'button', class: 'text-button banner-action' }, 'Reopen');
+    reopen.addEventListener('click', () => {
+      this.notify(null);
+      void pending.open().then(
+        (arrival) => (arrival ? this.arrive(arrival, false) : this.notify(`${pending.name} could not be reopened.`)),
+        (error: unknown) => this.notify(`Could not reopen ${pending.name}: ${message(error)}`),
+      );
+    });
+    this.banner.replaceChildren(`Last time you had ${pending.name} open. `, reopen);
+    this.banner.hidden = false;
+  }
+
+  /** Stores what is open for the next start: the folder, and the document when it is in it. */
+  private rememberSession(): void {
+    if (!this.remembering) return;
+    const ref = this.doc.ref;
+    this.platform.remember(this.listing, this.listing === null || ref?.folderPath !== undefined ? ref : null);
+  }
+
   // ---- documents ------------------------------------------------------------------------
 
   private load(ref: FileRef | null, text: string, format: DocumentFormat): void {
@@ -341,6 +365,7 @@ export class App {
     this.updateDirty();
     this.setMode(this.mode);
     this.schedulePreview(0);
+    this.rememberSession();
   }
 
   private get dirty(): boolean {
@@ -389,8 +414,12 @@ export class App {
   }
 
   private async arrive(arrival: Arrival, startup: boolean): Promise<void> {
+    if (arrival.pending) {
+      this.offerSession(arrival.pending);
+      return;
+    }
     if (!startup && !(await this.confirmDiscard())) return;
-    if (arrival.listing) await this.showFolder(arrival.listing);
+    if (arrival.listing) await this.showFolder(arrival.listing, arrival.file);
     else if (arrival.file) {
       this.setListing(null);
       this.show(arrival.file, null, false);
@@ -435,17 +464,23 @@ export class App {
     }
   }
 
-  /** A folder opens for reading: its README in the preview, the tree beside it. */
-  private async showFolder(listing: Listing): Promise<void> {
+  /**
+   * A folder opens for reading: its README in the preview, the tree beside it. A restored
+   * session passes the document that was open in it instead, shown in the view it was left in.
+   */
+  private async showFolder(listing: Listing, file?: OpenedFile): Promise<void> {
     this.setListing(listing);
-    const first = defaultDocument(listing.files);
-    if (!first) {
-      this.load(null, '', NEW_DOCUMENT_FORMAT);
-      this.notify(`No Markdown files were found in ${listing.folder.name}.`);
-      return;
+    if (file) this.show(file, null, false);
+    else {
+      const first = defaultDocument(listing.files);
+      if (!first) {
+        this.load(null, '', NEW_DOCUMENT_FORMAT);
+        this.notify(`No Markdown files were found in ${listing.folder.name}.`);
+        return;
+      }
+      if (this.mode === 'edit') this.setMode('preview');
+      await this.openFolderPath(first, null, false, true);
     }
-    if (this.mode === 'edit') this.setMode('preview');
-    await this.openFolderPath(first, null, false, true);
     if (listing.truncated) this.notify('This folder is very large; the file list shows the first 20,000 Markdown files.');
   }
 
@@ -504,6 +539,7 @@ export class App {
       this.sidebar.select(kept.folderPath);
       this.updateDirty();
       this.notify(null);
+      this.rememberSession();
       return true;
     } catch (error) {
       this.notify(`Could not save: ${message(error)}`);

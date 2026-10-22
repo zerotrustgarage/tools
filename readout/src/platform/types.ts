@@ -34,10 +34,24 @@ export interface OpenedFile {
   bytes: Uint8Array;
 }
 
-/** What the app was started with, or what was dropped on it. */
+/**
+ * A stored session the browser reopens only after the user agrees: access to a folder or file
+ * handle has to be granted again with a click.
+ */
+export interface PendingSession {
+  name: string;
+  /** Call from a click; asks for access and resolves null when it is refused. */
+  open(): Promise<Arrival | null>;
+}
+
+/**
+ * What the app was started with, or what was dropped on it. With both a listing and a file, the
+ * file is in that folder (a restored session) and opens instead of the folder's README.
+ */
 export interface Arrival {
   file?: OpenedFile;
   listing?: Listing;
+  pending?: PendingSession;
 }
 
 /** The desktop window's own caption buttons (the native frame is off). */
@@ -84,8 +98,16 @@ export interface Platform {
   openExternal(url: string): Promise<void>;
   /** Resolves an image path (decoded, relative to ref or folder-rooted) to an object URL. */
   loadLocalImage(ref: FileRef | null, relative: string, listing: Listing | null): Promise<string | null>;
-  /** A file or folder the app was started with (file association or command line). */
+  /**
+   * A file or folder the app was started with (file association or command line), or else what
+   * was open last time (the stored session).
+   */
   initial(): Promise<Arrival | null>;
+  /**
+   * Stores what is open so the next start reopens it: the folder, and the document when it is in
+   * that folder or no folder is open. Neither forgets the session. Best effort; never throws.
+   */
+  remember(listing: Listing | null, ref: FileRef | null): void;
   /**
    * Drag and drop onto the window: dragging reports when files are over the window (for the
    * drop overlay), open receives a Markdown file or folder, refused names anything else.
