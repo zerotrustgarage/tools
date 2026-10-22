@@ -24,6 +24,7 @@ jobs:
   web:
     name: Readout editor (typecheck, tests, build)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -38,6 +39,7 @@ jobs:
   rust:
     name: Readout desktop shell (Rust tests, clippy, fmt)
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -55,6 +57,7 @@ jobs:
   windows:
     name: Readout Windows build (cross-compiled, unsigned)
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -64,22 +67,23 @@ jobs:
       - run: npm ci
       - run: scripts/ci/build-windows.sh readout
       - run: scripts/ci/check-pe.sh readout/src-tauri/target/x86_64-pc-windows-msvc/release/ztg-readout.exe gui amd64
-      # The same installers the release builds, unsigned, for the Windows job below.
+      # The same installers the release builds, unsigned, for the Windows job below. They are staged
+      # in out/, not a dot directory: upload-artifact skips hidden paths.
       - run: scripts/ci/apt-install.sh nsis wixl msitools
       - name: Unsigned installers
         run: |
           set -eu
-          mkdir -p .release
+          mkdir -p out
           exe=readout/src-tauri/target/x86_64-pc-windows-msvc/release/ztg-readout.exe
-          cp "$exe" .release/
-          node scripts/notices.mjs readout .release/THIRD-PARTY-NOTICES.txt
-          makensis -V2 -DVERSION=0.0.0 "-DAPP_EXE=$PWD/$exe" "-DNOTICES=$PWD/.release/THIRD-PARTY-NOTICES.txt" \
-            "-DOUTFILE=$PWD/.release/ZTG-Readout-Setup.exe" readout/installer/ztg-readout.nsi
-          readout/installer/build-msi.sh "$exe" .release/THIRD-PARTY-NOTICES.txt 0.0.0 .release/ZTG-Readout.msi
+          cp "$exe" out/
+          node scripts/notices.mjs readout out/THIRD-PARTY-NOTICES.txt
+          makensis -V2 -DVERSION=0.0.0 "-DAPP_EXE=$PWD/$exe" "-DNOTICES=$PWD/out/THIRD-PARTY-NOTICES.txt" \
+            "-DOUTFILE=$PWD/out/ZTG-Readout-Setup.exe" readout/installer/ztg-readout.nsi
+          readout/installer/build-msi.sh "$exe" out/THIRD-PARTY-NOTICES.txt 0.0.0 out/ZTG-Readout.msi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: readout-windows-unsigned
-          path: .release/
+          path: out/
           if-no-files-found: error
           retention-days: 3
 
@@ -87,6 +91,7 @@ jobs:
     name: Readout on real Windows (install, launch, open a file, uninstall)
     needs: windows
     runs-on: windows-2025
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -109,6 +114,7 @@ jobs:
   palette:
     name: ZTG palette (every tool matches design-tokens.json)
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -119,6 +125,7 @@ jobs:
   signing:
     name: Signing and installer mechanics
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

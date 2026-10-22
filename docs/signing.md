@@ -22,12 +22,16 @@ Both repositories therefore enforce the same trust:
   about who signed.
 - jsign is a pinned jar checked against a pinned SHA-256.
 
-What is not shared is the credential. infrasec's `retained-agent-signing` environment holds a
-client secret. Copying it here would put a second copy of a long-lived secret in a second
-repository. This repository instead uses a GitHub OIDC federated credential by default: the
-release job proves which repository, environment and workflow it is to Entra, and receives a
-short-lived token. No secret is stored anywhere. A client secret still works if one is set (see
-option C below).
+The credential is the owner's choice (October 22, 2026): a client secret in the `tools-signing`
+environment (option C below), with the signer role scoped to the certificate profile only,
+the environment limited to `main` with required reviewers, and an expiry on the secret. A
+client secret is a long-lived password that can sign as Proudlock Technology LLC from anywhere
+until it expires, so those limits are what keep it small: renew it before it expires, and
+revoke it at once if it may have leaked. `sign.mjs` also supports a GitHub OIDC federated
+credential (option A or B), used whenever no secret is set: the release job proves which
+repository, environment and workflow it is to Entra and receives a short-lived token, so no
+secret is stored. Moving to it later needs no code change; delete the secret once the federated
+credential works.
 
 If infrasec ever changes the profile, publisher or roots, copy the change here in a reviewed
 commit; `node scripts/signing/sign.mjs check` and CI fail if the root files do not match their
@@ -58,7 +62,7 @@ after it verifies against the pinned roots and publisher.
 
 ### 1. Entra: let this repository sign
 
-Pick one.
+Pick one. This repository uses C, with the limits above.
 
 **A. New app registration (recommended).** A separate identity for tools means it can be
 revoked without touching the Jackpoint agent's releases.
@@ -81,10 +85,11 @@ revoked without touching the Jackpoint agent's releases.
 above) to the existing app. Still no secret is copied, but one identity then signs both
 products, and revoking it stops both.
 
-**C. Copy the client secret (not recommended).** Add the existing
-`AZURE_SIGNING_CLIENT_SECRET` to this repository's `tools-signing` environment as a secret. The
-release then uses it instead of OIDC. infrasec's own signing README already recommends moving
-away from the client secret.
+**C. Client secret (in use).** Add `AZURE_SIGNING_CLIENT_SECRET` to this repository's
+`tools-signing` environment as a secret. The release then uses it instead of OIDC. Give the app
+registration only the signer role from step 2, scoped to the profile, and set the shortest
+expiry you will renew (6 to 12 months). infrasec's own signing README recommends moving away from
+client secrets, and A or B remains the better end state.
 
 ### 2. GitHub: the `tools-signing` environment
 
@@ -92,9 +97,12 @@ In `zerotrustgarage/tools`, Settings, Environments, New environment `tools-signi
 
 - Deployment branches and tags: **Selected branches**, `main` only.
 - Required reviewers: recommended, so each signing run needs a person's approval.
-- Environment **variables** (identifiers, not secrets):
-  - `AZURE_SIGNING_TENANT_ID`: the Directory (tenant) ID
-  - `AZURE_SIGNING_CLIENT_ID`: the app registration's Application (client) ID
+- `AZURE_SIGNING_TENANT_ID`: the Directory (tenant) ID
+- `AZURE_SIGNING_CLIENT_ID`: the app registration's Application (client) ID
+- `AZURE_SIGNING_CLIENT_SECRET` (option C only): a **secret**
+
+  The two IDs are identifiers, not secrets; the release reads them from environment variables
+  or environment secrets alike.
 
 Build provenance attestations need no setting: the repository is public, and public repositories
 get them on every plan.
