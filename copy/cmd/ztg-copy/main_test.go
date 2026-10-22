@@ -68,3 +68,19 @@ func TestTemplateImportRequiresAcceptance(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestTemplateRunUsesGuards(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("APPDATA", dir)
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	var out, errOut bytes.Buffer
+	command := `robocopy C:\data D:\backup /MIR`
+	if err := run(context.Background(), []string{"template", "save", "--accept", "--command", command, "mirror"}, &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	err := run(context.Background(), []string{"template", "run", "--report", filepath.Join(dir, "records"), "mirror"}, &out, &errOut)
+	if err == nil || !strings.Contains(err.Error(), "/MIR is not enabled") {
+		t.Fatalf("template bypassed execution policy: %v", err)
+	}
+}

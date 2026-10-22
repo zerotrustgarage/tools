@@ -170,13 +170,26 @@ func Execute(ctx context.Context, j job.Job, root, version string, copyData bool
 		if err != nil {
 			return p, err
 		}
-		if newFacts.SourceCanonical != facts.SourceCanonical || newFacts.DestinationCanonical != facts.DestinationCanonical {
+		if newFacts.SourceID != facts.SourceID || newFacts.DestinationID != facts.DestinationID || newFacts.SourceCanonical != facts.SourceCanonical || newFacts.DestinationCanonical != facts.DestinationCanonical {
 			return p, errors.New("endpoint identity changed after probing")
 		}
 		if name == "copy" && plannedBytes > newFacts.FreeBytes {
 			return p, errors.New("available destination space fell below the preview byte total")
 		}
-		args := append(j.Arguments(), "/BYTES", "/FP", "/X", "/TEE", "/UNILOG:"+filepath.Join(record.Directory, name+".log"))
+		jobArgs := j.Arguments()
+		if name == "convergence" {
+			// /MT directory "copied" totals count traversal, even with native 0.
+			// Serial list-only verification retains selection/security semantics and
+			// gives meaningful directory create/skip counts for convergence.
+			serial := make([]string, 0, len(jobArgs))
+			for _, arg := range jobArgs {
+				if job.Key(arg) != "/MT" {
+					serial = append(serial, arg)
+				}
+			}
+			jobArgs = serial
+		}
+		args := append(jobArgs, "/BYTES", "/FP", "/X", "/TEE", "/UNILOG:"+filepath.Join(record.Directory, name+".log"))
 		if list {
 			args = append(args, "/L")
 		}

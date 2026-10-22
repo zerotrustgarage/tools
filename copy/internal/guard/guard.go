@@ -20,6 +20,8 @@ func init() {
 }
 
 type Facts struct {
+	SourceID             string `json:"source_id"`
+	DestinationID        string `json:"destination_id"`
 	SourceCanonical      string `json:"source_canonical"`
 	DestinationCanonical string `json:"destination_canonical"`
 	FreeBytes            uint64 `json:"free_bytes"`

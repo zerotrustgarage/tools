@@ -37,7 +37,7 @@ func main() {
 
 func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-		fmt.Fprintln(out, "ZTG Copy\n\nCommands:\n  flags [--search TEXT] [--json]\n  explain [--json] 'robocopy SOURCE DESTINATION [options]'\n  import [--output FILE] 'robocopy SOURCE DESTINATION [options]'\n  validate JOB.json\n  plan [--report DIRECTORY] JOB.json\n  run [--report DIRECTORY] [--native-exit] JOB.json\n  template list|show|save|command|export|import\n  version\n  check-updates [--json]\n\nInitial copy runner: existing local fixed-drive folders, DAT only, no reparse points or destructive options. Desktop and full roadmap features are in development.\nCommands never invoke a shell. Printed commands use direct Windows process quoting.")
+		fmt.Fprintln(out, "ZTG Copy\n\nCommands:\n  flags [--search TEXT] [--json]\n  explain [--json] 'robocopy SOURCE DESTINATION [options]'\n  import [--output FILE] 'robocopy SOURCE DESTINATION [options]'\n  validate JOB.json\n  plan [--report DIRECTORY] JOB.json\n  run [--report DIRECTORY] [--native-exit] JOB.json\n  template list|show|save|command|run|export|import\n  version\n  check-updates [--json]\n\nInitial copy runner: existing local fixed-drive folders, DAT only, no reparse points or destructive options. Desktop and full roadmap features are in development.\nCommands never invoke a shell. Printed commands use direct Windows process quoting.")
 		return nil
 	}
 	switch args[0] {
@@ -68,7 +68,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	case "plan", "run":
 		return executeJob(ctx, args[0], args[1:], out, errOut)
 	case "template":
-		return templates(args[1:], out, errOut)
+		return templates(ctx, args[1:], out, errOut)
 	default:
 		return fmt.Errorf("unknown command %q; use --help", args[0])
 	}
@@ -232,9 +232,9 @@ func (v *assignments) Set(s string) error {
 	return nil
 }
 
-func templates(args []string, out, errOut io.Writer) error {
+func templates(ctx context.Context, args []string, out, errOut io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("template requires list, show, save, command, export or import")
+		return errors.New("template requires list, show, save, command, run, export or import")
 	}
 	dir, err := template.DefaultDir()
 	if err != nil {
@@ -246,6 +246,8 @@ func templates(args []string, out, errOut io.Writer) error {
 	command := fs.String("command", "", "save: Robocopy command to import")
 	accept := fs.Bool("accept", false, "explicitly accept the displayed imported template/command")
 	tag := fs.String("tag", "", "list: filter by tag")
+	report := fs.String("report", "", "run: record root outside both copy trees")
+	native := fs.Bool("native-exit", false, "run: use completed copy engine bitmap")
 	values := assignments{}
 	fs.Var(&values, "set", "command: placeholder name=value (repeatable)")
 	if err := fs.Parse(args[1:]); err != nil {
@@ -276,7 +278,7 @@ func templates(args []string, out, errOut io.Writer) error {
 			}
 		}
 		return nil
-	case "show", "command", "export":
+	case "show", "command", "run", "export":
 		n := 1
 		if args[0] == "export" {
 			n = 2
@@ -304,6 +306,9 @@ func templates(args []string, out, errOut io.Writer) error {
 		j, err := t.Resolve(values, time.Now(), host, os.Getenv("USERNAME"))
 		if err != nil {
 			return err
+		}
+		if args[0] == "run" {
+			return executeResolved(ctx, j, "run", *report, *native, out)
 		}
 		return explain(j, out, false)
 	case "save":
@@ -388,13 +393,18 @@ func executeJob(ctx context.Context, command string, args []string, out, errOut 
 	if err != nil {
 		return err
 	}
-	if *report == "" {
-		*report, err = copyrun.DefaultRecords()
+	return executeResolved(ctx, j, command, *report, *native, out)
+}
+
+func executeResolved(ctx context.Context, j job.Job, command, report string, native bool, out io.Writer) error {
+	var err error
+	if report == "" {
+		report, err = copyrun.DefaultRecords()
 		if err != nil {
 			return err
 		}
 	}
-	record, err := copyrun.Execute(ctx, j, *report, version, command == "run", out)
+	record, err := copyrun.Execute(ctx, j, report, version, command == "run", out)
 	if record.Directory != "" {
 		fmt.Fprintf(out, "Outcome: %s; normalized exit %d; record %s\n", record.State, record.NormalizedExit, record.Directory)
 	}
@@ -402,7 +412,7 @@ func executeJob(ctx context.Context, command string, args []string, out, errOut 
 		return err
 	}
 	code := record.NormalizedExit
-	if *native && code < 3 {
+	if native && code < 3 {
 		for _, phase := range record.Phases {
 			if phase.Name == "copy" || command == "plan" && phase.Name == "preview" {
 				code = int(phase.Process.NativeExit)

@@ -36,6 +36,9 @@ func TestPreviewCopyConvergenceAndRecord(t *testing.T) {
 	}
 	record, err := Execute(ctx, j, records, "test", true, io.Discard)
 	if err != nil || record.State != "copied" || record.NormalizedExit != 0 {
+		for _, phase := range record.Phases {
+			t.Logf("phase %s: %+v", phase.Name, phase.Summary)
+		}
 		t.Fatalf("run: %+v, %v", record, err)
 	}
 	data, err := os.ReadFile(filepath.Join(dst, name))

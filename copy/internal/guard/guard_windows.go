@@ -15,29 +15,39 @@ import (
 )
 
 func canonical(name string) (string, error) {
+	final, _, err := identity(name)
+	return final, err
+}
+
+func identity(name string) (string, string, error) {
 	ptr, err := windows.UTF16PtrFromString(name)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	h, err := windows.CreateFile(ptr, windows.FILE_READ_ATTRIBUTES, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer windows.CloseHandle(h)
 	buf := make([]uint16, 32768)
 	n, err := windows.GetFinalPathNameByHandle(h, &buf[0], uint32(len(buf)), 0)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if n == 0 || n >= uint32(len(buf)) {
-		return "", errors.New("canonical path exceeds supported length")
+		return "", "", errors.New("canonical path exceeds supported length")
 	}
 	final := windows.UTF16ToString(buf[:n])
 	if !strings.HasPrefix(final, `\\?\`) || strings.HasPrefix(final, `\\?\UNC\`) {
-		return "", errors.New("initial runner requires local fixed-drive endpoints")
+		return "", "", errors.New("initial runner requires local fixed-drive endpoints")
 	}
 	// Identity spelling only. Invocation retains the original validated path.
-	return strings.TrimPrefix(final, `\\?\`), nil
+	var info windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(h, &info); err != nil {
+		return "", "", err
+	}
+	id := fmt.Sprintf("%08x:%08x%08x", info.VolumeSerialNumber, info.FileIndexHigh, info.FileIndexLow)
+	return strings.TrimPrefix(final, `\\?\`), id, nil
 }
 
 func recordLocation(name string) (string, error) {
@@ -77,7 +87,7 @@ func inspect(ctx context.Context, j job.Job, records string) (facts Facts, err e
 		if err != nil || !info.IsDir() {
 			return facts, fmt.Errorf("endpoint %q must be an existing accessible directory", endpoint)
 		}
-		final, err := canonical(endpoint)
+		final, id, err := identity(endpoint)
 		if err != nil {
 			return facts, err
 		}
@@ -90,12 +100,12 @@ func inspect(ctx context.Context, j job.Job, records string) (facts Facts, err e
 			return facts, errors.New("volume roots are refused")
 		}
 		if i == 0 {
-			facts.SourceCanonical = final
+			facts.SourceCanonical, facts.SourceID = final, id
 		} else {
-			facts.DestinationCanonical = final
+			facts.DestinationCanonical, facts.DestinationID = final, id
 		}
 	}
-	if Overlap(facts.SourceCanonical, facts.DestinationCanonical) {
+	if facts.SourceID == facts.DestinationID || Overlap(facts.SourceCanonical, facts.DestinationCanonical) {
 		return facts, errors.New("source and destination overlap after resolving aliases")
 	}
 	recordPath, err := recordLocation(records)
