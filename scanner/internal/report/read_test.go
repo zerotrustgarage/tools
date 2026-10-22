@@ -84,4 +84,9 @@ func TestFailedWritePreservesOriginal(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatal("temporary file leaked")
 	}
+	err = WriteFile(path, func(w io.Writer) error { return JSONBounded(w, Document{Tool: "ztg-scanner"}, 10) })
+	b, _ = os.ReadFile(path)
+	if err == nil || string(b) != "complete" {
+		t.Fatal("oversized save replaced the original", err)
+	}
 }

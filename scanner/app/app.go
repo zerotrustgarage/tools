@@ -334,7 +334,7 @@ func (a *App) Export(format string, all bool) (string, error) {
 		if format == "csv" {
 			return report.CSV(w, doc.Hosts)
 		}
-		return report.JSON(w, doc)
+		return report.JSONBounded(w, doc, report.MaxDocumentBytes)
 	})
 	if err != nil {
 		return "", err

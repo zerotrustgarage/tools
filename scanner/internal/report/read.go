@@ -17,6 +17,26 @@ import (
 
 const MaxDocumentBytes = 64 << 20
 
+// JSONBounded keeps desktop saves within the reader's size limit. Callers use
+// WriteFile so exceeding the budget cannot damage an existing inventory.
+func JSONBounded(w io.Writer, d Document, maxBytes int64) error {
+	return JSON(&budgetWriter{w: w, remaining: maxBytes}, d)
+}
+
+type budgetWriter struct {
+	w         io.Writer
+	remaining int64
+}
+
+func (w *budgetWriter) Write(b []byte) (int, error) {
+	if int64(len(b)) > w.remaining {
+		return 0, fmt.Errorf("scan file would exceed the size limit; scan a smaller target set")
+	}
+	n, err := w.w.Write(b)
+	w.remaining -= int64(n)
+	return n, err
+}
+
 // Read accepts a bounded Scanner JSON export, including earlier exports with no
 // annotations. Unknown fields are refused so imported credentials cannot persist.
 func Read(r io.Reader) (Document, error) {

@@ -113,7 +113,7 @@ func (a *App) SaveScan(site string) (string, error) {
 	if err != nil || path == "" {
 		return "", err
 	}
-	if err := report.WriteFile(path, func(w io.Writer) error { return report.JSON(w, d) }); err != nil {
+	if err := report.WriteFile(path, func(w io.Writer) error { return report.JSONBounded(w, d, report.MaxDocumentBytes) }); err != nil {
 		return "", err
 	}
 	a.mu.Lock()
