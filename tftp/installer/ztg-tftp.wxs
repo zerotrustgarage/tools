@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Keep UpgradeCode and component GUIDs stable across releases. No service or driver is installed. Firewall rules permit inbound UDP
+     for installed programs on Domain and Private profiles only. -->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="ZTG TFTP" Language="1033" Version="$(var.Version)"
+           Manufacturer="Proudlock Technology LLC" UpgradeCode="2d294294-f960-438e-b2e5-630135cb8881">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine"
+             Description="ZTG TFTP $(var.Version)" Comments="Scoped TFTP transfers and configuration collection" />
+    <Media Id="1" Cabinet="tftp.cab" EmbedCab="yes" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of ZTG TFTP is already installed." />
+    <Property Id="WEBVIEW2_VERSION">
+      <RegistrySearch Id="WebView2Machine" Root="HKLM" Win64="no" Type="raw" Name="pv"
+                      Key="SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" />
+    </Property>
+    <Property Id="WEBVIEW2_USER_VERSION">
+      <RegistrySearch Id="WebView2User" Root="HKCU" Win64="no" Type="raw" Name="pv"
+                      Key="Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" />
+    </Property>
+    <!-- build-msi.sh adds the launch condition, which wixl cannot express. -->
+    <Icon Id="TFTPIcon" SourceFile="$(var.IconFile)" />
+    <Property Id="ARPPRODUCTICON" Value="TFTPIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://ztg.sh" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLDIR" Name="ZTG TFTP">
+          <Component Id="App" Guid="5546a695-6a95-48a1-a3cd-54684514b560" Win64="yes">
+            <File Id="TFTPExe" Name="ZTGTFTP.exe" Source="$(var.Payload)/ZTGTFTP.exe" KeyPath="yes" />
+          </Component>
+          <Component Id="CLI" Guid="a666485f-a196-47ff-9296-0b3b201b0f69" Win64="yes">
+            <File Id="TFTPCLI" Name="ztg-tftp.exe" Source="$(var.Payload)/ztg-tftp.exe" KeyPath="yes" />
+          </Component>
+          <Component Id="Notices" Guid="b46831cc-234b-471e-ae4c-b38062ad2b93" Win64="yes">
+            <File Id="NoticesTxt" Name="THIRD-PARTY-NOTICES.txt" Source="$(var.Payload)/THIRD-PARTY-NOTICES.txt" KeyPath="yes" />
+          </Component>
+          <Component Id="SBOM" Guid="0b237832-4e40-48eb-b1f7-dcf7685cb4b7" Win64="yes">
+            <File Id="SBOMJson" Name="tftp.cdx.json" Source="$(var.Payload)/tftp.cdx.json" KeyPath="yes" />
+          </Component>
+          <Component Id="Readme" Guid="d949491e-a30d-42e7-8eb8-2799f7351f0a" Win64="yes">
+            <File Id="ReadmeTxt" Name="README.txt" Source="$(var.Payload)/README.txt" KeyPath="yes" />
+          </Component>
+        </Directory>
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Component Id="StartMenu" Guid="8efe3ee4-d777-410a-9df0-f2be436c4418" Win64="yes">
+          <Shortcut Id="TFTPShortcut" Name="ZTG TFTP" Description="Scoped TFTP transfers"
+                    Target="[INSTALLDIR]ZTGTFTP.exe" WorkingDirectory="INSTALLDIR" Icon="TFTPIcon" />
+          <RegistryValue Root="HKLM" Key="Software\ZTG\TFTP" Name="StartMenuShortcut" Value="1" Type="integer" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </Directory>
+    <CustomAction Id="FirewallInstall" FileKey="TFTPCLI" ExeCommand="firewall install" Execute="deferred" Impersonate="no" Return="check" />
+    <CustomAction Id="FirewallRemove" FileKey="TFTPCLI" ExeCommand="firewall remove" Execute="deferred" Impersonate="no" Return="check" />
+    <CustomAction Id="FirewallRollback" FileKey="TFTPCLI" ExeCommand="firewall remove" Execute="rollback" Impersonate="no" Return="ignore" />
+    <InstallExecuteSequence>
+      <Custom Action="FirewallRollback" After="InstallFiles">NOT REMOVE~="ALL"</Custom>
+      <Custom Action="FirewallInstall" After="FirewallRollback">NOT REMOVE~="ALL"</Custom>
+      <Custom Action="FirewallRemove" Before="RemoveFiles">REMOVE~="ALL"</Custom>
+    </InstallExecuteSequence>
+    <Feature Id="Main" Title="ZTG TFTP" Level="1">
+      <ComponentRef Id="App" />
+      <ComponentRef Id="CLI" />
+      <ComponentRef Id="Notices" />
+      <ComponentRef Id="SBOM" />
+      <ComponentRef Id="Readme" />
+      <ComponentRef Id="StartMenu" />
+    </Feature>
+  </Product>
+</Wix>

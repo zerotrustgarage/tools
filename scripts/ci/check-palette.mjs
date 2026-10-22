@@ -53,6 +53,24 @@ const TOOLS = [
       medium: 'light-warn', info: 'light-info',
     },
   },
+  {
+    name: 'ZTG TFTP',
+    file: 'tftp/app/frontend/app.css',
+    blocks: {
+      dark: ':root {',
+      light: ':root[data-theme="light"] {',
+      // The same light palette also applies when the user chose Auto and Windows is light.
+    },
+    dark: {
+      bg: 'bg', panel: 'panel', 'panel-2': 'panel2', line: 'line', text: 'text', muted: 'dim', accent: 'acc',
+      'accent-ink': 'acc-ink', up: 'ok', down: 'dim2', high: 'crit', medium: 'warn', info: 'info',
+    },
+    light: {
+      bg: 'light-bg', panel: 'light-panel', 'panel-2': 'light-panel2', line: 'light-line', text: 'light-text',
+      muted: 'light-dim', accent: 'light-ok', up: 'light-ok', down: 'light-dim2', high: 'light-crit',
+      medium: 'light-warn', info: 'light-info',
+    },
+  },
 ];
 
 // Hex colours compare as text; the numbers inside a function such as rgba() compare as numbers.

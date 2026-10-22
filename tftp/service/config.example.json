@@ -1,0 +1,12 @@
+{
+  "root": "/srv/ztg-tftp/images",
+  "audit_dir": "/var/lib/ztg-tftp/audit",
+  "bind": "0.0.0.0",
+  "port": 69,
+  "allow": ["192.168.1.0/24"],
+  "duration": "1h",
+  "indefinite": false,
+  "single_port": false,
+  "remap": [{"from": "boot.img", "to": "approved/boot.img"}],
+  "templates": [{"request": "SEP{mac}.cnf.xml", "file": "phones/{mac}.xml"}]
+}

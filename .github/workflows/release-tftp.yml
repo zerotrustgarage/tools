@@ -1,0 +1,186 @@
+name: Release ZTG TFTP
+
+# Manual main-only release. Third-party compilation has no signing identity;
+# signing has no Go toolchain or third-party build scripts. Windows tests and
+# publication have no signing identity. All runners are GitHub-hosted.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-tftp
+  cancel-in-progress: false
+
+jobs:
+  build:
+    timeout-minutes: 30
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - run: scripts/ci/install-go.sh
+      - id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(cat tftp/VERSION)
+          [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo 'Invalid tftp/VERSION'; exit 1; }
+          IFS=. read -r major minor build <<<"$version"
+          (( major <= 255 && minor <= 255 && build <= 65535 )) || { echo 'Version exceeds MSI limits'; exit 1; }
+          # Exit 2 means no match; transport/authentication errors must also stop a release.
+          result=0
+          git ls-remote --exit-code --tags origin "refs/tags/tftp-v$version" > /dev/null || result=$?
+          [ "$result" = 2 ] || { echo 'Tag already exists or tag lookup failed'; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Check engine and desktop app
+        working-directory: tftp
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l .)"
+          go vet ./...
+          GOOS=windows GOARCH=amd64 go vet ./...
+          go test -race ./...
+          cd app
+          go vet ./...
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go vet ./...
+          go test -race ./...
+      - run: node --test tftp/ci/metadata.test.mjs
+      - run: node scripts/ci/check-palette.mjs
+      - name: Build twice and compare unsigned executables
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          tftp/app/build-windows.sh "$VERSION" amd64 out/tftp-release
+          tftp/app/build-windows.sh "$VERSION" amd64 "$RUNNER_TEMP/tftp-rebuild"
+          cmp out/tftp-release/ZTGTFTP.exe "$RUNNER_TEMP/tftp-rebuild/ZTGTFTP.exe"
+          cmp out/tftp-release/ztg-tftp.exe "$RUNNER_TEMP/tftp-rebuild/ztg-tftp.exe"
+          scripts/ci/check-pe.sh out/tftp-release/ZTGTFTP.exe gui amd64
+          scripts/ci/check-pe.sh out/tftp-release/ztg-tftp.exe console amd64
+          node tftp/ci/metadata.mjs out/tftp-release "$VERSION"
+          cp tftp/installer/README.txt out/tftp-release/
+          rm out/tftp-release/SHA256SUMS.txt
+          (cd out/tftp-release && sha256sum ZTGTFTP.exe ztg-tftp.exe README.txt THIRD-PARTY-NOTICES.txt tftp.cdx.json > build.sha256)
+      - run: scripts/ci/apt-install.sh wixl msitools osslsigncode zip unzip
+      - name: Packaging and MSI signing tests (throwaway CA)
+        run: TFTP_PAYLOAD="$PWD/out/tftp-release" node --test tftp/ci/packaging.test.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tftp-unsigned
+          path: out/tftp-release/
+          include-hidden-files: true # the explicitly selected build-output directory is hidden
+          if-no-files-found: error
+          retention-days: 3
+
+  sign:
+    timeout-minutes: 20
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: tools-signing
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tftp-unsigned
+          path: out/tftp-release
+      - run: cd out/tftp-release && sha256sum --check --strict build.sha256
+      - run: scripts/ci/apt-install.sh wixl msitools osslsigncode openjdk-17-jre-headless zip
+      - run: node scripts/signing/sign.mjs check
+      - name: Sign executables, package MSI, sign MSI
+        env:
+          AZURE_SIGNING_TENANT_ID: ${{ vars.AZURE_SIGNING_TENANT_ID || secrets.AZURE_SIGNING_TENANT_ID }}
+          AZURE_SIGNING_CLIENT_ID: ${{ vars.AZURE_SIGNING_CLIENT_ID || secrets.AZURE_SIGNING_CLIENT_ID }}
+          AZURE_SIGNING_CLIENT_SECRET: ${{ secrets.AZURE_SIGNING_CLIENT_SECRET }}
+          ZTG_SIGN_NAME: ZTG TFTP
+          ZTG_SIGN_URL: https://ztg.sh
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          node scripts/signing/sign.mjs sign out/tftp-release/ZTGTFTP.exe
+          node scripts/signing/sign.mjs sign out/tftp-release/ztg-tftp.exe
+          tftp/installer/build-msi.sh out/tftp-release "$VERSION" "dist/ZTG-TFTP-$VERSION-x64.msi"
+          node scripts/signing/sign.mjs sign "dist/ZTG-TFTP-$VERSION-x64.msi"
+      - name: Verify without credentials and assemble downloads
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          node scripts/signing/sign.mjs verify out/tftp-release/ZTGTFTP.exe
+          node scripts/signing/sign.mjs verify out/tftp-release/ztg-tftp.exe
+          node scripts/signing/sign.mjs verify "dist/ZTG-TFTP-$VERSION-x64.msi"
+          tftp/installer/portable.sh out/tftp-release "dist/ZTG-TFTP-$VERSION-x64-portable.zip"
+          cp out/tftp-release/tftp.cdx.json out/tftp-release/THIRD-PARTY-NOTICES.txt dist/
+          (cd dist && sha256sum * > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tftp-signed
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  windows-test:
+    timeout-minutes: 15
+    needs: [build, sign]
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tftp-signed
+          path: dist
+      - name: Verify download hashes
+        shell: bash
+        run: cd dist && sha256sum --check --strict SHA256SUMS.txt
+      - name: Test signed MSI and portable app on Windows
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: >-
+          ./tftp/ci/test-windows.ps1
+          -Msi "dist/ZTG-TFTP-$env:VERSION-x64.msi"
+          -Portable "dist/ZTG-TFTP-$env:VERSION-x64-portable.zip"
+          -Version $env:VERSION -RequireSignatures
+
+  publish:
+    timeout-minutes: 10
+    needs: [build, sign, windows-test]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tftp-signed
+          path: dist
+      - run: cd dist && sha256sum --check --strict SHA256SUMS.txt
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: src
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - name: Publish complete release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          node src/scripts/ci/github-release.mjs "tftp-v$VERSION" "ZTG TFTP $VERSION" \
+            "Signed Windows x64 MSI and portable ZIP for ZTG TFTP $VERSION. Includes the desktop app, CLI, CycloneDX SBOM and license notices. Verify SHA256SUMS.txt and provenance with gh attestation verify <file> --repo $GITHUB_REPOSITORY." dist/*

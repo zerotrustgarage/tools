@@ -21,7 +21,10 @@ import (
 )
 
 type Config struct {
+	Remap                             []Remap
+	Templates                         []Template
 	Root, Bind                        string
+	Manifest                          string
 	Upload                            string
 	UploadMax                         int64
 	FreeFloor                         uint64
@@ -31,6 +34,8 @@ type Config struct {
 	Duration                          time.Duration
 	MaxBlock, MaxWindow               int
 	Audit                             io.Writer
+	OnRecord                          func(audit.Record)
+	OnProgress                        func(audit.Record)
 }
 type Server struct {
 	config    Config
@@ -45,6 +50,9 @@ type Server struct {
 	wg        sync.WaitGroup
 	mu        sync.Mutex
 	err       error
+	timer     *time.Timer
+	deadline  time.Time
+	ctx       context.Context
 }
 type listener struct {
 	conn  *net.UDPConn
@@ -117,8 +125,12 @@ func ID() string {
 	return hex.EncodeToString(b[:])
 }
 
-func Start(parent context.Context, c Config) (*Server, error) {
-	if c.Duration <= 0 {
+func Start(parent context.Context, c Config) (*Server, error) { return start(parent, c, false) }
+
+// StartService permits an explicit zero duration for administrator-configured service mode.
+func StartService(parent context.Context, c Config) (*Server, error) { return start(parent, c, true) }
+func start(parent context.Context, c Config, service bool) (*Server, error) {
+	if c.Duration < 0 || c.Duration == 0 && !service {
 		return nil, errors.New("session duration must be positive")
 	}
 	if c.Port < 0 || c.Port > 65535 {
@@ -139,6 +151,9 @@ func Start(parent context.Context, c Config) (*Server, error) {
 	if c.Audit == nil {
 		return nil, errors.New("audit output is required")
 	}
+	if e := ValidateRules(c.Remap, c.Templates); e != nil {
+		return nil, e
+	}
 	addrs, subnets, e := policy.Bindings(c.Bind, c.AllowPublic)
 	if e != nil {
 		return nil, e
@@ -155,6 +170,17 @@ func Start(parent context.Context, c Config) (*Server, error) {
 	if e != nil {
 		return nil, e
 	}
+	if c.Manifest != "" {
+		files, e := store.LoadManifest(c.Manifest)
+		if e != nil {
+			root.Close()
+			return nil, e
+		}
+		if e = root.Approve(files); e != nil {
+			root.Close()
+			return nil, e
+		}
+	}
 	var drop *store.Drop
 	if c.Upload != "" {
 		if c.UploadMax == 0 {
@@ -169,8 +195,13 @@ func Start(parent context.Context, c Config) (*Server, error) {
 			return nil, e
 		}
 	}
-	ctx, cancel := context.WithTimeout(parent, c.Duration)
-	s := &Server{config: c, store: root, drop: drop, guard: policy.New(), log: audit.New(c.Audit), id: ID(), cancel: cancel, done: make(chan struct{})}
+	ctx, cancel := context.WithCancel(parent)
+	s := &Server{config: c, store: root, drop: drop, guard: policy.New(), log: audit.New(c.Audit), id: ID(), cancel: cancel, done: make(chan struct{}), ctx: ctx, deadline: time.Now().Add(c.Duration)}
+	if c.Duration > 0 {
+		s.timer = time.AfterFunc(c.Duration, cancel)
+	} else {
+		s.deadline = time.Time{}
+	}
 	for _, a := range addrs {
 		conn, e := net.ListenUDP("udp", net.UDPAddrFromAddrPort(netip.AddrPortFrom(a, uint16(c.Port))))
 		if e != nil {
@@ -180,6 +211,9 @@ func Start(parent context.Context, c Config) (*Server, error) {
 			root.Close()
 			if drop != nil {
 				drop.Close()
+			}
+			if s.timer != nil {
+				s.timer.Stop()
 			}
 			cancel()
 			return nil, e
@@ -192,6 +226,11 @@ func Start(parent context.Context, c Config) (*Server, error) {
 	}
 	go func() {
 		<-ctx.Done()
+		s.mu.Lock()
+		if s.timer != nil {
+			s.timer.Stop()
+		}
+		s.mu.Unlock()
 		for _, l := range s.listeners {
 			l.conn.Close()
 			l.mu.Lock()
@@ -218,6 +257,7 @@ func Start(parent context.Context, c Config) (*Server, error) {
 	}()
 	return s, nil
 }
+func (s *Server) SessionID() string { return s.id }
 func (s *Server) Addresses() []string {
 	out := []string{}
 	for _, l := range s.listeners {
@@ -225,8 +265,24 @@ func (s *Server) Addresses() []string {
 	}
 	return out
 }
-func (s *Server) Stop()       { s.cancel() }
-func (s *Server) Wait() error { <-s.done; s.mu.Lock(); defer s.mu.Unlock(); return s.err }
+
+// Extend adds time to a running interactive session. Expired sessions cannot restart.
+func (s *Server) Extend(d time.Duration) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if d <= 0 || d > 24*time.Hour {
+		return errors.New("extension must be positive and at most 24 hours")
+	}
+	if s.timer == nil || s.ctx.Err() != nil || !time.Now().Before(s.deadline) {
+		return errors.New("session has ended")
+	}
+	s.deadline = s.deadline.Add(d)
+	s.timer.Reset(time.Until(s.deadline))
+	return nil
+}
+func (s *Server) Deadline() time.Time { s.mu.Lock(); defer s.mu.Unlock(); return s.deadline }
+func (s *Server) Stop()               { s.cancel() }
+func (s *Server) Wait() error         { <-s.done; s.mu.Lock(); defer s.mu.Unlock(); return s.err }
 func (s *Server) record(r audit.Record) {
 	if e := s.log.Write(r); e != nil {
 		s.mu.Lock()
@@ -235,6 +291,10 @@ func (s *Server) record(r audit.Record) {
 		}
 		s.mu.Unlock()
 		s.cancel()
+	}
+	if s.config.OnRecord != nil {
+		r.Time = time.Now().UTC()
+		s.config.OnRecord(r)
 	}
 }
 
@@ -358,7 +418,14 @@ func (s *Server) read(ctx context.Context, l *listener, t *transport, p wire.Pac
 		}
 		s.record(r)
 	}()
-	f, e := s.store.Read(p.Name)
+	mapped, e := s.resolve(p.Name)
+	if e != nil {
+		r.Reason = "name-policy"
+		t.Send(wire.Encode(wire.Packet{Op: wire.ERROR, Code: 2, Message: r.Reason}))
+		return
+	}
+	r.MappedName = mapped
+	f, e := s.store.ReadContext(ctx, mapped)
 	if e != nil {
 		r.Reason = "access-denied"
 		code := uint16(2)
@@ -397,7 +464,7 @@ func (s *Server) read(ctx context.Context, l *listener, t *transport, p wire.Pac
 	}
 	var stats xfer.Stats
 	if e == nil {
-		stats, e = xfer.Send(t, xfer.RealClock{}, f, params, p.Mode)
+		stats, e = xfer.Send(t, xfer.RealClock{}, s.progressReader(f, r), params, p.Mode)
 	}
 	r.Bytes, r.SHA256 = stats.Bytes, stats.SHA256
 	switch {

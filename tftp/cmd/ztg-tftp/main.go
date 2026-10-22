@@ -13,9 +13,11 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/zerotrustgarage/tools/tftp/internal/client"
+	"github.com/zerotrustgarage/tools/tftp/internal/importer"
 	"github.com/zerotrustgarage/tools/tftp/internal/server"
 	"github.com/zerotrustgarage/tools/tftp/internal/store"
 )
@@ -25,7 +27,7 @@ var version = "dev"
 const warning = "TFTP has no authentication or encryption. Never use for CUI. Prefer SCP, SFTP or HTTPS."
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if e := run(ctx, os.Args[1:], os.Stdout, os.Stderr); e != nil {
 		fmt.Fprintln(os.Stderr, "ztg-tftp:", e)
@@ -34,7 +36,7 @@ func main() {
 }
 func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-		fmt.Fprintln(out, "ZTG TFTP\n\nCommands: serve, get, put, findings, version\nUse <command> --help for flags.\n\n"+warning)
+		fmt.Fprintln(out, "ZTG TFTP\n\nCommands: serve, get, put, findings, service, version\nUse <command> --help for flags.\n\n"+warning)
 		return nil
 	}
 	if args[0] == "version" {
@@ -43,6 +45,10 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	}
 	fmt.Fprintln(errOut, warning)
 	switch args[0] {
+	case "firewall":
+		return firewallCommand(args[1:])
+	case "service":
+		return serviceCommand(ctx, args[1:], out, errOut)
 	case "serve":
 		return serve(ctx, args[1:], out, errOut)
 	case "get", "put":
@@ -68,7 +74,9 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 	fs.StringVar(&c.Upload, "upload", "", "opt-in drop box outside the served root; uploads are never served")
 	fs.Int64Var(&c.UploadMax, "upload-max", store.DefaultUploadMax, "maximum bytes per upload (default 256 MiB)")
 	fs.Uint64Var(&c.FreeFloor, "free-floor", store.DefaultFreeFloor, "minimum free bytes to preserve in the drop box (must be positive)")
-	var allow, dir string
+	var allow, dir, scannerExport string
+	fs.StringVar(&c.Manifest, "manifest", "", "JSON approved-image manifest; serve only verified SHA-256 snapshots")
+	fs.StringVar(&scannerExport, "scanner", "", "ZTG Scanner JSON export; allow only hosts marked up")
 	fs.StringVar(&allow, "allow", "", "comma-separated source CIDRs; default: bound interface subnets")
 	fs.StringVar(&dir, "audit-dir", "", "session directory outside served root; default: sibling .ztg-tftp-sessions/<id>")
 	fs.Usage = func() {
@@ -103,6 +111,15 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 				return fmt.Errorf("allow: %w", e)
 			}
 			c.Allow = append(c.Allow, p.Masked())
+		}
+	}
+	if scannerExport != "" {
+		if allow != "" {
+			return errors.New("choose --allow or --scanner")
+		}
+		c.Allow, e = importer.Scanner(scannerExport)
+		if e != nil {
+			return e
 		}
 	}
 	if dir == "" {
