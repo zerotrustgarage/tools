@@ -127,3 +127,9 @@ jobs:
           path: out/tftp-packages
       - shell: pwsh
         run: ./tftp/ci/test-windows.ps1 -Msi out/tftp-packages/tftp.msi -Portable out/tftp-packages/portable.zip -Version 0.3.0 -UpgradeMsi out/tftp-packages/upgrade.msi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: tftp-windows-install-logs
+          path: ${{ runner.temp }}/tftp-msi-*.log
+          if-no-files-found: ignore

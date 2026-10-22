@@ -20,7 +20,7 @@ $unpack = Join-Path $env:RUNNER_TEMP 'tftp-portable'
 function Run-Msi([string] $file, [string] $operation, [int] $expected = 0) {
   $log = Join-Path $env:RUNNER_TEMP "tftp-msi-$([guid]::NewGuid()).log"
   $p = Start-Process msiexec.exe -ArgumentList @($operation, "`"$file`"", '/qn', '/norestart', '/l*v', "`"$log`"") -Wait -PassThru
-  if ($p.ExitCode -ne $expected) { Get-Content $log -Tail 60; throw "msiexec $operation exited $($p.ExitCode), expected $expected" }
+  if ($p.ExitCode -ne $expected) { Select-String -Path $log -Pattern 'Return value 3|Error 17|CustomAction|returned actual error' -Context 8,8 | Out-String | Write-Host; Get-Content $log -Tail 60; throw "msiexec $operation exited $($p.ExitCode), expected $expected" }
 }
 function Assert-Signed([string] $file) {
   if (-not $RequireSignatures) { return }
@@ -111,6 +111,12 @@ if (-not (Get-ItemProperty $runtime -ErrorAction SilentlyContinue).pv) {
 Assert-Signed $Msi
 Expand-Archive -Path $Portable -DestinationPath $unpack -Force
 Assert-Payload $unpack $Version
+# Exercise the exact elevated helper directly so netsh diagnostics remain visible.
+Start-Service MpsSvc
+& (Join-Path $unpack 'ztg-tftp.exe') firewall install
+if ($LASTEXITCODE -ne 0) { throw 'Portable firewall helper preflight failed' }
+& (Join-Path $unpack 'ztg-tftp.exe') firewall remove
+if ($LASTEXITCODE -ne 0) { throw 'Portable firewall cleanup failed' }
 if (Test-Path $installDir) { throw 'TFTP is already installed on this test runner' }
 $installed = $false
 $currentMsi = $Msi
