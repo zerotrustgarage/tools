@@ -1,0 +1,66 @@
+name: Copy RC0
+
+on:
+  pull_request:
+    paths: ['copy/**', '.github/workflows/copy.yml']
+  push:
+    branches: [main]
+    paths: ['copy/**', '.github/workflows/copy.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: copy-rc0-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  spike:
+    name: RC0 unit tests and Windows cross build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: copy
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.26.10'
+          cache: false
+      - name: Format, vet and race tests
+        run: |
+          test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+          go vet ./...
+          GOOS=windows GOARCH=amd64 go vet ./...
+          go test -race ./...
+          go test ./internal/spike -run '^$' -fuzz '^FuzzDecodeUnicode$' -fuzztime 10s -parallel 2
+      - name: Build unsigned spike for Windows
+        run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o dist/ztg-copy-spike.exe ./cmd/ztg-copy-spike
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: copy-rc0-spike
+          path: copy/dist/ztg-copy-spike.exe
+          retention-days: 7
+
+  windows:
+    name: RC0 real Robocopy captures
+    needs: spike
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: copy-rc0-spike
+          path: spike
+      - name: Capture synthetic fixtures and environment facts
+        shell: pwsh
+        run: ./copy/scripts/collect.ps1 -Spike ./spike/ztg-copy-spike.exe -Output ./copy/testdata/captures/windows-2025
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: copy-rc0-windows-2025
+          path: copy/testdata/captures/windows-2025/
+          if-no-files-found: error
+          retention-days: 14

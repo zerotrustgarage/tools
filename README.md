@@ -10,6 +10,8 @@ machine.
 | ZTG Scanner | [scanner/](scanner) | Network discovery and device inventory for technicians: CLI and Windows desktop app, ZTG's replacement for Advanced IP Scanner |
 | ZTG TFTP | [tftp/](tftp) | Time-boxed TFTP server and CLI client, read-only by default, with opt-in private collection, configuration findings, hashes and change records (T1 and T2 implemented) |
 
+| ZTG Copy | [copy/](copy) | Planned Windows Robocopy designer and evidence recorder; RC0 synthetic capture harness in progress |
+
 ## Layout
 
 | Path | Purpose |

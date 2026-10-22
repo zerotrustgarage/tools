@@ -8,6 +8,8 @@ release workflow and `CLAUDE.md`. Read the tool's own file before changing it:
 - `scanner/`: ZTG Scanner, network discovery and inventory (Go). See `scanner/CLAUDE.md`.
 - `tftp/`: ZTG TFTP, a TFTP server and client (Go, T1 and T2 implemented, pending review). See `tftp/CLAUDE.md`.
 
+- `copy/`: ZTG Copy, Windows Robocopy designer and evidence recorder (Go, RC0 in progress). See `copy/CLAUDE.md`.
+
 ## Repository-wide rules
 
 1. A new tool gets its own folder named after it, its own `CLAUDE.md`, and its own

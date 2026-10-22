@@ -130,6 +130,13 @@ CRT and SDK and the test browser, used on the build machine while compiling and 
 ships. Caching only keeps those files on the runners between builds. The Readout MSI stays about
 5 MB and the Scanner executable about 13 MB.
 
+## ZTG Copy
+
+The plan and research are in `copy/docs/design.md`, `copy/docs/research.md` and `copy/docs/flags.md`.
+RC0 has started with a synthetic Windows capture harness, raw pipe evidence, engine identity and native exit
+checks in `.github/workflows/copy.yml`. RC0 is incomplete; the remaining experiments and Windows release/locale
+matrix are tracked in `copy/docs/rc0.md`. RC1 to RC7 remain open and RC1 still requires RC0 review.
+
 ## Sources
 
 Feature claims about other products come mostly from third-party directories and reviews, not
