@@ -192,3 +192,9 @@ uninstall. It installs no service. The portable ZIP changes no firewall settings
 Signing and publication run only by a manual workflow dispatch from main, subject to the signing
 environment's configured approvals. Local and pull-request binaries remain unsigned.
 HTTP boot and ProxyDHCP are deferred by owner decision; neither listener is included.
+
+## Updates
+
+Use **Check for updates** in the desktop header or `ztg-tftp check-updates [--json]` in the CLI.
+Checks contact GitHub only on request and open official release downloads without installing anything.
+Offline errors and unpublished releases are explicit. See [../docs/updates.md](../docs/updates.md).
