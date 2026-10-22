@@ -40,6 +40,7 @@ jobs:
           go test ./internal/wire -run '^$' -fuzz '^FuzzOptions$' -fuzztime 10s -parallel 2
           go test ./internal/store -run '^$' -fuzz '^FuzzName$' -fuzztime 10s -parallel 2
           go test ./internal/xfer -run '^$' -fuzz '^FuzzNetascii$' -fuzztime 10s -parallel 2
+          go test ./internal/findings -run '^$' -fuzz '^FuzzFindings$' -fuzztime 10s -parallel 2
       - name: Cross builds (unsigned)
         run: |
           mkdir -p dist
@@ -47,3 +48,22 @@ jobs:
             suffix=""; if [ "${target%/*}" = windows ]; then suffix=.exe; fi
             GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o "dist/ztg-tftp-${target%/*}-${target#*/}$suffix" ./cmd/ztg-tftp
           done
+
+  windows-uploads:
+    name: Windows upload permissions, commit and limits
+    runs-on: windows-2025
+    defaults:
+      run:
+        working-directory: tftp
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.26.10'
+          cache-dependency-path: tftp/go.sum
+      - name: Native Windows upload checks
+        run: |
+          go test -v ./internal/store -run 'TestDrop|TestWindows'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go test -v ./internal/server -run TestUpload
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

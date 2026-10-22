@@ -1,4 +1,4 @@
-// Package server owns the read-only listener, session lifetime and policy gates.
+// Package server owns listeners, session lifetime and policy gates.
 package server
 
 import (
@@ -22,6 +22,9 @@ import (
 
 type Config struct {
 	Root, Bind                        string
+	Upload                            string
+	UploadMax                         int64
+	FreeFloor                         uint64
 	Port                              int
 	AllowPublic, SinglePort, FoldCase bool
 	Allow                             []netip.Prefix
@@ -32,6 +35,7 @@ type Config struct {
 type Server struct {
 	config    Config
 	store     *store.Store
+	drop      *store.Drop
 	log       *audit.Log
 	guard     *policy.Guard
 	id        string
@@ -151,8 +155,22 @@ func Start(parent context.Context, c Config) (*Server, error) {
 	if e != nil {
 		return nil, e
 	}
+	var drop *store.Drop
+	if c.Upload != "" {
+		if c.UploadMax == 0 {
+			c.UploadMax = store.DefaultUploadMax
+		}
+		if c.FreeFloor == 0 {
+			c.FreeFloor = store.DefaultFreeFloor
+		}
+		drop, e = store.OpenDrop(c.Upload, c.Root, c.UploadMax, c.FreeFloor)
+		if e != nil {
+			root.Close()
+			return nil, e
+		}
+	}
 	ctx, cancel := context.WithTimeout(parent, c.Duration)
-	s := &Server{config: c, store: root, guard: policy.New(), log: audit.New(c.Audit), id: ID(), cancel: cancel, done: make(chan struct{})}
+	s := &Server{config: c, store: root, drop: drop, guard: policy.New(), log: audit.New(c.Audit), id: ID(), cancel: cancel, done: make(chan struct{})}
 	for _, a := range addrs {
 		conn, e := net.ListenUDP("udp", net.UDPAddrFromAddrPort(netip.AddrPortFrom(a, uint16(c.Port))))
 		if e != nil {
@@ -160,6 +178,9 @@ func Start(parent context.Context, c Config) (*Server, error) {
 				l.conn.Close()
 			}
 			root.Close()
+			if drop != nil {
+				drop.Close()
+			}
 			cancel()
 			return nil, e
 		}
@@ -190,6 +211,9 @@ func Start(parent context.Context, c Config) (*Server, error) {
 			s.record(audit.Record{Session: s.id, Op: "summary", Source: source, Result: "refused", Reason: "refusal-summary", Suppressed: n})
 		}
 		s.store.Close()
+		if s.drop != nil {
+			s.drop.Close()
+		}
 		close(s.done)
 	}()
 	return s, nil
@@ -276,7 +300,7 @@ func (s *Server) listen(ctx context.Context, l *listener) {
 			s.refuse(l, peer, p, reason, 0, true)
 			continue
 		}
-		if p.Op == wire.WRQ {
+		if p.Op == wire.WRQ && s.drop == nil {
 			s.guard.Release(peer.Addr().Unmap())
 			s.refuse(l, peer, p, "write-disabled", 2, true)
 			continue
@@ -311,7 +335,11 @@ func (s *Server) listen(ctx context.Context, l *listener) {
 					t.conn.Close()
 				}
 			}()
-			s.read(ctx, l, t, p)
+			if p.Op == wire.WRQ {
+				s.write(ctx, l, t, p)
+			} else {
+				s.read(ctx, l, t, p)
+			}
 		}()
 	}
 }

@@ -17,6 +17,7 @@ import (
 
 	"github.com/zerotrustgarage/tools/tftp/internal/client"
 	"github.com/zerotrustgarage/tools/tftp/internal/server"
+	"github.com/zerotrustgarage/tools/tftp/internal/store"
 )
 
 var version = "dev"
@@ -33,7 +34,7 @@ func main() {
 }
 func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-		fmt.Fprintln(out, "ZTG TFTP\n\nCommands: serve, get, put, version\nUse <command> --help for flags.\n\n"+warning)
+		fmt.Fprintln(out, "ZTG TFTP\n\nCommands: serve, get, put, findings, version\nUse <command> --help for flags.\n\n"+warning)
 		return nil
 	}
 	if args[0] == "version" {
@@ -46,6 +47,8 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 		return serve(ctx, args[1:], out, errOut)
 	case "get", "put":
 		return transfer(ctx, args[0], args[1:], out, errOut)
+	case "findings":
+		return rescan(args[1:], out, errOut)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
@@ -62,11 +65,14 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 	fs.BoolVar(&c.FoldCase, "ignore-case", false, "case-insensitive file lookup; refuse ambiguous names")
 	fs.IntVar(&c.MaxBlock, "blksize-max", 1468, "maximum negotiated block size (8..65464)")
 	fs.IntVar(&c.MaxWindow, "windowsize-max", 16, "maximum negotiated window size (1..64)")
+	fs.StringVar(&c.Upload, "upload", "", "opt-in drop box outside the served root; uploads are never served")
+	fs.Int64Var(&c.UploadMax, "upload-max", store.DefaultUploadMax, "maximum bytes per upload (default 256 MiB)")
+	fs.Uint64Var(&c.FreeFloor, "free-floor", store.DefaultFreeFloor, "minimum free bytes to preserve in the drop box (must be positive)")
 	var allow, dir string
 	fs.StringVar(&allow, "allow", "", "comma-separated source CIDRs; default: bound interface subnets")
 	fs.StringVar(&dir, "audit-dir", "", "session directory outside served root; default: sibling .ztg-tftp-sessions/<id>")
 	fs.Usage = func() {
-		fmt.Fprintln(errOut, "Usage: ztg-tftp serve [flags] ROOT\nRead-only server; every WRQ is refused.\n"+warning)
+		fmt.Fprintln(errOut, "Usage: ztg-tftp serve [flags] ROOT\nRead-only unless --upload selects a separate drop box.\n"+warning)
 		fs.PrintDefaults()
 	}
 	if e := fs.Parse(args); e != nil {
@@ -77,6 +83,9 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 	}
 	if fs.NArg() != 1 {
 		return errors.New("serve requires a root directory (flags go before ROOT)")
+	}
+	if c.Upload != "" && (c.UploadMax <= 0 || c.FreeFloor == 0) {
+		return errors.New("upload-max and free-floor must be positive")
 	}
 	root, e := filepath.Abs(fs.Arg(0))
 	if e != nil {
@@ -130,6 +139,9 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 		return e
 	}
 	fmt.Fprintln(out, "Read-only root:", root)
+	if c.Upload != "" {
+		fmt.Fprintln(out, "Upload drop box:", c.Upload)
+	}
 	for _, a := range s.Addresses() {
 		fmt.Fprintln(out, "Listening:", a)
 	}
@@ -141,6 +153,25 @@ func serve(ctx context.Context, args []string, out, errOut io.Writer) error {
 		return e
 	}
 	return closeErr
+}
+
+func rescan(args []string, out, errOut io.Writer) error {
+	fs := flag.NewFlagSet("findings", flag.ContinueOnError)
+	fs.SetOutput(errOut)
+	fs.Usage = func() {
+		fmt.Fprintln(errOut, "Usage: ztg-tftp findings DROP_BOX\nRescan committed configurations; output JSON Lines with rule names and line numbers only.\n"+warning)
+	}
+	if e := fs.Parse(args); e != nil {
+		if e == flag.ErrHelp {
+			return nil
+		}
+		return e
+	}
+	if fs.NArg() != 1 {
+		return errors.New("findings requires a drop box directory")
+	}
+	enc := json.NewEncoder(out)
+	return store.Rescan(fs.Arg(0), func(r store.Receipt) error { return enc.Encode(r) })
 }
 func transfer(ctx context.Context, op string, args []string, out, errOut io.Writer) error {
 	fs := flag.NewFlagSet(op, flag.ContinueOnError)
