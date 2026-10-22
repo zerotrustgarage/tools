@@ -62,7 +62,7 @@ These actions were completed by the repository owner. New release workflows stil
 | RD7 | Reload when the open file changes on disk (git pull, an AI agent rewriting it), asking first if there are unsaved edits; refresh the folder tree | High | VS Code, Typora |
 | RD8 | Outline panel: the heading tree, click to jump | High | Typora, MarkText |
 | RD9 | Search across the open folder, with results that jump to the line | High | Obsidian, VS Code |
-| RD10 | Tabs or a recent-files list; a single instance (a second file from Explorer opens in the running window); remembered window size and position | Medium | Typora, MarkText |
+| RD10 | Tabs or a recent-files list; a single instance (a second file from Explorer opens in the running window); remembered window size and position. Reopening the last folder and document at start is built | Medium | Typora, MarkText |
 | RD11 | Copy as rich text, so a rendered section pastes into Outlook, Teams or Word with tables and colours | Medium | Typora |
 | RD12 | Export to DOCX and to PDF with bookmarks without the print dialog; a ZTG-branded print template (header, footer, client name) | Medium | Typora (Pandoc) |
 | RD13 | Paste or drop an image into a document: save it beside the file and insert a relative link | Medium | Typora, Obsidian |
