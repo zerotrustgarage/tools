@@ -49,7 +49,7 @@ These need the repository owner; no code change can do them.
 | RD1 | Interactive checks on real Windows by a person: title bar dragging and shadow, drag and drop from Explorer, the folder context menu, both themes (O7). Installing, launching and opening a file run in CI (R8) | High |
 | RD2 | No signed release yet (O2 to O4) | High |
 | RD3 | The MSI is not in the release workflow and is not signed; it has been tested under Wine only, not through Intune or Group Policy | High |
-| RD4 | THIRD-PARTY-NOTICES.txt lacks the license text for six Rust crates (`alloc-stdlib`, `selectors`, `tauri-plugin`, `webview2-com`, `webview2-com-macros`, `webview2-com-sys`); it names their licenses only. Add standard SPDX license texts as a fallback in `scripts/notices.mjs` | High |
+| RD4 | THIRD-PARTY-NOTICES.txt now carries a license text for every package: six Rust crates publish no license file, so `scripts/notices.mjs` uses the standard SPDX text of their license (`scripts/licenses/`), and a package with neither fails the build instead of warning | **Done** |
 | RD5 | Browser-driven checks (drag and drop, dividers, folder mode, title bar) ran as one-off scripts. Commit them as a `uitest/` suite in CI, as Scanner has | Medium |
 
 ### Improvements
