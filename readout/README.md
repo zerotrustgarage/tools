@@ -32,6 +32,14 @@ returns along the links you followed.
 
 ## Working with it
 
+- The app reopens what you had open last: the folder and the document you were reading in it,
+  or a single file. It remembers each time you open, follow a link or save, so the session
+  survives a crash too; closing the folder or starting a new document outside one forgets it.
+  A file or folder given on the command line (or through "Open with") wins over the session.
+  On the desktop the session is kept by the Rust side in `%LOCALAPPDATA%\sh.ztg.readout` and
+  holds only paths you had already opened; anything that has since been moved or deleted is
+  skipped. In the browser, Chromium keeps the folder or file handle, and unless you allowed
+  access on every visit the page asks with a Reopen button, since access needs a click.
 - Drag a Markdown file or a folder onto the window to open it. Anything else is refused with a
   note saying why, and in the browser a dropped file is never pasted into the open document.
 - Drag the dividers between the file list, the editor and the preview to set their widths. The
@@ -73,7 +81,9 @@ defences are layered:
    native dialogs and keeps an allow-list of what the user chose. A link to a file outside the
    open folder asks first, in a native dialog page script cannot answer. Paths written in
    documents may not name a drive or UNC host, which closes the Windows NTLM hash leak through
-   `\\host\share` image paths. Only Markdown and text files can be written.
+   `\\host\share` image paths. Only Markdown and text files can be written. The stored session
+   can only hold paths already on that allow-list, and is checked again before the next start
+   grants them.
 5. Mermaid runs with `securityLevel: 'strict'` and its SVG is sanitized again; KaTeX runs with
    `trust: false`.
 

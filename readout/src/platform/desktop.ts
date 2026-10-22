@@ -19,6 +19,8 @@ interface RustListing {
 interface RustInitial {
   path: string;
   folder: boolean;
+  /** A restored session's document inside the folder. */
+  document: string | null;
 }
 
 /** Joins a folder-relative path onto the root with the platform's separator. */
@@ -50,7 +52,11 @@ async function list(root: string): Promise<Listing> {
 
 async function arrival(initial: RustInitial | null): Promise<Arrival | null> {
   if (!initial) return null;
-  return initial.folder ? { listing: await list(initial.path) } : { file: await read(initial.path) };
+  if (!initial.folder) return { file: await read(initial.path) };
+  const listing = await list(initial.path);
+  // A session's document that cannot be read any more leaves the folder on its README.
+  const file = initial.document ? await read(initial.document, listing.folder.root).catch(() => undefined) : undefined;
+  return { listing, file };
 }
 
 const writeVia = (command: string, bytes: Uint8Array, headers: Record<string, string>) =>
@@ -139,6 +145,13 @@ export const desktopPlatform: Platform = {
 
   async initial() {
     return arrival(await invoke<RustInitial | null>('initial_document'));
+  },
+
+  // Rust keeps the session and accepts only paths it has already granted.
+  remember(listing, ref) {
+    void invoke('remember_session', { folder: listing?.folder.root ?? null, document: ref?.path ?? null }).catch(
+      () => undefined,
+    );
   },
 
   onDrop(handlers) {
