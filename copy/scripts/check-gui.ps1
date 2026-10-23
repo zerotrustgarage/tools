@@ -180,6 +180,15 @@ try {
     $stopped = Wait-CompletedRecord 3 'canceled'
     if ($stopped.normalized_exit -ne 3) { throw 'Stopped copy was reported as success' }
     Save-DesktopScreenshot 'copy-native-stopped.png'
+    Click-Button 'BITS commands'
+    Set-Edit 'BITS SOURCES' 'https://example.invalid/payload.bin'
+    $bitsDestination = Join-Path $root 'destination\日本語.bin'
+    Set-Edit 'BITS DESTINATIONS' $bitsDestination
+    Click-Button 'Copy BITS command'
+    $bitsCommand = Get-Clipboard -Raw
+    if (-not $bitsCommand.Contains('BitsTransfer\Start-BitsTransfer') -or -not $bitsCommand.Contains($bitsDestination)) { throw 'Native BITS command did not preserve its file pair' }
+    Save-DesktopScreenshot 'copy-native-bits.png'
+    Write-Output 'COPY_NATIVE_BITS {"passed":true,"real_bridge":true,"literal_command_copy":true,"unicode_destination":true}'
     Write-Output 'COPY_NATIVE_GUI {"passed":true,"packaged_executable":true,"native_accessibility":true,"preview_unchanged":true,"unicode_content_equal":true,"convergence":true,"close_declined":true,"stop_canceled":true}'
 } catch {
     if ($window) {

@@ -30,6 +30,7 @@
       <div class="brand"><img src="favicon.png" width="44" height="44" alt=""><div><strong>Copy</strong><span>ZERO TRUST GARAGE</span></div></div>
       <nav aria-label="Workspace">
         <button class="nav active" data-view="design" aria-current="page"><span class="nav-symbol">▤</span>Design a job</button>
+        <button class="nav" data-view="bits" aria-label="BITS commands"><span class="nav-symbol">⇅</span>BITS commands</button>
         <button class="nav" data-view="activity"><span class="nav-symbol">↗</span>Activity<span id="running-dot" class="running-dot" hidden></span></button>
         <button class="nav" data-view="templates"><span class="nav-symbol">▦</span>Templates<span id="template-count" class="count">0</span></button>
         <button class="nav" data-view="history"><span class="nav-symbol">◷</span>Run history</button>
@@ -70,6 +71,40 @@
               <button id="preview" class="primary full" disabled>Preview this job <span>→</span></button>
               <button id="save-template" class="full">Save as template</button>
               <p class="fine-print">This preview supports local folders and DAT copies. Network and destructive modes are not enabled yet.</p>
+            </section>
+          </aside>
+        </div>
+      </section>
+      <section id="view-bits" class="view" hidden>
+        <div class="page-heading"><div><span class="eyebrow">BITS COMMAND DESIGNER</span><h1>Build a BITS transfer</h1><p>Choose your files and options, then copy a PowerShell command.</p></div><button id="bits-import">Import BITS job</button></div>
+        <div class="workspace">
+          <div class="design-column">
+            <section class="card">
+              <div class="card-heading"><h2><span class="section-number">01</span> File pairs</h2><span id="bits-count" class="subtle">0 file pairs</span></div>
+              <div class="presets" aria-label="BITS presets"><button data-bits-preset="download" class="selected">Download</button><button data-bits-preset="background">Background download</button><button data-bits-preset="upload">Upload</button></div>
+              <label for="bits-source" class="field-label">BITS SOURCES</label><textarea id="bits-source" rows="3" maxlength="65536" placeholder="https://downloads.example.net/installer.msi" spellcheck="false" autocomplete="off"></textarea>
+              <div class="bits-file-note"><p class="field-note">One source file per line. Use URLs or absolute file paths.</p><button data-bits-browse="source" class="quiet compact">Choose source file</button></div>
+              <label for="bits-destination" class="field-label">BITS DESTINATIONS</label><textarea id="bits-destination" rows="3" maxlength="65536" placeholder="C:\Downloads\installer.msi" spellcheck="false" autocomplete="off"></textarea>
+              <div class="bits-file-note"><p class="field-note">Corresponding complete filenames, one per line. Blank lines are ignored.</p><button data-bits-browse="destination" class="quiet compact">Choose destination file</button></div>
+            </section>
+            <section class="card">
+              <div class="card-heading"><h2><span class="section-number">02</span> BITS options</h2><span class="subtle">Start-BitsTransfer</span></div>
+              <div id="bits-selected" class="option-chips" aria-label="Selected BITS options"></div>
+              <div class="catalog-heading"><input id="bits-search" type="search" placeholder="Find priority, retries, proxy or authentication" aria-label="Search BITS options"><label class="check-label"><input id="bits-reference" type="checkbox">Full reference</label></div>
+              <div id="bits-catalog" class="catalog" aria-label="BITS parameter catalog"></div>
+            </section>
+          </div>
+          <aside class="review-column">
+            <section class="card review-card">
+              <div class="card-heading"><h2>Command review</h2><span id="bits-badge" class="badge">Set files</span></div>
+              <div id="bits-validation" class="validation"></div>
+              <span class="field-label">WINDOWS POWERSHELL</span>
+              <pre id="bits-command" class="command" tabindex="0">Choose your file pairs to begin.</pre>
+              <button id="bits-copy" class="primary full" disabled>Copy BITS command</button>
+              <button id="bits-export" class="full" disabled>Export PowerShell</button>
+              <button id="bits-save" class="full" disabled>Save BITS job JSON</button>
+              <p class="fine-print">Build here, then run the command in Windows PowerShell with the BitsTransfer module. BITS jobs are managed in PowerShell. Copy does not start or monitor them.</p>
+              <p class="fine-print">BITS transfers files, not recursive folder trees. Async jobs need Complete-BitsTransfer after reaching Transferred. Password options prompt when you run the command.</p>
             </section>
           </aside>
         </div>

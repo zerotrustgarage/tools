@@ -417,3 +417,34 @@ RC0 questions:
    onward is proposed, with option detection covering the differences.
 9. Which RC7 candidates, if any, are wanted.
 10. Resolved October 22, 2026: per-user templates in `%APPDATA%\\ZTG\\Copy\\templates`.
+
+
+## 17. BITS command design (owner request, October 23, 2026)
+
+The owner requested BITS Transfer options built like Robocopy command strings.
+This adds a separate PowerShell Start-BitsTransfer designer in the existing desktop
+app and CLI. It is a command-generation feature; the existing Robocopy execution
+policy remains unchanged. BITS HTTP/HTTPS command design is the owner-requested
+extension to the original Robocopy-only scope.
+
+Use a separate schema-1 document with engine "bits", ordered file pairs and typed
+named parameters. Unknown imported parameters remain visible and block generation.
+Do not reinterpret BITS options as Robocopy switches. Validate enum values, Int32
+limits, the 60-second retry interval minimum, proxy Override requirements and
+single-file upload semantics. Data values become quoted PowerShell literals;
+credential options produce fixed Get-Credential expressions with no stored values.
+
+The UI offers download, background download and upload presets, searchable help,
+option editing/removal, live command review, clipboard copy, JSON import/export
+and PowerShell script export. Script export uses a UTF-8 BOM for Windows PowerShell
+5.1 Unicode handling. Inline headers, stored credentials, notification programs
+and certificate validation overrides are not enabled.
+
+There is no BITS run button or claimed transfer result. BITS jobs persist outside
+Copy and need a distinct future job-ownership, completion, cancellation and
+evidence design before execution can be integrated. In particular, asynchronous
+completion cannot be inferred from successful job creation.
+
+Source: [Microsoft Start-BitsTransfer](https://learn.microsoft.com/en-us/powershell/module/bitstransfer/start-bitstransfer).
+Validation includes native Windows PowerShell binding with WhatIf, literal-value
+and injection checks, strict JSON/credential refusal, and both browser themes.

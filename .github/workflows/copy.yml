@@ -91,6 +91,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Preview/copy/convergence tests failed' }
           & ./spike/ztg-copy.exe flags --search encryption --json
           if ($LASTEXITCODE -ne 0) { throw 'CLI catalog failed' }
+      - name: Validate BITS commands with Windows PowerShell and installed cmdlet
+        shell: powershell
+        run: ./copy/scripts/check-bits.ps1 -CLI ./spike/ztg-copy.exe
       - name: Exercise CLI commands and inspect owner-only DACLs
         shell: pwsh
         run: ./copy/scripts/check-cli.ps1 -CLI ./spike/ztg-copy.exe

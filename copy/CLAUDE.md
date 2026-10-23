@@ -1,6 +1,6 @@
 # CLAUDE.md (copy)
 
-ZTG Copy, a designer, runner and evidence recorder for Windows Robocopy jobs, in Go. Status: RC0 core evidence reviewed on Server 2022/2025; CLI foundation and initial Windows GUI implemented; remaining acceptance is tracked in docs/rc1.md. The owner requested the GUI next, so it wraps the current restricted runner while later execution modes remain blocked. See docs/rc0.md for the review scope and outstanding release gates. Repository-wide conventions (one folder per tool, GitHub-hosted runners, actions pinned by SHA, dependencies
+ZTG Copy, a designer, runner and evidence recorder for Windows Robocopy jobs, in Go. Status: RC0 core evidence reviewed on Server 2022/2025; CLI foundation and initial Windows GUI implemented; remaining acceptance is tracked in docs/rc1.md. The owner also requested a BITS command designer on October 23, 2026. This generates PowerShell commands only and does not enable BITS execution or change the Robocopy runner. See design section 17. The owner requested the GUI next, so it wraps the current restricted runner while later execution modes remain blocked. See docs/rc0.md for the review scope and outstanding release gates. Repository-wide conventions (one folder per tool, GitHub-hosted runners, actions pinned by SHA, dependencies
 public for at least 14 days) are in the root README.
 
 Read `docs/design.md` before changing anything here, `docs/research.md` for why, and `docs/flags.md` for the option
