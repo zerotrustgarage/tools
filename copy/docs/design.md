@@ -307,6 +307,14 @@ Each run gets a folder under `%LOCALAPPDATA%\ZTG\Copy\runs\<date>\<run id>\` wit
 - On request: `report.html` (printable, ZTG palette), `failures.csv`, `manifest.csv` (section 11). CSV cells that
   begin with `=`, `+`, `-`, `@`, tab or carriage return are prefixed with `'`, as in ZTG Scanner.
 
+Implementation note (October 23, 2026): preview/copy/convergence phases now include a bounded
+`diagnostics` object in `run.json`. It streams timestamped native Unicode error headers and requires
+the decimal and hexadecimal Windows codes to agree, without depending on the localized error label.
+Counts include repeated attempts. At most 32 error groups and three 512-character excerpts per group
+are saved; omitted groups, malformed/oversized lines and unavailable diagnostics are disclosed.
+Activity and History show causes, suggestions, excerpts and per-phase exit bitmap meanings.
+Diagnostics remain supplemental to exit/summary correctness. Records without diagnostics still open.
+
 ## 11. Verification
 
 Robocopy compares size, timestamps and attributes only (G7). Three levels, chosen per job:

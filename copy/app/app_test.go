@@ -174,12 +174,16 @@ func TestHistoryRefusesTraversalAndLinks(t *testing.T) {
 	if err := private.WriteNew(filepath.Join(dir, "run.json"), record); err != nil {
 		t.Fatal(err)
 	}
+	loaded, err := a.HistoryRecord(id)
+	if err != nil || loaded.State != "copied" || loaded.Job.Source != record.Job.Source {
+		t.Fatalf("history record: %+v, %v", loaded, err)
+	}
 	items, err := a.History()
 	if err != nil || len(items) != 1 || items[0].ID != id {
 		t.Fatalf("%+v, %v", items, err)
 	}
 	for _, id := range []string{"../outside", "2026-10-22/../../file", id + "/../x"} {
-		if _, err := a.HistoryJob(id); err == nil {
+		if _, err := a.HistoryRecord(id); err == nil {
 			t.Fatalf("traversal accepted: %q", id)
 		}
 	}
@@ -212,5 +216,14 @@ func TestRunnerFailureNeverApprovesPreview(t *testing.T) {
 	}
 	if _, err := a.Start(validJob(), true); err == nil {
 		t.Fatal("failed preview approved a copy")
+	}
+}
+
+func TestRobocopyCommandUsesLiteralPowerShellQuotes(t *testing.T) {
+	j := validJob()
+	j.Source = `C:\O'Brien ‘curly’ ‚low‛ $(Get-Date)`
+	view := describe(j)
+	if !strings.Contains(view.Command, "'C:\\O''Brien ‘‘curly’’ ‚‚low‛‛ $(Get-Date)'") {
+		t.Fatal(view.Command)
 	}
 }

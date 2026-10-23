@@ -13,6 +13,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"github.com/zerotrustgarage/tools/copy/internal/cmdline"
 	"github.com/zerotrustgarage/tools/copy/internal/job"
 )
 
@@ -270,10 +271,7 @@ func digits(s string) bool {
 	return true
 }
 
-func quote(s string) string {
-	// PowerShell also recognizes typographic single quotes as string delimiters.
-	return "'" + strings.NewReplacer("'", "''", "‘", "‘‘", "’", "’’", "‚", "‚‚", "‛", "‛‛").Replace(s) + "'"
-}
+func quote(s string) string { return cmdline.PowerShellLiteral(s) }
 
 func Describe(j Job) View {
 	view := View{Job: j, Issues: j.Issues(), Valid: true}

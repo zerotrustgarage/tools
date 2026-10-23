@@ -14,10 +14,12 @@ be installed. The package also includes the CLI and checksums.
 - Preview: review file/byte totals and extras, then confirm Start copy. Editing a job invalidates
   its preview approval. The runner also performs a fresh preview before copying.
 - Activity: phase status, elapsed time, completed phase totals, Stop and explicit convergence
-  results. Incomplete verification is shown when an operation stops.
+  results. Incomplete verification is shown when an operation stops. Recognized Windows errors
+  are grouped with likely causes, suggestions and native-log excerpts after each phase.
 - Templates: save fixed jobs or ask for endpoints each time; review imported templates before
   accepting them; resolve fields into the designer. Templates never bypass preview or guards.
-- History: load prior jobs and open their local run records.
+- History: inspect saved run details and per-phase native exit meanings, load prior jobs, and
+  open their local run records.
 - Persistent System/Light/Dark themes, native window controls and an explicit Check for updates.
 
 The GUI uses the same guarded local runner and restrictions as the CLI. It runs as the current
@@ -124,6 +126,13 @@ outside both copy trees, including after resolving existing path aliases. The ru
 
 Windows folders use a protected owner-only DACL. Native /UNILOG is authoritative for names
 and summaries: redirected /UNICODE console output mixes encodings on tested builds.
+Per-phase `diagnostics` groups recognized timestamped error headers by their matching decimal
+and hexadecimal Windows code. Counts are log occurrences, including retries, not failed-file totals.
+The parser streams the whole native Unicode log and keeps at most 32 groups and three 512-character
+excerpts per group. Oversized or malformed lines and omitted groups are disclosed. Unknown codes
+remain visible with a native-log review suggestion. Diagnostic text does not determine success.
+Older records remain readable without grouped details.
+
 Progress currently reports phases and final counts. It does not infer completed bytes or ETA
 from file announcements, allocation sizes or process I/O.
 

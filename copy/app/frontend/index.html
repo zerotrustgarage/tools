@@ -29,7 +29,7 @@
     <aside class="sidebar">
       <div class="brand"><img src="favicon.png" width="44" height="44" alt=""><div><strong>Copy</strong><span>ZERO TRUST GARAGE</span></div></div>
       <nav aria-label="Workspace">
-        <button class="nav active" data-view="design" aria-current="page"><span class="nav-symbol">▤</span>Design a job</button>
+        <button class="nav active" data-view="design" aria-label="Design a job" aria-current="page"><span class="nav-symbol">▤</span>Design a job</button>
         <button class="nav" data-view="bits" aria-label="BITS commands"><span class="nav-symbol">⇅</span>BITS commands</button>
         <button class="nav" data-view="activity"><span class="nav-symbol">↗</span>Activity<span id="running-dot" class="running-dot" hidden></span></button>
         <button class="nav" data-view="templates"><span class="nav-symbol">▦</span>Templates<span id="template-count" class="count">0</span></button>
@@ -120,8 +120,9 @@
           <p class="field-note" id="progress-note">Completed totals appear when each phase finishes.</p>
           <div role="alert" id="operation-error" class="notice error" hidden></div>
           <div id="preview-actions" class="preview-actions" hidden><div><strong>Preview ready</strong><p>Review the totals. Copying may replace matching files in the destination.</p></div><button id="start-copy" class="primary">Start copy →</button></div>
-          <div id="finished-actions" class="toolbar" hidden><button id="open-latest">Open run records</button><button id="return-design">Design another job</button></div>
+          <div id="finished-actions" class="toolbar" hidden><button id="view-latest">View run details</button><button id="open-latest">Open run records</button><button id="return-design">Design another job</button></div>
         </section>
+        <section id="error-details" class="card" hidden><div class="card-heading"><h2>Reported errors</h2></div><p class="field-note">Recognized native-log entries. Counts include repeated attempts and are not failed-file totals. Exit codes and summary totals determine the outcome.</p><div id="error-groups"></div></section>
         <section class="card"><div class="card-heading"><h2>Activity log</h2><span class="subtle">Latest 200 messages</span></div><pre id="activity-log" class="activity-log" tabindex="0">No activity yet.</pre></section>
       </section>
       <section id="view-templates" class="view" hidden>

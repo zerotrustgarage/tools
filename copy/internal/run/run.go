@@ -4,7 +4,6 @@ package run
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -28,6 +27,7 @@ type Phase struct {
 	Summary   *parse.Summary `json:"summary,omitempty"`
 	LogSHA256 string         `json:"log_sha256,omitempty"`
 	Error     string         `json:"error,omitempty"`
+	Diagnostics *parse.Diagnostics `json:"diagnostics,omitempty"`
 }
 
 type Record struct {
@@ -197,12 +197,10 @@ func Execute(ctx context.Context, j job.Job, root, version string, copyData bool
 			args = append(args, "/L")
 		}
 		p.Process, err = raw(name, args)
-		if err != nil {
-			p.Error = err.Error()
-			return p, err
-		}
-		summary, hash, err := readNative(filepath.Join(record.Directory, name+".log"))
-		p.LogSHA256 = hash
+		launchErr := err
+		summary, hash, diagnostics, readErr := readNative(filepath.Join(record.Directory, name+".log"))
+		p.LogSHA256, p.Diagnostics = hash, &diagnostics
+		err = errors.Join(launchErr, readErr)
 		if err != nil {
 			p.Error = err.Error()
 			return p, err
@@ -210,6 +208,9 @@ func Execute(ctx context.Context, j job.Job, root, version string, copyData bool
 		p.Summary = &summary
 		if observer, ok := progress.(interface{ PhaseFinished(Phase) }); ok {
 			observer.PhaseFinished(p)
+		}
+		for _, group := range diagnostics.Errors {
+			fmt.Fprintf(progress, "%s: Windows error %d (%s), %d log entries including retries. %s\n", name, group.Code, group.Cause, group.Count, group.Suggestion)
 		}
 		fmt.Fprintf(progress, "%s: files to copy/copied %d, bytes %d, extras %d, native exit %d\n", name, summary.Files.Copied, summary.Bytes.Copied, summary.Files.Extras, p.Process.NativeExit)
 		return p, nil
@@ -257,56 +258,4 @@ func Execute(ctx context.Context, j job.Job, root, version string, copyData bool
 		record.State = "failed"
 	}
 	return record, nil
-}
-
-// Read a bounded footer for correctness and stream the whole native log for its hash.
-func readNative(name string) (parse.Summary, string, error) {
-	f, err := os.Open(name)
-	if err != nil {
-		return parse.Summary{}, "", err
-	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return parse.Summary{}, "", err
-	}
-	hash := hex.EncodeToString(h.Sum(nil))
-	info, err := f.Stat()
-	if err != nil {
-		return parse.Summary{}, hash, err
-	}
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return parse.Summary{}, hash, err
-	}
-	bom := [2]byte{}
-	if _, err := io.ReadFull(f, bom[:]); err != nil || bom != [2]byte{0xff, 0xfe} || info.Size()%2 != 0 {
-		return parse.Summary{}, hash, errors.New("native log is not complete UTF-16LE")
-	}
-	offset := int64(0)
-	if info.Size() > 1<<20 {
-		offset = (info.Size() - 1<<20) &^ 1
-	}
-	if _, err := f.Seek(offset, io.SeekStart); err != nil {
-		return parse.Summary{}, hash, err
-	}
-	data, err := io.ReadAll(io.LimitReader(f, (1<<20)+2))
-	if err != nil {
-		return parse.Summary{}, hash, err
-	}
-	if offset > 0 {
-		// Discard an incomplete first line, preserving surrogate boundaries.
-		found := false
-		for i := 0; i+1 < len(data); i += 2 {
-			if data[i] == 10 && data[i+1] == 0 {
-				data = append([]byte{0xff, 0xfe}, data[i+2:]...)
-				found = true
-				break
-			}
-		}
-		if !found {
-			return parse.Summary{}, hash, errors.New("native log footer has no complete line")
-		}
-	}
-	summary, err := parse.NativeSummary(data)
-	return summary, hash, err
 }

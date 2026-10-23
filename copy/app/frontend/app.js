@@ -104,6 +104,8 @@ function requestReview() {
   const sequence = ++reviewSequence;
   const j = readDraft();
   $('preview').disabled = true;
+  $('copy-command').disabled = true;
+  review = null;
   reviewTimer = setTimeout(async () => {
     try {
       const next = await api.Describe(j);
@@ -324,6 +326,66 @@ function elapsed(start, finished) {
   if (!Number.isFinite(seconds)) return '00:00';
   return [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map(n => String(n).padStart(2,'0')).slice(seconds >= 3600 ? 0 : 1).join(':');
 }
+
+const diagnosticViews = new WeakMap();
+function renderDiagnostics(phases, parent) {
+  const signature = JSON.stringify(phases.map(phase=>[phase.name,phase.diagnostics]));
+  if (diagnosticViews.get(parent) === signature) return parent.children.length > 0;
+  diagnosticViews.set(parent,signature);
+  parent.replaceChildren();
+  for (const phase of phases) {
+    const report = phase.diagnostics;
+    if (!report) continue;
+    for (const group of report.errors || []) {
+      const card = make('article',undefined,'diagnostic-card');
+      const heading = make('div',undefined,'diagnostic-heading');
+      heading.append(make('strong',group.cause),make('span','Windows '+group.code,'badge warn'));
+      card.append(heading,make('p',phase.name+' · '+number(group.count)+' log entries, including retries','field-note'),make('p',group.suggestion,'diagnostic-advice'));
+      if (group.samples?.length) {
+        const samples = make('details');
+        samples.append(make('summary','First log entries'),make('pre',group.samples.join('\n'),'diagnostic-samples'));
+        card.append(samples);
+      }
+      parent.append(card);
+    }
+    const notes = [];
+    if (report.omitted_occurrences) notes.push(number(report.omitted_occurrences)+' entries exceeded the error-group limit');
+    if (report.skipped_lines) notes.push(number(report.skipped_lines)+' malformed or oversized lines were skipped');
+    if (report.unavailable) notes.push('Diagnostic collection: '+report.unavailable);
+    if (notes.length) parent.append(make('p',phase.name+': '+notes.join(' · '),'notice'));
+  }
+  return parent.children.length > 0;
+}
+function nativeExitText(code) {
+  if (!Number.isInteger(code) || code < 0 || code > 31) return 'Unknown native result';
+  if (code === 0) return 'No differences reported';
+  return [[1,'Copy work reported'],[2,'Extra items'],[4,'Mismatches'],[8,'Copy errors'],[16,'Fatal error']].filter(([bit])=>code&bit).map(([,label])=>label).join(' · ');
+}
+function showRecordDetails(record) {
+  modal('Run details','',body=>{
+    body.append(make('p',(record.mode === 'plan' ? 'Preview' : 'Copy')+' · '+record.state+' · normalized exit '+record.normalized_exit,'dialog-help'));
+    body.append(make('pre',record.job.source+'\n→ '+record.job.destination,'dialog-code'));
+    body.append(make('p','Started: '+new Date(record.started).toLocaleString()+' · Finished: '+new Date(record.finished).toLocaleString(),'field-note'));
+    const table = make('table',undefined,'record-phases'), head = make('thead'), labels = make('tr');
+    for (const label of ['Phase','Native exit','Meaning']) labels.append(make('th',label));
+    head.append(labels); table.append(head);
+    const rows = make('tbody');
+    for (const phase of record.phases || []) {
+      const row = make('tr'), code = phase.process?.native_exit;
+      row.append(make('td',phase.name),make('td',code === undefined ? '—' : String(code)),make('td',phase.error || nativeExitText(code)));
+      rows.append(row);
+    }
+    table.append(rows); body.append(table);
+    if (record.error) body.append(make('p',record.error,'notice error'));
+    body.append(make('h3','Reported errors'));
+    body.append(make('p','Recognized native-log entries. Counts include repeated attempts and are not failed-file totals. Exit codes and summaries determine the outcome.','field-note'));
+    const errors = make('div');
+    if (!renderDiagnostics(record.phases || [],errors)) errors.append(make('p','This record has no grouped error details. Open its native log for more context.','field-note'));
+    body.append(errors);
+    if (record.engine?.path) body.append(make('p','Engine: '+record.engine.path,'field-note'));
+    if (record.engine?.sha256) body.append(make('pre','SHA-256: '+record.engine.sha256,'dialog-code'));
+  },null);
+}
 function renderState(next) {
   state = next;
   lockForm(next.running);
@@ -338,6 +400,7 @@ function renderState(next) {
   $('activity-indicator').className = 'status-orb' + (next.running ? ' running' : ['planned','copied'].includes(next.phase) ? ' complete' : '');
   $('activity-log').textContent = next.messages?.length ? next.messages.join('\n') : next.running ? 'Checking folders and preparing the run record…' : 'No activity yet.';
   const phases = next.record?.phases || next.phases || [];
+  $('error-details').hidden = !renderDiagnostics(phases,$('error-groups'));
   const copied = phases.find(p => p.name === 'copy' && p.summary);
   const preview = phases.find(p => p.name === 'preview' && p.summary);
   const summary = copied?.summary || preview?.summary || (next.mode === 'run' ? previewSummary : null);
@@ -403,6 +466,7 @@ async function poll() {
 }
 setInterval(() => {if (state?.running) $('elapsed').textContent = elapsed(state.started);}, 1000);
 $('open-latest').onclick = attempt(async () => {if (latestRecordID) await api.RevealRecord(latestRecordID);});
+$('view-latest').onclick = () => {if (state?.record) showRecordDetails(state.record);};
 
 async function loadTemplates() {
   const templates = await api.Templates();
@@ -462,7 +526,8 @@ async function loadHistory() {
     const actions = make('td');
     const again = make('button', 'Load job'); again.onclick = attempt(async () => {if (state?.running) throw new Error('Stop the current operation first.'); const result = await api.HistoryJob(item.id); installJob(result.job); await navigate('design');});
     const open = make('button', 'Records'); open.onclick = attempt(() => api.RevealRecord(item.id));
-    actions.append(again, open); row.append(actions); $('history-list').append(row);
+    const details = make('button', 'Details'); details.onclick = attempt(async () => showRecordDetails(await api.HistoryRecord(item.id)));
+    actions.append(details, again, open); row.append(actions); $('history-list').append(row);
   }
 }
 $('refresh-history').onclick = attempt(loadHistory);
