@@ -6,6 +6,7 @@ param(
   [Parameter(Mandatory)] [string] $Portable,
   [Parameter(Mandatory)] [string] $Version,
   [string] $UpgradeMsi = '',
+  [string] $UpgradeVersion = '',
   [switch] $RequireSignatures
 )
 $ErrorActionPreference = 'Stop'
@@ -16,6 +17,7 @@ $installDir = Join-Path $env:ProgramFiles 'ZTG Scanner'
 $shortcut = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\ZTG Scanner.lnk'
 $files = @('ZTGScanner.exe', 'ztg-scanner.exe', 'README.txt', 'THIRD-PARTY-NOTICES.txt', 'scanner.cdx.json')
 $unpack = Join-Path $env:RUNNER_TEMP 'scanner-portable'
+if ($UpgradeMsi -and -not $UpgradeVersion) { throw 'UpgradeVersion is required for a real binary upgrade check' }
 
 function Run-Msi([string] $file, [string] $operation, [int] $expected = 0) {
   $log = Join-Path $env:RUNNER_TEMP "scanner-msi-$([guid]::NewGuid()).log"
@@ -50,6 +52,10 @@ function Assert-Payload([string] $dir, [string] $version) {
       if ($p.MainWindowTitle -like "ZTG Scanner $version+*") { $ready = $true; break }
     }
     if (-not $ready) { throw 'Desktop frontend did not become ready' }
+    if ($env:ZTG_SCANNER_DESKTOP_CHECK -eq '1') {
+      & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -File (Join-Path $PSScriptRoot 'check-desktop.ps1') -AppProcessId $p.Id -Version $version -Shots (Join-Path $env:RUNNER_TEMP 'scanner-shots')
+      if ($LASTEXITCODE -ne 0) { throw 'Desktop theme/app-bar verification failed' }
+    }
   } finally {
     if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force; $p.WaitForExit() }
   }
@@ -86,9 +92,11 @@ try {
   Run-Msi $Msi '/fa'
   Assert-Payload $installDir $Version
   if ($UpgradeMsi) {
+    $before = (Get-FileHash (Join-Path $installDir 'ZTGScanner.exe')).Hash
     Run-Msi $UpgradeMsi '/i'
     $currentMsi = $UpgradeMsi
-    Assert-Payload $installDir $Version
+    Assert-Payload $installDir $UpgradeVersion
+    if ((Get-FileHash (Join-Path $installDir 'ZTGScanner.exe')).Hash -eq $before) { throw 'Upgrade retained the previous executable' }
     Run-Msi $Msi '/i' 1603 # downgrade is refused
   }
 } finally {

@@ -18,6 +18,13 @@ const tokens = JSON.parse(readFileSync(join(root, 'design-tokens.json'), 'utf8')
 
 const TOOLS = [
   {
+    name: 'ZTG Copy',
+    file: 'copy/app/frontend/app.css',
+    blocks: { dark: ':root {', light: ':root[data-theme="light"] {', lightAuto: ':root:not([data-theme="dark"]) {' },
+    dark: {"bg":"bg","panel":"panel","panel-2":"panel2","line":"line","line-strong":"line-strong","text":"text","bright":"bright","muted":"dim","dim2":"dim2","accent":"acc","accent-ink":"acc-ink","up":"ok","high":"crit","medium":"warn","info":"info"},
+    light: {"bg":"light-bg","panel":"light-panel","panel-2":"light-panel2","line":"light-line","line-strong":"light-line-strong","text":"light-text","bright":"light-bright","muted":"light-dim","dim2":"light-dim2","accent":"light-ok","accent-ink":"light-panel","up":"light-ok","high":"light-crit","medium":"light-warn","info":"light-info"},
+  },
+  {
     name: 'ZTG Readout',
     file: 'readout/src/styles/app.css',
     blocks: {

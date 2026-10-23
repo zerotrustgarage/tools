@@ -124,6 +124,9 @@ func Execute(ctx context.Context, j job.Job, root, version string, copyData bool
 		return events.Sync()
 	}
 	raw := func(name string, args []string) (engine.Result, error) {
+		if observer, ok := progress.(interface{ PhaseStarted(string) }); ok {
+			observer.PhaseStarted(name)
+		}
 		fmt.Fprintln(progress, name+"...")
 		if err := emit(name, "started"); err != nil {
 			return engine.Result{}, err
@@ -205,6 +208,9 @@ func Execute(ctx context.Context, j job.Job, root, version string, copyData bool
 			return p, err
 		}
 		p.Summary = &summary
+		if observer, ok := progress.(interface{ PhaseFinished(Phase) }); ok {
+			observer.PhaseFinished(p)
+		}
 		fmt.Fprintf(progress, "%s: files to copy/copied %d, bytes %d, extras %d, native exit %d\n", name, summary.Files.Copied, summary.Bytes.Copied, summary.Files.Extras, p.Process.NativeExit)
 		return p, nil
 	}

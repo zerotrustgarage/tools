@@ -1,0 +1,18 @@
+ZTG Copy desktop preview (Windows x64)
+
+Extract the complete ZIP, then open ZTGCopy.exe.
+The Windows WebView2 runtime must be installed.
+
+Choose existing local folders, select options, and click Preview this job.
+Review the preview totals, then Start copy. The app records a fresh preview,
+the copy, and a convergence check. Stop cancels the contained Robocopy process.
+
+Templates and history are available from the sidebar. Check for updates is
+an explicit action. System/Light/Dark themes persist on this device.
+
+This unsigned preview supports ordinary local DAT copies. Network endpoints,
+destructive modes and reparse points remain blocked by the shared runner.
+Run records stay under LOCALAPPDATA/ZTG/Copy/runs until manually deleted.
+
+Source, usage and limitations:
+https://github.com/zerotrustgarage/tools/tree/codex/copy-rc0/copy

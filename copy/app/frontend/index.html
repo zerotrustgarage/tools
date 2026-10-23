@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="wails-options" content="noautoinject">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.github.com; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>ZTG Copy</title>
+  <link rel="icon" href="favicon.png">
+  <link rel="stylesheet" href="app.css">
+  <link rel="stylesheet" href="updates.css">
+  <script src="/wails/ipc.js"></script>
+  <script src="/wails/runtime.js"></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="titlebar" id="titlebar">
+    <img src="favicon.png" width="22" height="22" alt="">
+    <strong>ZTG Copy</strong><span class="version" id="version">Preview</span>
+    <span class="title-fill"></span>
+    <label class="theme-label" for="theme">Theme</label>
+    <select id="theme" aria-label="Theme"><option value="auto">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
+    <button id="check-updates" class="quiet">Check for updates</button>
+    <div id="window-controls" class="window-controls" hidden>
+      <button id="win-min" aria-label="Minimize">─</button><button id="win-max" aria-label="Maximize">□</button><button id="win-close" aria-label="Close window">×</button>
+    </div>
+  </header>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><img src="favicon.png" width="44" height="44" alt=""><div><strong>Copy</strong><span>ZERO TRUST GARAGE</span></div></div>
+      <nav aria-label="Workspace">
+        <button class="nav active" data-view="design" aria-current="page"><span class="nav-symbol">▤</span>Design a job</button>
+        <button class="nav" data-view="activity"><span class="nav-symbol">↗</span>Activity<span id="running-dot" class="running-dot" hidden></span></button>
+        <button class="nav" data-view="templates"><span class="nav-symbol">▦</span>Templates<span id="template-count" class="count">0</span></button>
+        <button class="nav" data-view="history"><span class="nav-symbol">◷</span>Run history</button>
+      </nav>
+      <div class="sidebar-bottom"><span class="local-indicator"></span><strong>On this device</strong><p>Jobs, templates and run records stay with you.</p><span class="preview-label">DESKTOP PREVIEW</span></div>
+    </aside>
+    <main>
+      <section id="view-design" class="view">
+        <div class="page-heading"><div><span class="eyebrow">COPY WORKSPACE</span><h1>Design a copy job</h1><p>Choose your folders, review the plan, then copy.</p></div><div class="toolbar"><button id="import-command">Explain a command</button><button id="import-job">Import job</button><button id="export-job" class="quiet">Export JSON</button></div></div>
+        <div class="workspace">
+          <div class="design-column">
+            <section class="card endpoints-card">
+              <div class="card-heading"><h2><span class="section-number">01</span> Folders</h2><button id="swap" class="quiet compact" title="Swap source and destination">Swap ↔</button></div>
+              <label for="job-name" class="field-label">JOB NAME <span>optional</span></label><input id="job-name" placeholder="e.g. Finance archive">
+              <div class="endpoint-grid">
+                <div><label for="source" class="field-label">SOURCE</label><div class="input-action"><input id="source" placeholder="C:\Data" spellcheck="false" autocomplete="off"><button data-browse="source" aria-label="Browse source">Browse</button></div><p class="field-note">Existing folder to copy from</p></div>
+                <span class="endpoint-arrow" aria-hidden="true">→</span>
+                <div><label for="destination" class="field-label">DESTINATION</label><div class="input-action"><input id="destination" placeholder="D:\Backup" spellcheck="false" autocomplete="off"><button data-browse="destination" aria-label="Browse destination">Browse</button></div><p class="field-note">Existing folder to copy into</p></div>
+              </div>
+              <details class="filters"><summary>File filters <span id="filter-summary">All files</span></summary><label for="files" class="field-label">ONE NAME OR WILDCARD PER LINE</label><textarea id="files" rows="2" placeholder="*.*" spellcheck="false"></textarea><p class="field-note">Leave empty to include all files.</p></details>
+            </section>
+            <section class="card">
+              <div class="card-heading"><h2><span class="section-number">02</span> Copy options</h2><span class="subtle">Your source files stay in place</span></div>
+              <div class="presets" aria-label="Presets"><button data-preset="tree" class="selected">Copy tree</button><button data-preset="newer">Keep newer destination</button><button data-preset="serial">Single thread</button></div>
+              <div id="selected-options" class="option-chips" aria-label="Selected options"></div>
+              <div class="catalog-heading"><input id="option-search" type="search" placeholder="Find an option, e.g. retries or timestamps" aria-label="Search options"><label class="check-label"><input id="show-reference" type="checkbox">Full reference</label></div>
+              <div id="catalog" class="catalog" aria-label="Option catalog"></div>
+            </section>
+            <div class="records-strip"><span aria-hidden="true">▣</span><div><strong>Run records</strong><p id="records-path"></p></div><button id="records-location" class="quiet compact">Change folder</button></div>
+          </div>
+          <aside class="review-column">
+            <section class="card review-card">
+              <div class="card-heading"><h2>Job review</h2><span id="review-badge" class="badge">Set folders</span></div>
+              <div id="validation" class="validation"><p>Choose a source and destination to begin.</p></div>
+              <div class="command-heading"><span class="field-label">POWERSHELL COMMAND</span><button id="copy-command" class="quiet compact">Copy</button></div>
+              <pre id="command" class="command" tabindex="0"></pre>
+              <div class="review-note"><span>✓</span><p>A preview runs before every copy. A second check shows whether anything remains afterward.</p></div>
+              <button id="preview" class="primary full" disabled>Preview this job <span>→</span></button>
+              <button id="save-template" class="full">Save as template</button>
+              <p class="fine-print">This preview supports local folders and DAT copies. Network and destructive modes are not enabled yet.</p>
+            </section>
+          </aside>
+        </div>
+      </section>
+      <section id="view-activity" class="view" hidden>
+        <div class="page-heading"><div><span class="eyebrow">LIVE OPERATION</span><h1 id="activity-title">No operation yet</h1><p id="activity-subtitle">Preview a job from the designer to see its totals here.</p></div><div class="toolbar"><button id="back-design">Back to designer</button><button id="stop" class="danger" disabled>Stop</button></div></div>
+        <ol class="steps" id="steps"><li data-phase="probe"><b>1</b> Check</li><li data-phase="preview"><b>2</b> Preview</li><li data-phase="copy"><b>3</b> Copy</li><li data-phase="convergence"><b>4</b> Verify</li></ol>
+        <section class="card activity-card">
+          <div class="activity-status"><span id="activity-indicator" class="status-orb"></span><div><span class="field-label">STATUS</span><h2 id="phase" aria-live="polite">Ready</h2></div><div class="elapsed"><span class="field-label">ELAPSED</span><strong id="elapsed">00:00</strong></div></div>
+          <div id="activity-progress" class="activity-progress" role="progressbar" aria-label="Operation in progress" hidden><span></span></div>
+          <div class="stats-grid"><div><span class="field-label" id="files-stat-label">FILES TO COPY</span><strong id="files-total">—</strong></div><div><span class="field-label">BYTES</span><strong id="bytes-total">—</strong></div><div><span class="field-label">EXTRA FILES</span><strong id="extras-total">—</strong></div><div><span class="field-label">OUTCOME</span><strong id="outcome">—</strong></div></div>
+          <p class="field-note" id="progress-note">Completed totals appear when each phase finishes.</p>
+          <div role="alert" id="operation-error" class="notice error" hidden></div>
+          <div id="preview-actions" class="preview-actions" hidden><div><strong>Preview ready</strong><p>Review the totals. Copying may replace matching files in the destination.</p></div><button id="start-copy" class="primary">Start copy →</button></div>
+          <div id="finished-actions" class="toolbar" hidden><button id="open-latest">Open run records</button><button id="return-design">Design another job</button></div>
+        </section>
+        <section class="card"><div class="card-heading"><h2>Activity log</h2><span class="subtle">Latest 200 messages</span></div><pre id="activity-log" class="activity-log" tabindex="0">No activity yet.</pre></section>
+      </section>
+      <section id="view-templates" class="view" hidden>
+        <div class="page-heading"><div><span class="eyebrow">YOUR LIBRARY</span><h1>Templates</h1><p>Keep the options you use often. Every job still goes through preview.</p></div><button id="import-template">Import template</button></div>
+        <div id="templates-empty" class="empty-state"><div class="empty-symbol">▦</div><h2>Your next copy, already designed.</h2><p>Save a job from the designer, or import a template to review it.</p><button id="templates-design" class="primary">Design a job</button></div>
+        <div id="templates-list" class="template-grid"></div>
+      </section>
+      <section id="view-history" class="view" hidden>
+        <div class="page-heading"><div><span class="eyebrow">LOCAL EVIDENCE</span><h1>Run history</h1><p>Preview and copy outcomes, with their original jobs and logs.</p></div><button id="refresh-history">Refresh</button></div>
+        <div id="history-empty" class="empty-state"><div class="empty-symbol">◷</div><h2>A record of every operation.</h2><p>Run a preview or copy to start your history. Records stay until you delete them.</p></div>
+        <div id="history-wrap" class="card table-card" hidden><table><thead><tr><th>Started</th><th>Job</th><th>Operation</th><th>Outcome</th><th>Actions</th></tr></thead><tbody id="history-list"></tbody></table></div>
+      </section>
+      <footer class="footer"><span><span class="local-indicator"></span> Built-in Windows Robocopy</span><span>Preview → Copy → Verify</span></footer>
+    </main>
+  </div>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <dialog id="modal" aria-labelledby="modal-title"><form method="dialog" id="modal-form"><div class="dialog-heading"><h2 id="modal-title"></h2><button id="modal-close" type="button" class="quiet" aria-label="Close dialog">×</button></div><div id="modal-body"></div><p id="modal-error" class="error-text" hidden></p><div class="dialog-actions"><button id="modal-cancel" type="button">Cancel</button><button id="modal-submit" class="primary" type="submit">Continue</button></div></form></dialog>
+</body>
+</html>

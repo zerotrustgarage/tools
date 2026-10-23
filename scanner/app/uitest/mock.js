@@ -81,5 +81,8 @@
     WindowIsMaximised: async () => maximised,
     Quit: () => calls.push(["Quit"]),
     WindowSetBackgroundColour: (r, g, b, a) => calls.push(["WindowSetBackgroundColour", r, g, b, a]),
+    WindowSetDarkTheme: () => calls.push(["WindowSetDarkTheme"]),
+    WindowSetLightTheme: () => calls.push(["WindowSetLightTheme"]),
+    WindowSetSystemDefaultTheme: () => calls.push(["WindowSetSystemDefaultTheme"]),
   };
 })();

@@ -148,6 +148,7 @@ jobs:
         shell: pwsh
         env:
           VERSION: ${{ needs.build.outputs.version }}
+          ZTG_SCANNER_DESKTOP_CHECK: '1'
         run: >-
           ./scanner/ci/test-windows.ps1
           -Msi "dist/ZTG-Scanner-$env:VERSION-x64.msi"

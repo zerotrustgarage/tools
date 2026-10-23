@@ -28,6 +28,10 @@ type Facts struct {
 	EntriesChecked       int64  `json:"entries_checked"`
 }
 
+// OptionSupported reports the current execution subset for designers.
+// Value checks and all filesystem guards still apply at execution.
+func OptionSupported(token string) bool { return allowed[job.Key(token)] }
+
 func Policy(j job.Job) error {
 	for _, endpoint := range []string{j.Source, j.Destination} {
 		if strings.HasPrefix(endpoint, `\\`) {
