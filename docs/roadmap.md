@@ -113,34 +113,44 @@ is what makes Scanner easy to approve in client and CMMC environments.
 
 ## 5. ZTG TFTP
 
-T1 and T2 are merged in PRs #2 and #4; later slices remain proposed. The research behind it (Tftpd64, SolarWinds TFTP Server, tftpd-hpa, atftpd,
+T1 and T2 merged; T3 to T5 and the two approved T6 features are implemented. The research behind it (Tftpd64, SolarWinds TFTP Server, tftpd-hpa, atftpd,
 dnsmasq, Open TFTP Server, their CVE history and the gaps across them) is in
 `tftp/docs/research.md`, with its sources.
 
 | # | Item | Priority | Status |
 | --- | --- | --- | --- |
-| TF1 | T1 follows the proposed name, own protocol engine and 60-minute session; owner decisions on T6 and retention remain open | High | Partly resolved |
-| TF2 | T1: protocol engine, read-only server, client, scope guard, limits, name policy, audit log, fuzzing, interop tests, `tftp.yml` | High | **Built and merged** |
-| TF3 | T2: drop box uploads and findings on collected configs | High | **Built and merged** |
-| TF4 | T3: Windows desktop app; its stylesheet joins `scripts/ci/check-palette.mjs` | Medium | Open |
-| TF5 | T4 service mode and T5 packaging and signing (reuses Scanner's S4 work, SC1) | Medium | Open |
+| TF1 | T1 follows the proposed name, own protocol engine and 60-minute session; retention is manual deletion; include image manifests and Scanner import, defer HTTP boot and ProxyDHCP | High | Resolved |
+| TF2 | T1: protocol engine, read-only server, client, scope guard, limits, name policy, audit log, fuzzing, interop tests, `tftp.yml` | High | Merged |
+| TF3 | T2: drop box uploads and findings on collected configs | High | Merged |
+| TF4 | T3: Windows desktop app; palette enforcement, lifecycle and UI tests | Medium | Implemented |
+| TF5 | T4 service mode and T5 packaging and signing (reuses Scanner's S4 work, SC1) | Medium | Implemented |
 
-## 6. Questions answered
+## 6. ZTG Directory
+
+Plan only (slice D0). The workflows and ideas, with priorities and slices, are in `directory/docs/runbook.md`;
+slices D1 to D7 and the owner's open questions (Q1 to Q9) are in `directory/docs/design.md`.
+
+| # | Item | Priority | Status |
+| --- | --- | --- | --- |
+| DR1 | Owner decisions Q1 to Q9 (host, stack, Exchange Online method, approvals, console location, RADIUS, certificate storage, test estate, release timing) | High | Open |
+| DR2 | D1, read-only engine and CLI with signed and sealed LDAP | High | Open, waits on DR1 |
+
+## 7. Questions answered
 
 **Would caching the build downloads make the installers larger?** No. The 2 GB is Microsoft's
 CRT and SDK and the test browser, used on the build machine while compiling and testing. None of it
 ships. Caching only keeps those files on the runners between builds. The Readout MSI stays about
 5 MB and the Scanner executable about 13 MB.
 
-## 7. ZTG Copy
+## 8. ZTG Copy
 
 The build plan is in [copy/docs/design.md](../copy/docs/design.md). Owner-selected defaults are
 recorded there. RC0 has passing local, SMB and contained-logon experiments on English Server
 2022 and 2025. Other releases, locales and optimized-copy progress remain validation work.
-RC1 now has a CLI designer, templates and a guarded local copy runner with preview, convergence
-and records. Desktop, full destructive guards, network/credentials UX, metrics, reports and packaging
-remain in their slices.
-See [the evidence review](../copy/docs/rc0.md) and [PR #6](https://github.com/zerotrustgarage/tools/pull/6).
+RC1 now has a CLI designer, templates and a guarded local copy runner with preview,
+convergence and records. Desktop, full destructive guards, network/credentials UX, metrics,
+reports and packaging remain in their slices. See [the evidence review](../copy/docs/rc0.md),
+[RC1 acceptance work](../copy/docs/rc1.md) and [PR #6](https://github.com/zerotrustgarage/tools/pull/6).
 
 ## Sources
 

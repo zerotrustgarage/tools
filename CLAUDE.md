@@ -6,9 +6,11 @@ release workflow and `CLAUDE.md`. Read the tool's own file before changing it:
 - `readout/`: ZTG Readout, a source-faithful Markdown editor and viewer (TypeScript, Tauri).
   See `readout/CLAUDE.md`.
 - `scanner/`: ZTG Scanner, network discovery and inventory (Go). See `scanner/CLAUDE.md`.
-- `tftp/`: ZTG TFTP, a TFTP server and client (Go, T1 and T2 implemented and merged). See `tftp/CLAUDE.md`.
+- `tftp/`: ZTG TFTP, a TFTP server and client (Go, CLI and Windows desktop app, service mode and release packaging). See `tftp/CLAUDE.md`.
+- `directory/`: ZTG Directory, Active Directory and Microsoft 365 management installed per customer (plan,
+  slice D0; no code yet). See `directory/CLAUDE.md`.
 
-- `copy/`: ZTG Copy, Robocopy job designer and evidence recorder (Go). See `copy/CLAUDE.md`.
+- `copy/`: ZTG Copy, Robocopy job designer and evidence recorder (Go, initial guarded local CLI). See `copy/CLAUDE.md`.
 
 ## Repository-wide rules
 

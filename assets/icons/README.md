@@ -16,8 +16,9 @@ There is no background tile, black border, baked-in shadow or font dependency.
 
 Scanner's EXEs and MSI share `scanner/installer/icon.ico`; Readout's Tauri EXE, NSIS installer,
 MSI, file associations and shortcuts use `readout/src-tauri/icons/`. Both browser favicons are
-updated too. Copy is at RC0 in PR #6, and TFTP has a CLI only. Their desktop, installer and
-notification-area consumers still belong to future slices. None of these applications currently
+updated too. TFTP now uses its transfer-arrow ICO in both executables and the MSI, plus its
+small PNG in the desktop frontend. Copy is at RC0; its desktop and installer consumers remain
+future work. None of these applications currently
 implements a notification-area menu; providing tray assets does not introduce background behavior.
 
 Edit the SVG masters here, then export with the same optional Playwright version as Scanner UI

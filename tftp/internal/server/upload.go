@@ -69,7 +69,7 @@ func (s *Server) write(ctx context.Context, l *listener, t *transport, p wire.Pa
 	}
 	var receipt store.Receipt
 	committed := false
-	stats, e := xfer.ReceiveCommit(t, xfer.RealClock{}, upload, params, p.Mode, nil, wire.Encode(initial), func(stats xfer.Stats) error {
+	stats, e := xfer.ReceiveCommit(t, xfer.RealClock{}, s.progressWriter(upload, record), params, p.Mode, nil, wire.Encode(initial), func(stats xfer.Stats) error {
 		if e := ctx.Err(); e != nil {
 			return e
 		}
