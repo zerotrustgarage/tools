@@ -28,30 +28,56 @@ func TestQuotedPowerShellPreservesLiteralArguments(t *testing.T) {
 
 func TestInvalidDesignsNeverGenerateCommands(t *testing.T) {
 	cases := map[string]func(*Job){
-		"schema": func(j *Job) { j.Schema = 2 },
-		"wrong engine": func(j *Job) { j.Engine = "robocopy" },
+		"schema":              func(j *Job) { j.Schema = 2 },
+		"wrong engine":        func(j *Job) { j.Engine = "robocopy" },
 		"missing destination": func(j *Job) { j.Transfers[0].Destination = "" },
-		"directory": func(j *Job) { j.Transfers[0].Destination = `C:\Downloads\` },
-		"wildcards": func(j *Job) { j.Transfers[0].Source = "https://example.net/*.bin" },
-		"credentials in URL": func(j *Job) { j.Transfers[0].Source = "https://user:password@example.net/file.bin" },
-		"unsupported scheme": func(j *Job) { j.Transfers[0].Source = "ftp://example.net/file.bin" },
-		"duplicate destination": func(j *Job) { j.Transfers = append(j.Transfers, Transfer{Source: "https://example.net/other", Destination: `c:\downloads\FILE.bin`}) },
-		"overlap file": func(j *Job) { j.Transfers[0].Source = `c:\downloads\file.bin` },
+		"directory":           func(j *Job) { j.Transfers[0].Destination = `C:\Downloads\` },
+		"wildcards":           func(j *Job) { j.Transfers[0].Source = "https://example.net/*.bin" },
+		"credentials in URL":  func(j *Job) { j.Transfers[0].Source = "https://user:password@example.net/file.bin" },
+		"unsupported scheme":  func(j *Job) { j.Transfers[0].Source = "ftp://example.net/file.bin" },
+		"duplicate destination": func(j *Job) {
+			j.Transfers = append(j.Transfers, Transfer{Source: "https://example.net/other", Destination: `c:\downloads\FILE.bin`})
+		},
+		"overlap file":        func(j *Job) { j.Transfers[0].Source = `c:\downloads\file.bin` },
 		"retry below minimum": func(j *Job) { j.Options = append(j.Options, Option{Name: "RetryInterval", Values: []string{"59"}}) },
-		"retry expression": func(j *Job) { j.Options = append(j.Options, Option{Name: "RetryInterval", Values: []string{"60; whoami"}}) },
-		"retry overflow": func(j *Job) { j.Options = append(j.Options, Option{Name: "RetryTimeout", Values: []string{"2147483648"}}) },
+		"retry expression": func(j *Job) {
+			j.Options = append(j.Options, Option{Name: "RetryInterval", Values: []string{"60; whoami"}})
+		},
+		"retry overflow": func(j *Job) {
+			j.Options = append(j.Options, Option{Name: "RetryTimeout", Values: []string{"2147483648"}})
+		},
 		"retry relationship": func(j *Job) { j.Options = append(j.Options, Option{Name: "RetryTimeout", Values: []string{"60"}}) },
-		"invalid enum": func(j *Job) { j.Options = append(j.Options, Option{Name: "ProxyUsage", Values: []string{"anything"}}) },
-		"duplicate option": func(j *Job) { j.Options = append(j.Options, Option{Name: "priority", Values: []string{"Low"}}) },
-		"unknown option": func(j *Job) { j.Options = append(j.Options, Option{Name: "FutureOption", Values: []string{"retained"}}) },
-		"program notification": func(j *Job) { j.Options = append(j.Options, Option{Name: "NotifyCmdLine", Values: []string{"powershell.exe"}}) },
-		"certificate bypass": func(j *Job) { j.Options = append(j.Options, Option{Name: "SecurityFlags", Values: []string{"IgnoreUnknownCA"}}) },
-		"saved password": func(j *Job) { j.Options = append(j.Options, Option{Name: "Credential", Values: []string{"never-store"}}) },
-		"proxy without override": func(j *Job) { j.Options = append(j.Options, Option{Name: "ProxyList", Values: []string{"proxy.example.net:8080"}}) },
-		"proxy credentials": func(j *Job) { j.Options = append(j.Options, Option{Name: "ProxyUsage", Values: []string{"Override"}}, Option{Name: "ProxyList", Values: []string{"http://user:secret@proxy.example.net:8080"}}) },
-		"description limit": func(j *Job) { j.Options = append(j.Options, Option{Name: "Description", Values: []string{strings.Repeat("😀", 513)}}) },
-		"basic HTTP": func(j *Job) { j.Transfers[0].Source = "http://example.net/file"; j.Options = append(j.Options, Option{Name: "Authentication", Values: []string{"Basic"}}) },
-		"multiple uploads": func(j *Job) { j.Options[0].Values = []string{"Upload"}; j.Transfers = []Transfer{{Source: `C:\one.bin`, Destination: "https://example.net/one"}, {Source: `C:\two.bin`, Destination: "https://example.net/two"}} },
+		"invalid enum":       func(j *Job) { j.Options = append(j.Options, Option{Name: "ProxyUsage", Values: []string{"anything"}}) },
+		"duplicate option":   func(j *Job) { j.Options = append(j.Options, Option{Name: "priority", Values: []string{"Low"}}) },
+		"unknown option": func(j *Job) {
+			j.Options = append(j.Options, Option{Name: "FutureOption", Values: []string{"retained"}})
+		},
+		"program notification": func(j *Job) {
+			j.Options = append(j.Options, Option{Name: "NotifyCmdLine", Values: []string{"powershell.exe"}})
+		},
+		"certificate bypass": func(j *Job) {
+			j.Options = append(j.Options, Option{Name: "SecurityFlags", Values: []string{"IgnoreUnknownCA"}})
+		},
+		"saved password": func(j *Job) {
+			j.Options = append(j.Options, Option{Name: "Credential", Values: []string{"never-store"}})
+		},
+		"proxy without override": func(j *Job) {
+			j.Options = append(j.Options, Option{Name: "ProxyList", Values: []string{"proxy.example.net:8080"}})
+		},
+		"proxy credentials": func(j *Job) {
+			j.Options = append(j.Options, Option{Name: "ProxyUsage", Values: []string{"Override"}}, Option{Name: "ProxyList", Values: []string{"http://user:secret@proxy.example.net:8080"}})
+		},
+		"description limit": func(j *Job) {
+			j.Options = append(j.Options, Option{Name: "Description", Values: []string{strings.Repeat("😀", 513)}})
+		},
+		"basic HTTP": func(j *Job) {
+			j.Transfers[0].Source = "http://example.net/file"
+			j.Options = append(j.Options, Option{Name: "Authentication", Values: []string{"Basic"}})
+		},
+		"multiple uploads": func(j *Job) {
+			j.Options[0].Values = []string{"Upload"}
+			j.Transfers = []Transfer{{Source: `C:\one.bin`, Destination: "https://example.net/one"}, {Source: `C:\two.bin`, Destination: "https://example.net/two"}}
+		},
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {

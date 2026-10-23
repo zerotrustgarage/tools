@@ -95,7 +95,9 @@ func proxyOK(s string) bool {
 
 func (j Job) Issues() []job.Issue {
 	issues := []job.Issue{}
-	add := func(severity, argument, message string) { issues = append(issues, job.Issue{Severity: severity, Argument: argument, Message: message}) }
+	add := func(severity, argument, message string) {
+		issues = append(issues, job.Issue{Severity: severity, Argument: argument, Message: message})
+	}
 	errorAt := func(argument, message string) { add("error", argument, message) }
 	if j.Schema != Schema || j.Engine != "bits" {
 		errorAt("job", "expected a schema 1 BITS job")
@@ -263,7 +265,7 @@ func digits(s string) bool {
 	return true
 }
 
-func quote(s string) string { return "'"+strings.ReplaceAll(s, "'", "''")+"'" }
+func quote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 
 func Describe(j Job) View {
 	view := View{Job: j, Issues: j.Issues(), Valid: true}
@@ -295,7 +297,7 @@ func Describe(j Job) View {
 	}
 	parts = append(parts, "-ErrorAction", "Stop")
 	view.Command = strings.Join(parts, " ")
-	view.Script = "Import-Module BitsTransfer -ErrorAction Stop\n"+view.Command+"\n"
+	view.Script = "Import-Module BitsTransfer -ErrorAction Stop\n" + view.Command + "\n"
 	return view
 }
 
