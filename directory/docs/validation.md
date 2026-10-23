@@ -27,10 +27,12 @@ No fixture changes the trust store or connects to a real directory. These checks
 lab and do not meet the live D1 exit condition. They do not establish successful sign/seal negotiation,
 channel binding, or correct matching against live AD.
 
-Regression cases cover Unicode/multivalue responses, missing objects, malformed SIDs, range truncation,
-string safety limits and the portable fake's search caps. AD partial range responses fail explicitly;
-range retrieval is not yet implemented, so large memberships can require using native administration tools
-until that work is complete.
+Regression cases cover Unicode/multivalue responses, missing objects, malformed SIDs, string safety limits
+and the portable fake's search caps. Ranged attribute reads collect contiguous pages on the same connection,
+using the canonical DN from the first response for every continuation. Native fixtures cover string and SID
+continuations, malformed or missing pages, changed response DNs, cancellation and request caps. Values are
+bounded to 4,096 strings or 8,192 SIDs per attribute and 16 pages; exceeding a cap returns `ErrIncomplete`
+without a partial success result. These are read operations, not an atomic snapshot across directory changes.
 
 ## Isolated AD lab
 
@@ -57,6 +59,9 @@ sanitized output. Compare results to ADUC or documented AD PowerShell queries fo
 
 - Search for names, email addresses and literal LDAP metacharacters. Verify bounded results report truncation.
 - Compare object attributes; ensure LAPS values, passwords and recovery keys are absent.
+- Use a test user with multivalued attributes exceeding the DC's `MaxValRange`. Compare the complete values
+  with native tools, confirm contiguous base-scope range requests stay on the same connection, and verify
+  over-limit results fail explicitly. Repeat range semantics against Samba. No live range test has run yet.
 - Check nested security groups and the primary group. Test an OU search base and a group outside it; its SID
   must remain visible with `Resolved: false`. Membership is not a complete effective-access calculation.
 - Compare the selected DC's `lastLogon` and replicated `lastLogonTimestamp`. The result must remain labeled partial;

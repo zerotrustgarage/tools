@@ -45,15 +45,18 @@ LDAP uses Negotiate with signing and sealing; `--ldaps` selects TLS with Windows
 There are no credential flags, write commands or background connections. Linux can run tests, help and
 release status; live LDAP requires Windows. Search text is escaped as a value, never executed as an LDAP filter.
 `--timeout` limits native network waits. Negotiate binding uses Microsoft's synchronous API with a timeout
-per response roundtrip; cancellation is observed after that call returns, so it is not a strict total bind deadline.
+per response roundtrip, so it is not a strict total bind deadline. Manual cancellation is observed after
+the current native bind or search call returns; search wait times are capped by the command's deadline.
 Use `--limit` to bound a search and check the truncation indicator. Group membership is not a complete access
 calculation. Token group SIDs outside the search base remain in the result with `Resolved: false` and empty
 name and DN fields. Use the domain naming context as the base to resolve more names. Last-logon results
 describe one DC and explicitly report partial coverage across the domain.
 `--base-dn` scopes searches and group-name resolution; direct DN lookups use the technician's existing AD
 permissions. It is not an authorization boundary. Effective groups require a Global Catalog to be available.
-If AD returns only a range of a multivalued attribute, the lookup reports an incomplete-result error instead
-of silently dropping values. Full range retrieval is still pending.
+Multivalued attributes are retrieved in ranges on the same connection and object. Reads are bounded to
+4,096 text values or 8,192 SID values and 16 range pages per attribute. Invalid, inconsistent or over-limit
+responses return an incomplete-result error instead of a partial list. These reads are not an atomic snapshot;
+concurrent directory changes can affect the values returned.
 
 `check-updates` currently reports `unreleased` locally. It makes no network request and does not establish
 that a build is up to date. The shared release checker source is vendored for D7, when `directory-v` selection

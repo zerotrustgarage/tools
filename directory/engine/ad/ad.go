@@ -30,8 +30,9 @@ func searchLimit(limit int) int {
 
 // Config selects one domain controller and the search root. Server may be a
 // host name or host:port. Credentials are always the current Windows identity.
-// Timeout limits native network waits. Windows Negotiate binding is synchronous
-// with a limit per response roundtrip; cancellation is observed after it returns.
+// Timeout limits native network waits. Windows calls are synchronous; manual
+// cancellation is observed after the current native call returns. Negotiate
+// binding has a timeout per response roundtrip rather than a strict total limit.
 type Config struct {
 	Server  string
 	BaseDN  string

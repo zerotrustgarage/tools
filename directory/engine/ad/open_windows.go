@@ -303,19 +303,16 @@ func (c *windowsClient) search(ctx context.Context, base string, scope uintptr, 
 	}
 	attrPtrs = append(attrPtrs, nil)
 	var msg uintptr
-	searchTimeout := ldapTimeval{Seconds: int32(c.timeout / time.Second), Microseconds: int32(c.timeout % time.Second / time.Microsecond)}
-	if deadline, ok := ctx.Deadline(); ok {
-		remaining := time.Until(deadline)
-		if remaining <= 0 {
-			return SearchResult{}, context.DeadlineExceeded
-		}
-		if remaining < c.timeout {
-			searchTimeout = ldapTimeval{Seconds: int32(remaining / time.Second), Microseconds: int32(remaining % time.Second / time.Microsecond)}
-		}
+	searchTimeout, err := c.searchTimeout(ctx)
+	if err != nil {
+		return SearchResult{}, err
 	}
 	code, _, callErr := ldapSearch.Call(c.conn, uintptr(unsafe.Pointer(basep)), scope, uintptr(unsafe.Pointer(filterp)), uintptr(unsafe.Pointer(&attrPtrs[0])), 0, 0, 0, uintptr(unsafe.Pointer(&searchTimeout)), uintptr(limit+1), uintptr(unsafe.Pointer(&msg)))
 	if msg != 0 {
 		defer ldapMsgFree.Call(msg)
+	}
+	if err := ctx.Err(); err != nil {
+		return SearchResult{}, err
 	}
 	if code != ldapSuccess && code != ldapSizeLimitExceeded {
 		if code == ldapNoSuchObject {
@@ -329,7 +326,7 @@ func (c *windowsClient) search(ctx context.Context, base string, scope uintptr, 
 		if err := ctx.Err(); err != nil {
 			return SearchResult{}, err
 		}
-		obj, err := c.readEntry(entry)
+		obj, err := c.readEntry(ctx, entry)
 		if err != nil {
 			return SearchResult{}, err
 		}
@@ -347,7 +344,7 @@ func (c *windowsClient) search(ctx context.Context, base string, scope uintptr, 
 	return result, nil
 }
 
-func (c *windowsClient) readEntry(entry uintptr) (Object, error) {
+func (c *windowsClient) readEntry(ctx context.Context, entry uintptr) (Object, error) {
 	dnptr, _, _ := ldapGetDN.Call(c.conn, entry)
 	if dnptr == 0 {
 		return Object{}, errors.New("LDAP entry has no distinguished name")
@@ -367,34 +364,14 @@ func (c *windowsClient) readEntry(entry uintptr) (Object, error) {
 		if !exists {
 			continue
 		}
-		p, err := syscall.UTF16PtrFromString(descriptor)
+		if descriptor.placeholder != "" && !strings.EqualFold(descriptor.placeholder, name) {
+			return Object{}, fmt.Errorf("%w: AD returned an unexpected empty attribute placeholder", ErrIncomplete)
+		}
+		values, err := c.stringAttributeValues(ctx, dn, name, entry, descriptor)
 		if err != nil {
-			continue
+			return Object{}, err
 		}
-		values, _, _ := ldapGetValues.Call(c.conn, entry, uintptr(unsafe.Pointer(p)))
-		if values == 0 {
-			continue
-		}
-		valuesBase := values
-		terminated := false
-		for i := 0; i < 4096; i++ {
-			v := *(*uintptr)(nativePointer(valuesBase + uintptr(i)*unsafe.Sizeof(uintptr(0))))
-			if v == 0 {
-				terminated = true
-				break
-			}
-			text, err := utf16FromPtr((*uint16)(nativePointer(v)))
-			if err != nil {
-				ldapValuesFree.Call(valuesBase)
-				return Object{}, err
-			}
-			obj.Attributes[lowerASCII(name)] = append(obj.Attributes[lowerASCII(name)], text)
-		}
-		if !terminated && *(*uintptr)(nativePointer(valuesBase + 4096*unsafe.Sizeof(uintptr(0)))) != 0 {
-			ldapValuesFree.Call(valuesBase)
-			return Object{}, fmt.Errorf("%w: LDAP attribute has too many values", ErrIncomplete)
-		}
-		ldapValuesFree.Call(valuesBase)
+		obj.Attributes[lowerASCII(name)] = values
 	}
 	return obj, nil
 }
@@ -414,16 +391,15 @@ func utf16FromPtr(p *uint16) (string, error) {
 	return "", fmt.Errorf("%w: LDAP string exceeds the safety limit", ErrIncomplete)
 }
 
-// Inspect returned attribute descriptors before reading values. AD may rename
-// a large multivalued attribute with ;range=0-N. Reading the bare name would
-// silently omit those values. D1 rejects partial ranges instead of guessing.
-func (c *windowsClient) responseAttributes(entry uintptr) (map[string]string, error) {
+// Inspect descriptors before reading values. A partial AD range is retained
+// for the bounded follow-up reader rather than mistaken for a complete value.
+func (c *windowsClient) responseAttributes(entry uintptr) (map[string]attributeDescription, error) {
 	var cursor uintptr
 	nameptr, _, _ := ldapFirstAttribute.Call(c.conn, entry, uintptr(unsafe.Pointer(&cursor)))
 	if cursor != 0 {
 		defer berFree.Call(cursor, 0)
 	}
-	attributes := map[string]string{}
+	attributes := map[string]attributeDescription{}
 	for count := 0; nameptr != 0; count++ {
 		descriptor, err := utf16FromPtr((*uint16)(nativePointer(nameptr)))
 		ldapMemFree.Call(nameptr)
@@ -433,17 +409,224 @@ func (c *windowsClient) responseAttributes(entry uintptr) (map[string]string, er
 		if count >= 256 {
 			return nil, fmt.Errorf("%w: too many LDAP attribute descriptors", ErrIncomplete)
 		}
-		base, err := completeAttribute(descriptor)
+		parsed, err := parseAttributeDescription(descriptor)
 		if err != nil {
 			return nil, err
 		}
-		if _, duplicate := attributes[base]; duplicate {
-			return nil, fmt.Errorf("%w: duplicate LDAP attribute descriptor", ErrIncomplete)
+		if previous, duplicate := attributes[parsed.name]; duplicate {
+			if previous.placeholder != "" {
+				return nil, fmt.Errorf("%w: multiple empty LDAP placeholders", ErrIncomplete)
+			}
+			previousHasValues, err := c.attributeHasValues(entry, previous.descriptor)
+			if err != nil {
+				return nil, err
+			}
+			currentHasValues, err := c.attributeHasValues(entry, parsed.descriptor)
+			if err != nil {
+				return nil, err
+			}
+			// AD documents an empty descriptor for the requested name alongside
+			// the one descriptor that carries the returned range. Accept only
+			// this placeholder pattern; two data-bearing descriptors or two
+			// empty descriptors are ambiguous and fail closed.
+			if previousHasValues == currentHasValues {
+				return nil, fmt.Errorf("%w: duplicate LDAP attribute descriptors", ErrIncomplete)
+			}
+			populated, placeholder := parsed, previous
+			if previousHasValues {
+				populated, placeholder = previous, parsed
+			}
+			if !validRangePlaceholder(populated, placeholder) {
+				return nil, fmt.Errorf("%w: conflicting LDAP range descriptors", ErrIncomplete)
+			}
+			if currentHasValues {
+				parsed.placeholder = previous.descriptor
+				attributes[parsed.name] = parsed
+			} else {
+				previous.placeholder = parsed.descriptor
+				attributes[parsed.name] = previous
+			}
+		} else {
+			attributes[parsed.name] = parsed
 		}
-		attributes[base] = descriptor
 		nameptr, _, _ = ldapNextAttribute.Call(c.conn, entry, cursor)
 	}
 	return attributes, nil
+}
+
+func validRangePlaceholder(populated, placeholder attributeDescription) bool {
+	if !populated.ranged {
+		return false
+	}
+	if !placeholder.ranged {
+		return populated.start == 0
+	}
+	return placeholder.terminal && placeholder.start == populated.start && !populated.terminal
+}
+
+func (c *windowsClient) attributeHasValues(entry uintptr, descriptor string) (bool, error) {
+	p, err := syscall.UTF16PtrFromString(descriptor)
+	if err != nil {
+		return false, err
+	}
+	values, _, _ := ldapGetValuesLen.Call(c.conn, entry, uintptr(unsafe.Pointer(p)))
+	if values == 0 {
+		return false, nil
+	}
+	defer ldapValuesFreeLen.Call(values)
+	first := *(*uintptr)(nativePointer(values))
+	return first != 0, nil
+}
+
+func (c *windowsClient) stringAttributeValues(ctx context.Context, dn, attr string, entry uintptr, d attributeDescription) ([]string, error) {
+	values, err := c.readStringValues(entry, d.descriptor)
+	if err != nil {
+		return nil, err
+	}
+	if !d.ranged {
+		if len(values) > 4096 {
+			return nil, fmt.Errorf("%w: LDAP attribute exceeds the 4096 value limit", ErrIncomplete)
+		}
+		return values, nil
+	}
+	start, done, err := validateRangePage(d, 0, len(values), 4096)
+	if err != nil {
+		return nil, err
+	}
+	all := append([]string(nil), values...)
+	pages := 1
+	for !done {
+		if pages >= 16 {
+			return nil, fmt.Errorf("%w: AD string range exceeded the 16 page limit", ErrIncomplete)
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		pageDN, pageDesc, pageValues, err := c.fetchStringRangeLocked(ctx, dn, attr, start)
+		if err != nil {
+			return nil, err
+		}
+		if !strings.EqualFold(pageDN, dn) || pageDesc.name != lowerASCII(attr) {
+			return nil, fmt.Errorf("%w: AD range response did not match the requested object and attribute", ErrIncomplete)
+		}
+		start, done, err = validateRangePage(pageDesc, start, len(pageValues), 4096)
+		if err != nil {
+			return nil, err
+		}
+		if len(all)+len(pageValues) > 4096 {
+			return nil, fmt.Errorf("%w: AD ranged attribute exceeds the 4096 value limit", ErrIncomplete)
+		}
+		all = append(all, pageValues...)
+		pages++
+	}
+	return all, nil
+}
+
+func (c *windowsClient) readStringValues(entry uintptr, descriptor string) ([]string, error) {
+	p, err := syscall.UTF16PtrFromString(descriptor)
+	if err != nil {
+		return nil, err
+	}
+	values, _, _ := ldapGetValues.Call(c.conn, entry, uintptr(unsafe.Pointer(p)))
+	if values == 0 {
+		return nil, nil
+	}
+	defer ldapValuesFree.Call(values)
+	out := []string{}
+	for i := 0; i <= 4096; i++ {
+		v := *(*uintptr)(nativePointer(values + uintptr(i)*unsafe.Sizeof(uintptr(0))))
+		if v == 0 {
+			return out, nil
+		}
+		if i == 4096 {
+			return nil, fmt.Errorf("%w: LDAP attribute has too many values", ErrIncomplete)
+		}
+		text, err := utf16FromPtr((*uint16)(nativePointer(v)))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, text)
+	}
+	return nil, fmt.Errorf("%w: unterminated LDAP values", ErrIncomplete)
+}
+
+// fetchStringRangeLocked runs one exact-DN BASE query. Callers already own mu.
+func (c *windowsClient) fetchStringRangeLocked(ctx context.Context, dn, attr string, start int) (string, attributeDescription, []string, error) {
+	requestAttr := fmt.Sprintf("%s;range=%d-*", attr, start)
+	basep, err := syscall.UTF16PtrFromString(dn)
+	if err != nil {
+		return "", attributeDescription{}, nil, err
+	}
+	filterp, _ := syscall.UTF16PtrFromString("(objectClass=*)")
+	attrp, _ := syscall.UTF16PtrFromString(requestAttr)
+	attrs := []*uint16{attrp, nil}
+	tm, err := c.searchTimeout(ctx)
+	if err != nil {
+		return "", attributeDescription{}, nil, err
+	}
+	var msg uintptr
+	code, _, callErr := ldapSearch.Call(c.conn, uintptr(unsafe.Pointer(basep)), ldapScopeBase, uintptr(unsafe.Pointer(filterp)), uintptr(unsafe.Pointer(&attrs[0])), 0, 0, 0, uintptr(unsafe.Pointer(&tm)), 1, uintptr(unsafe.Pointer(&msg)))
+	if msg != 0 {
+		defer ldapMsgFree.Call(msg)
+	}
+	if err := ctx.Err(); err != nil {
+		return "", attributeDescription{}, nil, err
+	}
+	if code != ldapSuccess {
+		if code == ldapNoSuchObject {
+			return "", attributeDescription{}, nil, ErrIncomplete
+		}
+		return "", attributeDescription{}, nil, fmt.Errorf("LDAP range search failed: %d (%v)", code, callErr)
+	}
+	if err := ctx.Err(); err != nil {
+		return "", attributeDescription{}, nil, err
+	}
+	entry, _, _ := ldapFirstEntry.Call(c.conn, msg)
+	if entry == 0 {
+		return "", attributeDescription{}, nil, fmt.Errorf("%w: AD omitted the requested range attribute", ErrIncomplete)
+	}
+	dnptr, _, _ := ldapGetDN.Call(c.conn, entry)
+	if dnptr == 0 {
+		return "", attributeDescription{}, nil, fmt.Errorf("%w: range response has no distinguished name", ErrIncomplete)
+	}
+	pageDN, dnErr := utf16FromPtr((*uint16)(nativePointer(dnptr)))
+	ldapMemFree.Call(dnptr)
+	if dnErr != nil {
+		return "", attributeDescription{}, nil, dnErr
+	}
+	attributes, err := c.responseAttributes(entry)
+	if err != nil {
+		return "", attributeDescription{}, nil, err
+	}
+	d, ok := attributes[lowerASCII(attr)]
+	if !ok {
+		return "", attributeDescription{}, nil, fmt.Errorf("%w: AD omitted the requested range attribute", ErrIncomplete)
+	}
+	if d.placeholder != "" && !strings.EqualFold(d.placeholder, requestAttr) {
+		return "", attributeDescription{}, nil, fmt.Errorf("%w: AD returned an unexpected empty range placeholder", ErrIncomplete)
+	}
+	if !d.ranged {
+		return "", attributeDescription{}, nil, fmt.Errorf("%w: AD returned an un-ranged follow-up attribute", ErrIncomplete)
+	}
+	values, err := c.readStringValues(entry, d.descriptor)
+	return pageDN, d, values, err
+}
+
+func (c *windowsClient) searchTimeout(ctx context.Context) (ldapTimeval, error) {
+	if err := ctx.Err(); err != nil {
+		return ldapTimeval{}, err
+	}
+	duration := c.timeout
+	if deadline, ok := ctx.Deadline(); ok {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return ldapTimeval{}, context.DeadlineExceeded
+		}
+		if remaining < duration {
+			duration = remaining
+		}
+	}
+	return ldapTimeval{Seconds: int32(duration / time.Second), Microseconds: int32(duration % time.Second / time.Microsecond)}, nil
 }
 
 // nativePointer reinterprets a pointer returned by WinLDAP. The address is
@@ -480,26 +663,25 @@ func (c *windowsClient) binaryAttribute(ctx context.Context, dn, attr string) ([
 	attrp, _ := syscall.UTF16PtrFromString(attr)
 	attrs := []*uint16{attrp, nil}
 	var msg uintptr
-	duration := c.timeout
-	if deadline, ok := ctx.Deadline(); ok {
-		remaining := time.Until(deadline)
-		if remaining <= 0 {
-			return nil, context.DeadlineExceeded
-		}
-		if remaining < duration {
-			duration = remaining
-		}
+	tm, err := c.searchTimeout(ctx)
+	if err != nil {
+		return nil, err
 	}
-	tm := ldapTimeval{Seconds: int32(duration / time.Second), Microseconds: int32(duration % time.Second / time.Microsecond)}
 	code, _, callErr := ldapSearch.Call(c.conn, uintptr(unsafe.Pointer(basep)), ldapScopeBase, uintptr(unsafe.Pointer(filterp)), uintptr(unsafe.Pointer(&attrs[0])), 0, 0, 0, uintptr(unsafe.Pointer(&tm)), 1, uintptr(unsafe.Pointer(&msg)))
 	if msg != 0 {
 		defer ldapMsgFree.Call(msg)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	if code != ldapSuccess {
 		if code == 32 {
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("LDAP binary attribute search failed: %d (%v)", code, callErr)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	entry, _, _ := ldapFirstEntry.Call(c.conn, msg)
 	if entry == 0 {
@@ -513,23 +695,78 @@ func (c *windowsClient) binaryAttribute(ctx context.Context, dn, attr string) ([
 	if !exists {
 		return nil, nil
 	}
-	valueName, _ := syscall.UTF16PtrFromString(descriptor)
+	if descriptor.placeholder != "" && !strings.EqualFold(descriptor.placeholder, attr) {
+		return nil, fmt.Errorf("%w: AD returned an unexpected empty binary attribute placeholder", ErrIncomplete)
+	}
+	dnptr, _, _ := ldapGetDN.Call(c.conn, entry)
+	if dnptr == 0 {
+		return nil, fmt.Errorf("%w: binary attribute response has no distinguished name", ErrIncomplete)
+	}
+	canonicalDN, err := utf16FromPtr((*uint16)(nativePointer(dnptr)))
+	ldapMemFree.Call(dnptr)
+	if err != nil {
+		return nil, err
+	}
+	page, err := c.readBinaryValues(entry, descriptor.descriptor)
+	if err != nil {
+		return nil, err
+	}
+	if !descriptor.ranged {
+		return page, nil
+	}
+	start, done, err := validateRangePage(descriptor, 0, len(page), 8192)
+	if err != nil {
+		return nil, err
+	}
+	all := append([][]byte(nil), page...)
+	pages := 1
+	for !done {
+		if pages >= 16 {
+			return nil, fmt.Errorf("%w: AD binary range exceeded the 16 page limit", ErrIncomplete)
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		pageDN, pageDesc, pageValues, err := c.fetchBinaryRangeLocked(ctx, canonicalDN, attr, start)
+		if err != nil {
+			return nil, err
+		}
+		if !strings.EqualFold(pageDN, canonicalDN) || pageDesc.name != lowerASCII(attr) {
+			return nil, fmt.Errorf("%w: AD binary range response did not match the requested object and attribute", ErrIncomplete)
+		}
+		start, done, err = validateRangePage(pageDesc, start, len(pageValues), 8192)
+		if err != nil {
+			return nil, err
+		}
+		if len(all)+len(pageValues) > 8192 {
+			return nil, fmt.Errorf("%w: AD binary range exceeds the 8192 value limit", ErrIncomplete)
+		}
+		all = append(all, pageValues...)
+		pages++
+	}
+	return all, nil
+}
+
+func (c *windowsClient) readBinaryValues(entry uintptr, descriptor string) ([][]byte, error) {
+	valueName, err := syscall.UTF16PtrFromString(descriptor)
+	if err != nil {
+		return nil, err
+	}
 	values, _, _ := ldapGetValuesLen.Call(c.conn, entry, uintptr(unsafe.Pointer(valueName)))
 	if values == 0 {
 		return nil, nil
 	}
 	defer ldapValuesFreeLen.Call(values)
 	out := [][]byte{}
-	terminated := false
-	for i := uintptr(0); i < 8192; i++ {
+	for i := uintptr(0); i <= 8192; i++ {
 		vp := *(*uintptr)(nativePointer(values + i*unsafe.Sizeof(uintptr(0))))
 		if vp == 0 {
-			terminated = true
+			return out, nil
+		}
+		if i == 8192 {
 			break
 		}
 		bv := (*ldapBerval)(nativePointer(vp))
-		// This private reader only requests objectSid and tokenGroups.
-		// A SID is at most 68 bytes, not an arbitrary binary attribute.
 		if bv.Length < 12 || bv.Length > 68 || bv.Value == nil {
 			return nil, errors.New("LDAP returned an invalid SID length or pointer")
 		}
@@ -539,10 +776,65 @@ func (c *windowsClient) binaryAttribute(ctx context.Context, dn, attr string) ([
 		}
 		out = append(out, append([]byte(nil), value...))
 	}
-	if !terminated {
-		return nil, fmt.Errorf("%w: LDAP binary attribute has too many values", ErrIncomplete)
+	return nil, fmt.Errorf("%w: LDAP binary attribute has too many values", ErrIncomplete)
+}
+
+func (c *windowsClient) fetchBinaryRangeLocked(ctx context.Context, dn, attr string, start int) (string, attributeDescription, [][]byte, error) {
+	requestAttr := fmt.Sprintf("%s;range=%d-*", attr, start)
+	basep, err := syscall.UTF16PtrFromString(dn)
+	if err != nil {
+		return "", attributeDescription{}, nil, err
 	}
-	return out, nil
+	filterp, _ := syscall.UTF16PtrFromString("(objectClass=*)")
+	attrp, _ := syscall.UTF16PtrFromString(requestAttr)
+	attrs := []*uint16{attrp, nil}
+	tm, err := c.searchTimeout(ctx)
+	if err != nil {
+		return "", attributeDescription{}, nil, err
+	}
+	var msg uintptr
+	code, _, callErr := ldapSearch.Call(c.conn, uintptr(unsafe.Pointer(basep)), ldapScopeBase, uintptr(unsafe.Pointer(filterp)), uintptr(unsafe.Pointer(&attrs[0])), 0, 0, 0, uintptr(unsafe.Pointer(&tm)), 1, uintptr(unsafe.Pointer(&msg)))
+	if msg != 0 {
+		defer ldapMsgFree.Call(msg)
+	}
+	if err := ctx.Err(); err != nil {
+		return "", attributeDescription{}, nil, err
+	}
+	if code != ldapSuccess {
+		if code == ldapNoSuchObject {
+			return "", attributeDescription{}, nil, fmt.Errorf("%w: object disappeared during range retrieval", ErrIncomplete)
+		}
+		return "", attributeDescription{}, nil, fmt.Errorf("LDAP binary range search failed: %d (%v)", code, callErr)
+	}
+	if err := ctx.Err(); err != nil {
+		return "", attributeDescription{}, nil, err
+	}
+	entry, _, _ := ldapFirstEntry.Call(c.conn, msg)
+	if entry == 0 {
+		return "", attributeDescription{}, nil, fmt.Errorf("%w: AD omitted the requested binary range", ErrIncomplete)
+	}
+	dnptr, _, _ := ldapGetDN.Call(c.conn, entry)
+	if dnptr == 0 {
+		return "", attributeDescription{}, nil, fmt.Errorf("%w: binary range response has no distinguished name", ErrIncomplete)
+	}
+	pageDN, dnErr := utf16FromPtr((*uint16)(nativePointer(dnptr)))
+	ldapMemFree.Call(dnptr)
+	if dnErr != nil {
+		return "", attributeDescription{}, nil, dnErr
+	}
+	attributes, err := c.responseAttributes(entry)
+	if err != nil {
+		return "", attributeDescription{}, nil, err
+	}
+	d, ok := attributes[lowerASCII(attr)]
+	if !ok || !d.ranged {
+		return "", attributeDescription{}, nil, fmt.Errorf("%w: AD omitted or misdescribed the requested binary range", ErrIncomplete)
+	}
+	if d.placeholder != "" && !strings.EqualFold(d.placeholder, requestAttr) {
+		return "", attributeDescription{}, nil, fmt.Errorf("%w: AD returned an unexpected empty binary range placeholder", ErrIncomplete)
+	}
+	values, err := c.readBinaryValues(entry, d.descriptor)
+	return pageDN, d, values, err
 }
 
 func (c *windowsClient) groupBySID(ctx context.Context, sid []byte, primary bool) (Group, error) {

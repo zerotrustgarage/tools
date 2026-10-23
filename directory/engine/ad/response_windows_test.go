@@ -160,6 +160,24 @@ type ldapFixture struct {
 }
 
 func startLDAPFixture(t *testing.T, respond func() (entries [][]byte, resultCode int)) *ldapFixture {
+	return startLDAPFixtureWithRequest(t, func(_ ldapSearchRequest) (entries [][]byte, resultCode int) {
+		return respond()
+	})
+}
+
+// ldapSearchRequest contains the fields range tests need to verify in requests
+// emitted by WinLDAP. Attribute names are kept as sent by the client.
+type ldapSearchRequest struct {
+	base       string
+	scope      int64
+	attributes []string
+}
+
+func startLDAPRangeFixture(t *testing.T, respond func(ldapSearchRequest) (entries [][]byte, resultCode int)) *ldapFixture {
+	return startLDAPFixtureWithRequest(t, respond)
+}
+
+func startLDAPFixtureWithRequest(t *testing.T, respond func(ldapSearchRequest) (entries [][]byte, resultCode int)) *ldapFixture {
 	t.Helper()
 	if err := loadSystemLDAP(); err != nil {
 		t.Fatalf("loadSystemLDAP: %v", err)
@@ -249,7 +267,7 @@ func startLDAPFixture(t *testing.T, respond func() (entries [][]byte, resultCode
 	return &ldapFixture{client: client}
 }
 
-func serveLDAPFixture(listener net.Listener, accepted chan<- net.Conn, respond func() (entries [][]byte, resultCode int)) error {
+func serveLDAPFixture(listener net.Listener, accepted chan<- net.Conn, respond func(ldapSearchRequest) (entries [][]byte, resultCode int)) error {
 	conn, err := listener.Accept()
 	if err != nil {
 		return nil // cleanup closes the listener if client setup fails
@@ -280,7 +298,11 @@ func serveLDAPFixture(listener net.Listener, accepted chan<- net.Conn, respond f
 				return err
 			}
 		case 0x63: // SearchRequest.
-			entries, result := respond()
+			request, err := parseLDAPSearchRequest(operation)
+			if err != nil {
+				return err
+			}
+			entries, result := respond(request)
 			for _, entry := range entries {
 				if err := writeLDAPMessage(conn, ldapMessage(id, entry)); err != nil {
 					return err
@@ -293,6 +315,29 @@ func serveLDAPFixture(listener net.Listener, accepted chan<- net.Conn, respond f
 			return fmt.Errorf("unexpected LDAP operation tag %#x", operationTag)
 		}
 	}
+}
+
+func parseLDAPSearchRequest(operation []byte) (ldapSearchRequest, error) {
+	outer, err := berChildren(operation)
+	if err != nil || len(outer) != 1 || outer[0].tag != 0x63 {
+		return ldapSearchRequest{}, errors.New("fixture received invalid SearchRequest")
+	}
+	fields, err := berChildren(outer[0].value)
+	if err != nil || len(fields) < 8 || fields[0].tag != 0x04 || fields[1].tag != 0x0a || fields[7].tag != 0x30 {
+		return ldapSearchRequest{}, errors.New("fixture received malformed SearchRequest fields")
+	}
+	attributeElements, err := berChildren(fields[7].value)
+	if err != nil {
+		return ldapSearchRequest{}, fmt.Errorf("fixture received malformed requested attributes: %w", err)
+	}
+	request := ldapSearchRequest{base: string(fields[0].value), scope: decodeBERInteger(fields[1].value)}
+	for _, attribute := range attributeElements {
+		if attribute.tag != 0x04 {
+			return ldapSearchRequest{}, errors.New("fixture received non-octet requested attribute")
+		}
+		request.attributes = append(request.attributes, string(attribute.value))
+	}
+	return request, nil
 }
 
 func validateAnonymousBind(operation []byte) error {
