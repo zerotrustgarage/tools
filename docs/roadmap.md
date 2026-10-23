@@ -125,7 +125,17 @@ dnsmasq, Open TFTP Server, their CVE history and the gaps across them) is in
 | TF4 | T3: Windows desktop app; its stylesheet joins `scripts/ci/check-palette.mjs` | Medium | Open |
 | TF5 | T4 service mode and T5 packaging and signing (reuses Scanner's S4 work, SC1) | Medium | Open |
 
-## 6. Questions answered
+## 6. ZTG Directory
+
+Plan only (slice D0). The workflows and ideas, with priorities and slices, are in `directory/docs/runbook.md`;
+slices D1 to D7 and the owner's open questions (Q1 to Q9) are in `directory/docs/design.md`.
+
+| # | Item | Priority | Status |
+| --- | --- | --- | --- |
+| DR1 | Owner decisions Q1 to Q9 (host, stack, Exchange Online method, approvals, console location, RADIUS, certificate storage, test estate, release timing) | High | Open |
+| DR2 | D1, read-only engine and CLI with signed and sealed LDAP | High | Open, waits on DR1 |
+
+## 7. Questions answered
 
 **Would caching the build downloads make the installers larger?** No. The 2 GB is Microsoft's
 CRT and SDK and the test browser, used on the build machine while compiling and testing. None of it

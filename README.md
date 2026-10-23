@@ -9,6 +9,7 @@ machine.
 | ZTG Readout | [readout/](readout) | Source-faithful Markdown editor and viewer for files and whole folders (git repositories, docs trees, Obsidian vaults) |
 | ZTG Scanner | [scanner/](scanner) | Network discovery and device inventory for technicians: CLI and Windows desktop app, ZTG's replacement for Advanced IP Scanner |
 | ZTG TFTP | [tftp/](tftp) | Time-boxed TFTP server and CLI client, read-only by default, with opt-in private collection, configuration findings, hashes and change records (T1 and T2 implemented) |
+| ZTG Directory | [directory/](directory) | Active Directory and Microsoft 365 management installed per customer: the 365 user beside each AD user, Sync now, onboarding and offboarding workflows with shared mailboxes and licenses, every change recorded (plan; no code yet) |
 
 ## Layout
 

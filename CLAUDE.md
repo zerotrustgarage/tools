@@ -7,6 +7,8 @@ release workflow and `CLAUDE.md`. Read the tool's own file before changing it:
   See `readout/CLAUDE.md`.
 - `scanner/`: ZTG Scanner, network discovery and inventory (Go). See `scanner/CLAUDE.md`.
 - `tftp/`: ZTG TFTP, a TFTP server and client (Go, T1 and T2 implemented and merged). See `tftp/CLAUDE.md`.
+- `directory/`: ZTG Directory, Active Directory and Microsoft 365 management installed per customer (plan,
+  slice D0; no code yet). See `directory/CLAUDE.md`.
 
 ## Repository-wide rules
 
