@@ -27,12 +27,40 @@
   let site = "";
   let saved = null;
   const snapshot = (all) => ({ running: false, site, targets: ["192.168.50.0/24"], hosts: hasResults ? structuredClone(all ? currentHosts.concat([{ ip: "192.168.50.2", status: "down" }]) : currentHosts) : [] });
+  const validateTargets = (input) => {
+    if (typeof input !== "string" || input.length > 65536) throw "target list exceeds the 64 KiB limit";
+    const seen = new Set();
+    const normalized = [];
+    for (const rawLine of input.replace(/^\uFEFF/, "").split("\n")) {
+      const line = rawLine.split("#", 1)[0];
+      for (const token of line.split(/[;,\s]+/).filter(Boolean)) {
+        if (!( /^(?:\d{1,3}\.){3}\d{1,3}(?:\/(?:[0-9]|[12][0-9]|3[0-2])|-(?:(?:\d{1,3}\.){3}\d{1,3}|\d{1,3}))?$/.test(token)
+          || /^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*\.?$/.test(token))) {
+          throw "target list contains an invalid target";
+        }
+        if (!seen.has(token)) { seen.add(token); normalized.push(token); }
+      }
+    }
+    if (!normalized.length) throw "target list is empty";
+    return normalized.join(", ");
+  };
   window.go = { main: { App: {
     Version: async () => "0.2.0-test",
     Defaults: async () => ({ ports: "22,80,443", probes: { ports: true, banners: true, reverse_dns: true, netbios: true, mdns: true, ssdp: true }, concurrency: 128, timeout_ms: 800, max_hosts: 65536, snmp_auth_protocols: ["SHA", "SHA-256", "SHA-512"], snmp_priv_protocols: ["AES", "AES-256"] }),
     Suggestions: async () => [{ interface: "Ethernet", address: "192.168.50.10", range: "192.168.50.0/24" }],
     Results: async (all) => snapshot(all),
-    SetSite: async (name) => { site = name; },
+    ValidateTargets: async (input) => {
+      calls.push(["ValidateTargets", input]);
+      if (window.__holdTargetValidation) await new Promise(resolve => { window.__releaseTargetValidation = resolve; });
+      return validateTargets(input);
+    },
+    ImportTargets: async () => {
+      calls.push(["ImportTargets"]);
+      const outcome = window.__targetImport || { result: "" };
+      if (outcome.error) throw outcome.error;
+      return outcome.result || "";
+    },
+    SetSite: async (name) => { calls.push(["SetSite", name]); site = name; },
     SetAnnotation: async (ip, note) => { calls.push(["SetAnnotation", ip, note]); Object.assign(currentHosts.find(h => h.ip === ip), note); },
     SaveScan: async (name) => { site = name; saved = snapshot(true); window.__savedScan = saved; calls.push(["SaveScan", name]); return "C:\\Scans\\clinic.json"; },
     LoadScan: async () => { calls.push(["LoadScan"]); if (saved) { site = saved.site; currentHosts = structuredClone(saved.hosts.filter(h => h.status === "up")); hasResults = true; } return "C:\\Scans\\clinic.json"; },
@@ -63,7 +91,7 @@
           emit("scan:progress", { done: 254, total: 254, up: hosts.length });
           emit("scan:done", { started: "2026-10-22T01:00:00Z", finished: "2026-10-22T01:00:21Z", total: 254, up: hosts.length, methods: ["icmp-win32", "arp-win32", "tcp-connect"] });
         }
-      }, 30);
+      }, window.__scanInterval || 30);
       return 254;
     },
     StopScan: async () => calls.push(["StopScan"]),

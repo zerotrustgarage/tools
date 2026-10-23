@@ -22,6 +22,11 @@ Portable ZIP: extract the entire archive to a writable folder and run either EXE
 No installer or administrator rights are needed. Desktop preferences still use
 the current user's WebView2 storage; portable packaging does not isolate settings.
 
+Target sets: save named network lists per client, or import a UTF-8 text file
+(64 KiB maximum). Blank lines and # comments are allowed. Use targets starts a
+new site inventory and clears SNMP credentials; press Scan explicitly to begin.
+Target sets never remember public-range authorization.
+
 No service, agent, scheduled scan, firewall exception or PATH change is installed.
 Nothing starts automatically. Scan only networks you are authorized to inspect.
 Results stay local unless you export them. SNMP credentials are never saved.
