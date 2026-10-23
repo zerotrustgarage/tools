@@ -9,6 +9,14 @@ Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class CopyGuiNative {
+    [DllImport("user32.dll")]
+    public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+}
+'@
 $root = Join-Path ([IO.Path]::GetTempPath()) ('ztg-copy-desktop-' + [guid]::NewGuid().ToString('N'))
 $oldAppData, $oldLocalAppData = $env:APPDATA, $env:LOCALAPPDATA
 $process, $window = $null, $null
@@ -154,7 +162,16 @@ try {
     $noCondition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'No')
     $noButton = $dialog.FindFirst([Windows.Automation.TreeScope]::Descendants, $noCondition)
     if (-not $noButton) { throw 'Native close confirmation did not offer No' }
-    $noButton.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
+    $invoke = $null
+    if ($noButton.TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern, [ref]$invoke)) {
+        $invoke.Invoke()
+    } else {
+        # Some Windows accessibility providers expose MessageBox buttons as panes.
+        # BM_CLICK activates the actual HWND button without keyboard/focus races.
+        $buttonHandle = $noButton.Current.NativeWindowHandle
+        if ($buttonHandle -eq 0) { throw 'Native No button has no window handle' }
+        [CopyGuiNative]::SendMessage([IntPtr]$buttonHandle, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+    }
     $process.Refresh()
     if ($process.HasExited) { throw 'Declining close exited the app' }
     Write-Output 'Native close confirmation: No keeps the app open'
