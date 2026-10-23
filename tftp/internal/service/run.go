@@ -76,6 +76,7 @@ func Run(ctx context.Context, name string, reload <-chan struct{}, status io.Wri
 	if e != nil {
 		return e
 	}
+	requestedReload := reload
 	for {
 		select {
 		case <-ctx.Done():
@@ -85,7 +86,11 @@ func Run(ctx context.Context, name string, reload <-chan struct{}, status io.Wri
 			active.file.Close()
 			active.forward.Close()
 			return e
-		case <-reload:
+		case _, ok := <-requestedReload:
+			if !ok {
+				requestedReload = nil
+				continue
+			}
 			next, e := Load(name)
 			if e != nil {
 				fmt.Fprintln(status, "Reload rejected:", e)
@@ -124,6 +129,7 @@ func (w *fanout) Write(b []byte) (int, error) {
 		if e == nil {
 			e = io.ErrShortWrite
 		}
+		w.cancel()
 		return n, e
 	}
 	w.mu.Lock()

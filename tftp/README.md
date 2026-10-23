@@ -152,7 +152,9 @@ from `tftp/` (Go must be on PATH). The app uses the same pinned Wails v2 version
 `ZTGTFTP.exe` needs Microsoft Edge WebView2 Runtime. It provides interface and folder selection,
 finite sessions with Extend/Stop, live byte counts/rates and negotiated options, collected-file
 findings/change status, explicit no-overwrite promotion, a get/put client, and audit export.
-Closing the window cancels clients and stops the server. Progress measures bytes read/written by
+Closing the window cancels clients, waits for temporary download cleanup, and stops the server.
+The client Browse action selects a new destination for Get and an existing source for Put.
+Progress measures bytes read/written by
 the engine; final audit outcomes determine transfer success. The view holds the latest 1,000 records;
 audit export contains the complete session. Refresh loads the latest 1,000 collected receipts.
 Promotion verifies the payload against its receipt and logs source and destination hashes.
@@ -176,6 +178,7 @@ and removes snapshots. Manifests are limited to 1 MiB and 4,096 names.
 invalid, or oversized import fails closed. Imports are limited to 16 MiB and 4,096 reachable hosts.
 Choose either `--scanner` or `--allow`; imports never silently add access to a broader allowlist.
 The desktop exposes both manifest and Scanner import paths. Service JSON uses `manifest` and `scanner`.
+Selecting a Scanner export disables manual networks in the desktop; clearing it restores the saved entry.
 Scanner imports do not scan, identify or authenticate devices.
 
 ## Services and releases

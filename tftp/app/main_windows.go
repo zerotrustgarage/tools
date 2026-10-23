@@ -29,6 +29,9 @@ func (p wailsPlatform) OpenFile() (string, error) {
 func (p wailsPlatform) SaveFile(name string) (string, error) {
 	return runtime.SaveFileDialog(p.ctx, runtime.SaveDialogOptions{DefaultFilename: name, Title: "Export audit log"})
 }
+func (p wailsPlatform) SaveDownload() (string, error) {
+	return runtime.SaveFileDialog(p.ctx, runtime.SaveDialogOptions{DefaultFilename: "download.bin", Title: "Save downloaded file"})
+}
 
 func main() {
 	app := NewApp()
@@ -45,18 +48,16 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: frontend,
 		},
-		// The app draws its own title bar (frontend/index.html, #titlebar) so the whole window
-		// follows the app's theme. Frameless windows keep resizing; on Windows 11 they also keep
-		// the shadow and rounded corners because DisableFramelessWindowDecorations stays false.
 		Frameless:        false,
 		CSSDragProperty:  "--wails-draggable",
 		CSSDragValue:     "drag",
-		BackgroundColour: &options.RGBA{R: 2, G: 12, B: 27, A: 255}, // ZTG bg (#020C1B); the frontend switches it with the theme
+		BackgroundColour: &options.RGBA{R: 2, G: 12, B: 27, A: 255},
 		OnStartup: func(ctx context.Context) {
+			app.cancel()
 			app.ctx, app.cancel = context.WithCancel(ctx)
 			app.platform = wailsPlatform{ctx: ctx}
 		},
-		OnShutdown: func(context.Context) { app.cancel(); app.Stop() },
+		OnShutdown: func(context.Context) { app.shutdown() },
 		Bind:       []interface{}{app},
 		Windows: &windows.Options{
 			Theme:               windows.SystemDefault,
