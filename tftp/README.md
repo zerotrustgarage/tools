@@ -1,8 +1,8 @@
 # ZTG TFTP
 
-A TFTP server and client for technicians. T1 and T2 are implemented and merged: a time-boxed server,
-CLI `get`, `put` and `findings`, an owned protocol engine, opt-in collection into a separate drop box, configuration
-findings, change tracking and JSON Lines audit records. The plan is in
+A TFTP server and client for technicians, with a Windows desktop app, CLI and opt-in service mode.
+It provides time-boxed sessions, private upload collection, configuration findings, change tracking,
+approved-image verification, Scanner allowlist import and JSON Lines audit records. The plan is in
 [docs/design.md](docs/design.md) and the research behind it in [docs/research.md](docs/research.md).
 
 TFTP has no authentication or encryption. Use it only on networks you control, never for CUI, and prefer SCP,
@@ -22,7 +22,7 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o dist/ztg-tftp.exe 
 ```
 
 Set a version with `-ldflags '-X main.version=1.0.0'`. These are console binaries; Windows builds are unsigned.
-The desktop app, service mode, signed installers and release workflow belong to later slices.
+The desktop build, service setup and release workflow are described below.
 
 ## Use
 
@@ -145,14 +145,56 @@ Upload tests add concurrency, cleanup, stream and declared size caps, disk-space
 copies across restart, secret-free metadata and curl/tftp-hpa/atftp uploads. A GitHub-hosted Windows job executes
 upload tests and checks the native owner-only DACLs, locking and atomic commits.
 
-## Next slices
+## Desktop app
 
-T3 adds the Windows desktop app. T4 adds service configuration and log forwarding. T5 adds packaging, signing, SBOM
-and release provenance. These features are not present. Each slice is reviewed before the next starts.
+Build the Windows desktop app and CLI with `app/build-windows.sh 0.3.0 amd64 dist/windows`
+from `tftp/` (Go must be on PATH). The app uses the same pinned Wails v2 version as Scanner.
+`ZTGTFTP.exe` needs Microsoft Edge WebView2 Runtime. It provides interface and folder selection,
+finite sessions with Extend/Stop, live byte counts/rates and negotiated options, collected-file
+findings/change status, explicit no-overwrite promotion, a get/put client, and audit export.
+Closing the window cancels clients and stops the server. Progress measures bytes read/written by
+the engine; final audit outcomes determine transfer success. The view holds the latest 1,000 records;
+audit export contains the complete session. Refresh loads the latest 1,000 collected receipts.
+Promotion verifies the payload against its receipt and logs source and destination hashes.
+
+## Approved images and Scanner import
+
+`serve --manifest approved.json ROOT` serves only files listed by canonical relative name:
+
+```json
+{"files":{"firmware.bin":"<64 hexadecimal SHA-256 characters>"}}
+```
+
+An unlisted file or digest mismatch is refused. The first read creates a private, verified snapshot
+outside the served root; subsequent reads use that immutable copy until the session ends. Changes
+to the original require a new session to take effect. Allow space for snapshots of accessed images;
+large first reads may require a longer client timeout while hashing. Session shutdown cancels hashing
+and removes snapshots. Manifests are limited to 1 MiB and 4,096 names.
+
+`serve --scanner scan.json ROOT` imports the CLI or desktop Scanner JSON export. Only hosts marked
+`up` become individual `/32` or `/128` allowlist entries. Duplicate addresses collapse; an empty,
+invalid, or oversized import fails closed. Imports are limited to 16 MiB and 4,096 reachable hosts.
+Choose either `--scanner` or `--allow`; imports never silently add access to a broader allowlist.
+The desktop exposes both manifest and Scanner import paths. Service JSON uses `manifest` and `scanner`.
+Scanner imports do not scan, identify or authenticate devices.
+
+## Services and releases
+
+See [service/README.md](service/README.md) for Windows SCM and systemd setup, strict JSON reload,
+TLS syslog/Event Log forwarding, exact path remaps and per-MAC filename templates.
+
+`release-tftp.yml` builds on Linux without signing credentials, rebuilds and compares the unsigned
+executables, then signs the desktop app, CLI and MSI in the existing `tools-signing` environment.
+The release job tests signed packages on Windows before publishing attested downloads. Releases
+include an x64 MSI, portable ZIP, CycloneDX SBOM, third-party license texts and SHA-256 sums.
+The MSI adds inbound UDP program rules on Domain and Private profiles only and removes them on
+uninstall. It installs no service. The portable ZIP changes no firewall settings.
+Signing and publication run only by a manual workflow dispatch from main, subject to the signing
+environment's configured approvals. Local and pull-request binaries remain unsigned.
+HTTP boot and ProxyDHCP are deferred by owner decision; neither listener is included.
 
 ## Updates
 
-Run `ztg-tftp check-updates [--json]` to check published releases on request.
-Checks contact GitHub only when requested and open official release downloads without installing
-anything. Offline errors and unpublished releases are shown explicitly. See
-[../docs/updates.md](../docs/updates.md).
+Use **Check for updates** in the desktop header or `ztg-tftp check-updates [--json]` in the CLI.
+Checks contact GitHub only on request and open official release downloads without installing anything.
+Offline errors and unpublished releases are explicit. See [../docs/updates.md](../docs/updates.md).

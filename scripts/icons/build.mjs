@@ -48,6 +48,11 @@ try {
       await save('scanner/installer/icon.ico', ico(sizes.map(size => frames.get(size))));
       await save('scanner/app/frontend/favicon.png', frames.get(32).png);
     }
+    if (name === 'tftp') {
+      await save('tftp/app/winres/icon.png', frames.get(512).png);
+      await save('tftp/installer/icon.ico', ico(sizes.map(size => frames.get(size))));
+      await save('tftp/app/frontend/favicon.png', frames.get(32).png);
+    }
     if (name === 'readout') {
       for (const [file, size] of Object.entries({ '32x32': 32, '64x64': 64, '128x128': 128, '128x128@2x': 256, icon: 512 }))
         await save(`readout/src-tauri/icons/${file}.png`, frames.get(size).png);

@@ -2,7 +2,7 @@
 
 Every ZTG tool must provide an explicit **Check for updates** action, or a `check-updates`
 command in a CLI-only build. This is a release requirement for new tools, including Copy and
-TFTP's future desktop applications. Automatic installation is optional future work; the current
+TFTP's desktop application. Automatic installation is optional future work; the current
 implementation checks versions and opens official downloads for the user to install.
 
 ## Available controls
@@ -11,7 +11,7 @@ implementation checks versions and opens official downloads for the user to inst
 | --- | --- | --- |
 | Scanner | **Check for updates** in the desktop toolbar; `ztg-scanner check-updates [--json]` | Implemented |
 | Readout | **Check for updates** in the status bar, in desktop and browser builds | Implemented |
-| TFTP | `ztg-tftp check-updates [--json]` | Implemented; desktop action required in T3 |
+| TFTP | **Check for updates** in the desktop header; `ztg-tftp check-updates [--json]` | Implemented |
 | Copy | Shared checker accepts `copy`; application action required when RC1/desktop ships | Copy is currently an RC0 capture harness, not an end-user app |
 | Directory | `ztg-directory check-updates` from D1, **Check for updates** in the console from D2; tag prefix `directory-v` added to the shared checker with the first package (D7) | Planned (`directory/docs/design.md`) |
 
@@ -69,7 +69,7 @@ exit 0, while network/response errors exit nonzero. No action is taken automatic
 
 The shared Go and browser implementations live in `scripts/updates/`. The Go code uses only the
 standard library. `sync.mjs` vendors identical source into the independent Scanner and TFTP Go
-modules, and into Scanner's embedded frontend. Readout imports the browser source directly.
+modules, and into Scanner's and TFTP's embedded frontends. Readout imports the browser source directly.
 This adds no module or shipping dependency. CI and release builds reject stale copies.
 
 ```sh

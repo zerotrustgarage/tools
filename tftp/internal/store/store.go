@@ -2,6 +2,7 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -25,7 +26,7 @@ func Name(name string) (string, error) {
 		}
 	}
 	for _, part := range strings.Split(name, "/") {
-		if part == "" || part == "." || part == ".." || len(part) > 255 || strings.HasSuffix(part, ".") || strings.HasSuffix(part, " ") {
+		if strings.HasPrefix(strings.ToLower(part), ".ztg-promote-") || part == "" || part == "." || part == ".." || len(part) > 255 || strings.HasSuffix(part, ".") || strings.HasSuffix(part, " ") {
 			return "", errors.New("name-policy")
 		}
 		base := strings.TrimRight(strings.ToUpper(strings.SplitN(part, ".", 2)[0]), " ")
@@ -40,8 +41,13 @@ func Name(name string) (string, error) {
 }
 
 type Store struct {
-	root     *os.Root
-	FoldCase bool
+	root         *os.Root
+	FoldCase     bool
+	approved     map[string]string
+	snapshotDir  string
+	snapshots    *os.Root
+	snapshotLock chan struct{}
+	cached       map[string]string
 }
 
 func Open(path string, foldCase bool) (*Store, error) {
@@ -49,11 +55,29 @@ func Open(path string, foldCase bool) (*Store, error) {
 	if e != nil {
 		return nil, e
 	}
-	return &Store{r, foldCase}, nil
+	return &Store{root: r, FoldCase: foldCase}, nil
 }
-func (s *Store) Close() error { return s.root.Close() }
+func (s *Store) Close() error {
+	if s.snapshots != nil {
+		s.snapshots.Close()
+		os.RemoveAll(s.snapshotDir)
+	}
+	return s.root.Close()
+}
 
 func (s *Store) Read(name string) (*os.File, error) {
+	if s.approved != nil {
+		return s.approvedRead(context.Background(), name)
+	}
+	return s.readOriginal(name)
+}
+func (s *Store) ReadContext(ctx context.Context, name string) (*os.File, error) {
+	if s.approved != nil {
+		return s.approvedRead(ctx, name)
+	}
+	return s.readOriginal(name)
+}
+func (s *Store) readOriginal(name string) (*os.File, error) {
 	n, e := Name(name)
 	if e != nil {
 		return nil, e
@@ -112,6 +136,10 @@ func (s *Store) Read(name string) (*os.File, error) {
 	if e != nil || !info.Mode().IsRegular() {
 		f.Close()
 		return nil, errors.New("not a regular file")
+	}
+	if e = checkReadable(f); e != nil {
+		f.Close()
+		return nil, e
 	}
 	return f, nil
 }

@@ -14,9 +14,11 @@ type Record struct {
 	Op                string            `json:"op"`
 	Source            string            `json:"source"`
 	Local             string            `json:"local"`
+	MappedName        string            `json:"mapped_name,omitempty"`
 	Name              string            `json:"name"`
 	Options           map[string]string `json:"options,omitempty"`
 	Bytes             int64             `json:"bytes"`
+	SourceSHA256      string            `json:"source_sha256,omitempty"`
 	SHA256            string            `json:"sha256,omitempty"`
 	DurationMS        int64             `json:"duration_ms"`
 	Result            string            `json:"result"`

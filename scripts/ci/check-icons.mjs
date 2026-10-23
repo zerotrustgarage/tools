@@ -103,6 +103,10 @@ for (const tool of ['scanner', 'copy', 'tftp', 'readout']) {
     'scanner/app/winres/icon.png': read(`${dir}/icon.png`),
     'scanner/installer/icon.ico': read(`${dir}/icon.ico`),
     'scanner/app/frontend/favicon.png': app.get(32),
+  } : tool === 'tftp' ? {
+    'tftp/app/winres/icon.png': read(`${dir}/icon.png`),
+    'tftp/installer/icon.ico': read(`${dir}/icon.ico`),
+    'tftp/app/frontend/favicon.png': app.get(32),
   } : tool === 'readout' ? {
     'readout/src-tauri/icons/icon.png': read(`${dir}/icon.png`),
     'readout/src-tauri/icons/icon.ico': read(`${dir}/icon.ico`),
@@ -118,3 +122,5 @@ assert.equal(distinct.size, 4, 'four distinct glyphs at the smallest Windows siz
 const winres = JSON.parse(read('scanner/app/winres/winres.json'));
 assert.equal(winres.RT_GROUP_ICON.APP['0000'], '../../installer/icon.ico', 'Scanner embeds the same ICO used by its MSI');
 console.log('Icons: four distinct ZTG glyphs, canonical colors, transparent PNG/ICO frames and synchronized app/installer exports.');
+
+assert.equal(JSON.parse(read("tftp/app/winres/winres.json")).RT_GROUP_ICON.APP["0000"], "../../installer/icon.ico", "TFTP EXEs and MSI share the same ICO");

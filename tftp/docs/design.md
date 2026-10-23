@@ -1,6 +1,6 @@
 # ZTG TFTP: design
 
-Status (October 22, 2026): T1 and T2 implemented and merged. Later slices remain proposed. The market research is in [research.md](research.md);
+Status (October 22, 2026): T1 and T2 merged. T3 to T5 and the approved T6 features are implemented. The market research is in [research.md](research.md);
 section numbers below refer to that document as "R" (R5 is its list of gaps).
 
 ## 1. Purpose
@@ -223,19 +223,19 @@ them, and TFTP itself cannot meet SC.L2-3.13.8.
 
 | Slice | What | Status |
 | --- | --- | --- |
-| T1 | Protocol engine (section 3), read-only server, client `get` and `put`, scope guard, allowlist, limits, name policy, audit log, fuzzing, interop tests, CI workflow `tftp.yml` | Built and merged |
-| T2 | Uploads: drop box, atomic commit, owner-only files, upload caps, findings on collected configs, change status | Built and merged |
-| T3 | Windows desktop app (section 10) | Proposed |
-| T4 | Service mode: Windows service and systemd unit, JSON configuration file with reload, syslog (RFC 5424, TCP with TLS) and Windows Event Log forwarding, path remap rules, per-MAC templated files for phone provisioning | Proposed |
-| T5 | Packaging and trust: Authenticode signing through `scripts/signing/`, MSI with the scoped firewall rule, portable ZIP, SBOM, `release-tftp.yml` with provenance attestation | Proposed |
-| T6 | Candidates needing an owner decision: a read-only HTTP listener on the same root for iPXE and UEFI HTTP boot (faster than TFTP, same audit); proxyDHCP for PXE only (boot file options, never address assignment); a hash manifest that limits serving to approved images; pre-filling the allowlist from a ZTG Scanner export | Proposed |
+| T1 | Protocol engine (section 3), read-only server, client `get` and `put`, scope guard, allowlist, limits, name policy, audit log, fuzzing, interop tests, CI workflow `tftp.yml` | Merged |
+| T2 | Uploads: drop box, atomic commit, owner-only files, upload caps, findings on collected configs, change status | Merged |
+| T3 | Windows desktop app (section 10) | Implemented |
+| T4 | Service mode: Windows service and systemd unit, JSON configuration file with reload, syslog (RFC 5424, TCP with TLS) and Windows Event Log forwarding, path remap rules, per-MAC templated files for phone provisioning | Implemented |
+| T5 | Packaging and trust: Authenticode signing through `scripts/signing/`, MSI with the scoped firewall rule, portable ZIP, SBOM, `release-tftp.yml` with provenance attestation | Implemented |
+| T6 | Approved-image SHA-256 manifests and Scanner JSON allowlist import. HTTP boot and ProxyDHCP are deferred by owner decision. | Implemented |
 
 Each slice is reviewed before the next starts.
 
 T1 implementation notes: wildcard binds expand to individual addresses (IPv4 by default, IPv6 with `--bind ::`),
 so single-port replies use the destination interface without packet-info socket options. The configurable window
 cap is bounded at 64 blocks. Netascii does not negotiate octet-only `tsize`.
-The implementation follows the proposed name, own engine and 60-minute default; T6 and retention remain open.
+The implementation follows the proposed name, own engine and 60-minute default; T6 scope and retention are resolved in section 15.
 The README describes the implemented flags, limits and test coverage.
 
 T2 implementation notes: uploads are staged privately and published without replacement using `os.Root.Link`,
@@ -254,10 +254,13 @@ reserve free space across concurrent transfers. The findings parser is bounded a
 - Credential storage of any kind.
 - Cloud reporting. Audit logs and collected files stay where the technician puts them.
 
-## 15. Open questions for the owner
+## 15. Owner decisions (October 22, 2026)
 
-1. Name: "ZTG TFTP" with folder `tftp/` and binary `ztg-tftp`, or a product name.
-2. Own protocol engine (recommended, section 3) or `pin/tftp` extended.
-3. Default session length (60 minutes proposed) and whether the GUI should allow "until stopped".
-4. Which T6 candidates, if any, are wanted.
-5. Retention for collected configurations: keep until deleted (proposed), or an automatic retention period.
+- Keep ZTG TFTP, the owned protocol engine and 60-minute interactive sessions with Extend.
+- Keep collected configurations until explicitly deleted. No automatic retention or deletion.
+- Defer HTTP boot and ProxyDHCP.
+- Include approved-image SHA-256 manifests and allowlist import from Scanner JSON exports.
+- Implement the remaining desktop, service and release packaging steps.
+
+T6 now includes only the approved-image manifest and Scanner import. The implementation uses
+immutable verified snapshots so a served file cannot change between digest approval and transfer.
