@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/zerotrustgarage/tools/tftp/internal/client"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/zerotrustgarage/tools/tftp/internal/client"
 )
 
 func TestLifecycleAndExport(t *testing.T) {
@@ -61,5 +63,41 @@ func TestLifecycleAndExport(t *testing.T) {
 	}
 	if e = s.Start(context.Background(), Request{Root: root, Minutes: 0}); e == nil {
 		t.Fatal("unlimited interactive session")
+	}
+}
+
+func TestPromoteCannotPublishAfterAuditClosed(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "images")
+	upload := filepath.Join(base, "collected")
+	if e := os.Mkdir(root, 0700); e != nil {
+		t.Fatal(e)
+	}
+	s := New()
+	if e := s.Start(context.Background(), Request{Root: root, Upload: upload, Bind: "127.0.0.1", Port: 0, Minutes: 1}); e != nil {
+		t.Fatal(e)
+	}
+	addr := s.Snapshot().Addresses[0]
+	if _, e := client.Put(context.Background(), client.Config{Address: addr, Name: "router.cfg", Timeout: 1}, strings.NewReader("hostname edge\n"), 14); e != nil {
+		s.Stop()
+		t.Fatal(e)
+	}
+	collected, e := s.Collected()
+	if e != nil || len(collected) != 1 {
+		s.Stop()
+		t.Fatalf("collected uploads: %v, %v", collected, e)
+	}
+	s.Stop()
+
+	// This is the short state between the wait goroutine closing the audit and
+	// publishing Running=false. Promotion must treat the closed writer as final.
+	s.mu.Lock()
+	s.snapshot.Running = true
+	s.mu.Unlock()
+	if e = s.Promote(collected[0].StoredAs, "router.cfg"); e == nil {
+		t.Fatal("promoted after the session audit had closed")
+	}
+	if _, e = os.Stat(filepath.Join(root, "router.cfg")); !os.IsNotExist(e) {
+		t.Fatalf("promotion was published without an audit record: stat error %v", e)
 	}
 }

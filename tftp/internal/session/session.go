@@ -114,7 +114,7 @@ func (s *Session) Start(ctx context.Context, r Request) error {
 	s.mu.Unlock()
 	srv, e := server.Start(ctx, c)
 	if e != nil {
-		log.Close()
+		writer.close()
 		s.mu.Lock()
 		s.snapshot.Running = false
 		s.mu.Unlock()
@@ -131,9 +131,7 @@ func (s *Session) Start(ctx context.Context, r Request) error {
 	s.mu.Unlock()
 	go func() {
 		e := srv.Wait()
-		writer.mu.Lock()
-		ce := log.Close()
-		writer.mu.Unlock()
+		ce := writer.close()
 		s.mu.Lock()
 		if e == nil {
 			e = ce
@@ -217,18 +215,27 @@ func (s *Session) Promote(storedAs, name string) error {
 	s.op.Lock()
 	defer s.op.Unlock()
 	s.mu.Lock()
-	r, log, running := s.request, s.log, s.snapshot.Running
+	writer := s.writer
 	s.mu.Unlock()
-	if !running {
+	if writer == nil {
 		return errors.New("start a session before promoting a file")
 	}
-	s.writer.mu.Lock()
-	defer s.writer.mu.Unlock()
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	if writer.closed {
+		return errors.New("cannot promote after the session has stopped")
+	}
+	s.mu.Lock()
+	r, log, srv, running := s.request, s.log, s.server, s.snapshot.Running
+	s.mu.Unlock()
+	if !running || srv == nil {
+		return errors.New("start a session before promoting a file")
+	}
 	hash, e := store.Promote(r.Upload, r.Root, storedAs, name)
 	if e != nil {
 		return e
 	}
-	rec := audit.Record{Time: time.Now().UTC(), Op: "promote", Session: s.server.SessionID(), Transfer: server.ID(), Name: name, StoredAs: storedAs, SHA256: hash, SourceSHA256: hash, Result: "complete"}
+	rec := audit.Record{Time: time.Now().UTC(), Op: "promote", Session: srv.SessionID(), Transfer: server.ID(), Name: name, StoredAs: storedAs, SHA256: hash, SourceSHA256: hash, Result: "complete"}
 	// Independent Log writers may not interleave on the same file; serialize writes
 	// with the server through an explicit audit writer (set in Start).
 	if e = audit.New(log).Write(rec); e != nil {
