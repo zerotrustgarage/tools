@@ -6,7 +6,7 @@ import dockerfile from 'highlight.js/lib/languages/dockerfile';
 import dos from 'highlight.js/lib/languages/dos';
 import nginx from 'highlight.js/lib/languages/nginx';
 import powershell from 'highlight.js/lib/languages/powershell';
-import { alertsPlugin } from './plugins/alerts';
+import { calloutsPlugin } from './plugins/callouts';
 import { frontMatterPlugin } from './plugins/frontmatter';
 import { mathPlaceholder, mathPlugin } from './plugins/math';
 import { tasksPlugin } from './plugins/tasks';
@@ -15,7 +15,7 @@ import { sanitize } from './sanitize';
 
 // Markdown to sanitized HTML. The parser follows CommonMark plus the GitHub extensions AI tools
 // rely on (tables, task lists, strikethrough, autolinks, footnotes, alerts, math, Mermaid),
-// plus what docs folders and vaults add (YAML front matter, [[wikilinks]]),
+// plus what docs folders and vaults add (YAML front matter, callouts and admonitions, [[wikilinks]]),
 // with raw HTML allowed so inline colors survive, then sanitized (sanitize.ts). Rendering is a
 // view of the source: nothing here ever writes back to the document.
 
@@ -61,6 +61,7 @@ const LINE_MAPPED = new Set([
   'paragraph_open',
   'heading_open',
   'blockquote_open',
+  'callout_open',
   'bullet_list_open',
   'ordered_list_open',
   'list_item_open',
@@ -76,7 +77,7 @@ function createParser(): MarkdownIt {
     typographer: false,
     breaks: false,
   });
-  md.use(frontMatterPlugin).use(footnote).use(tasksPlugin).use(alertsPlugin).use(mathPlugin).use(wikilinksPlugin);
+  md.use(frontMatterPlugin).use(footnote).use(tasksPlugin).use(calloutsPlugin).use(mathPlugin).use(wikilinksPlugin);
 
   md.core.ruler.push('ztg_annotations', (state) => {
     const slug = slugger();

@@ -9,13 +9,41 @@
 // The Rust list uses `cargo metadata --filter-platform x86_64-pc-windows-msvc`, so it covers what
 // the Windows build links, and it fails if a crate's source is not on disk (run cargo fetch
 // first) rather than silently omitting a notice.
+//
+// A few packages publish no license file. For those the standard SPDX text of their declared
+// license is used (scripts/licenses/, verbatim from spdx/license-list-data v3.27.0) with the
+// package's authors or repository in the copyright line. A package with neither a license file
+// nor a known SPDX text fails the run.
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const LICENSE_FILE = /^(licen[cs]e|copying|notice)(\.|-|$)/i;
 const RUST_TARGET = 'x86_64-pc-windows-msvc';
+const SPDX_DIR = join(dirname(fileURLToPath(import.meta.url)), 'licenses');
+// For "A OR B" the redistributor picks one; prefer the shortest obligations.
+const SPDX_PREFERENCE = ['MIT', 'BSD-3-Clause', 'Apache-2.0', 'MPL-2.0'];
+const TEMPLATE_COPYRIGHT = /^Copyright \(c\) <year> <[^>]+>\.?[ \t]*$/m;
+
+// The standard text for a package that ships none, or null when its license is not one we hold.
+function spdxFallback(pkg) {
+  const choices = String(pkg.license ?? '')
+    .replace(/[()]/g, ' ')
+    .split(/\s+OR\s+|\//)
+    .map((s) => s.trim());
+  // An AND expression needs every text; only single licenses and OR choices are handled.
+  if (choices.some((c) => /\s(AND|WITH)\s/.test(c))) return null;
+  const id = SPDX_PREFERENCE.find((l) => choices.includes(l));
+  if (!id) return null;
+  const holders = pkg.authors?.length ? pkg.authors.join(', ') : `the ${pkg.name} authors (${pkg.repository ?? 'see the package'})`;
+  const text = readFileSync(join(SPDX_DIR, `${id}.txt`), 'utf8')
+    .trim()
+    .replace(TEMPLATE_COPYRIGHT, `Copyright (c) ${holders}`);
+  const note = `${pkg.name} publishes no license file. This is the standard SPDX text of ${id}${choices.length > 1 ? `, chosen from ${pkg.license}` : ''}${pkg.repository ? `; source: ${pkg.repository}` : ''}.`;
+  return `${note}\n\n${text}`;
+}
 
 function licenseTexts(dir) {
   if (!existsSync(dir)) return [];
@@ -47,10 +75,13 @@ function npmPackages(appDir) {
       }
       const dir = candidates.find((d) => existsSync(join(d, 'package.json')));
       const manifest = dir ? JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) : {};
+      const author = typeof manifest.author === 'string' ? manifest.author : manifest.author?.name;
       seen.set(key, {
         name,
         version: info.version,
         license: typeof manifest.license === 'string' ? manifest.license : 'see text',
+        authors: author ? [author] : [],
+        repository: typeof manifest.repository === 'string' ? manifest.repository : manifest.repository?.url,
         texts: dir ? licenseTexts(dir) : [],
       });
       visit(info.dependencies);
@@ -76,7 +107,7 @@ function rustCrates(appDir) {
     .map((p) => {
       const dir = dirname(p.manifest_path);
       const texts = p.license_file ? [readFileSync(resolve(dir, p.license_file), 'utf8').trim()] : licenseTexts(dir);
-      return { name: p.name, version: p.version, license: p.license ?? 'see text', texts };
+      return { name: p.name, version: p.version, license: p.license ?? 'see text', authors: p.authors, repository: p.repository, texts };
     })
     .sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
 }
@@ -101,7 +132,18 @@ const rust = rustCrates(appDir);
 if (npm.length === 0 || rust.length === 0) throw new Error('No npm packages or no crates were found; refusing to write an incomplete notices file');
 const unresolved = npm.filter((p) => p.license === 'see text' && p.texts.length === 0);
 if (unresolved.length > npm.length / 10) throw new Error(`Could not read ${unresolved.length} npm package manifests; is node_modules installed?`);
+const fallbacks = [];
+for (const p of [...npm, ...rust].filter((q) => q.texts.length === 0)) {
+  const text = spdxFallback(p);
+  if (text) {
+    p.texts = [text];
+    fallbacks.push(`${p.name} ${p.version} (${p.license})`);
+  }
+}
 const missing = [...npm, ...rust].filter((p) => p.texts.length === 0).map((p) => `${p.name} ${p.version} (${p.license})`);
+if (missing.length) {
+  throw new Error(`No license text for:\n  ${missing.join('\n  ')}\nAdd its SPDX text to scripts/licenses/ and SPDX_PREFERENCE, or vendor the package's own file.`);
+}
 const header = [
   'THIRD-PARTY SOFTWARE NOTICES',
   '',
@@ -111,4 +153,4 @@ const header = [
 ].join('\n');
 writeFileSync(resolve(outArg), `${header}\n${section('npm', npm)}\n${section('crate', rust)}`);
 console.log(`Wrote ${outArg}: ${npm.length} npm packages, ${rust.length} crates.`);
-if (missing.length) console.warn(`No license file found for:\n  ${missing.join('\n  ')}`);
+if (fallbacks.length) console.log(`Standard SPDX text used for packages without a license file:\n  ${fallbacks.join('\n  ')}`);
