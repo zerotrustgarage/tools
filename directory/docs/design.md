@@ -1,7 +1,9 @@
 # ZTG Directory: design
 
-Status (October 22, 2026): plan (slice D0). No code is built. The owner answers the open questions in section 14
-before D1 starts; each slice is reviewed before the next begins, as for ZTG TFTP. The ideas behind each feature
+Status (October 23, 2026): D1 in development following the owner's request to begin building. The initial
+read-only engine and CLI use the recommended Go/no-cgo stack; live D1 lab validation remains open.
+Unresolved decisions in section 14 remain open for their relevant slices; each slice is reviewed before the next
+begins, as for ZTG TFTP. See [validation.md](validation.md) for current limits. The ideas behind each feature
 are in [runbook.md](runbook.md) and the facts in [research.md](research.md).
 
 ## 1. Purpose

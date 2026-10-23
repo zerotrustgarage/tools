@@ -127,13 +127,15 @@ dnsmasq, Open TFTP Server, their CVE history and the gaps across them) is in
 
 ## 6. ZTG Directory
 
-Plan only (slice D0). The workflows and ideas, with priorities and slices, are in `directory/docs/runbook.md`;
+D1 is in development: a read-only Windows LDAP engine and CLI, portable fake tests and path-filtered CI.
+Live Samba and Windows Server 2025 acceptance remains open (`directory/docs/validation.md`).
+The workflows and ideas, with priorities and slices, are in `directory/docs/runbook.md`;
 slices D1 to D7 and the owner's open questions (Q1 to Q9) are in `directory/docs/design.md`.
 
 | # | Item | Priority | Status |
 | --- | --- | --- | --- |
 | DR1 | Owner decisions Q1 to Q9 (host, stack, Exchange Online method, approvals, console location, RADIUS, certificate storage, test estate, release timing) | High | Open |
-| DR2 | D1, read-only engine and CLI with signed and sealed LDAP | High | Open, waits on DR1 |
+| DR2 | D1, read-only engine and CLI with signed and sealed LDAP | High | In development; live lab validation pending |
 
 ## 7. Questions answered
 

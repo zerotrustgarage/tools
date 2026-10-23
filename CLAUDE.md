@@ -8,7 +8,7 @@ release workflow and `CLAUDE.md`. Read the tool's own file before changing it:
 - `scanner/`: ZTG Scanner, network discovery and inventory (Go). See `scanner/CLAUDE.md`.
 - `tftp/`: ZTG TFTP, a TFTP server and client (Go, CLI and Windows desktop app, service mode and release packaging). See `tftp/CLAUDE.md`.
 - `directory/`: ZTG Directory, Active Directory and Microsoft 365 management installed per customer (plan,
-  slice D0; no code yet). See `directory/CLAUDE.md`.
+  slice D1 in development; live LDAP validation pending). See `directory/CLAUDE.md`.
 
 - `copy/`: ZTG Copy, Robocopy job designer and evidence recorder (Go, desktop preview and guarded local CLI). See `copy/CLAUDE.md`.
 
