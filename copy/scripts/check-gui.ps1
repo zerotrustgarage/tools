@@ -52,12 +52,13 @@ function Find-Control([string]$name, [string]$kind = '', [int]$timeout = 20) {
     } while ([DateTime]::UtcNow -lt $deadline)
     throw "Native control not found: '$name' ($kind)"
 }
-function Click-Button([string]$prefix) {
+function Click-Button([string]$prefix, [switch]$Exact) {
     $deadline = [DateTime]::UtcNow.AddSeconds(20)
     do {
         $condition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Button)
         foreach ($element in $window.FindAll([Windows.Automation.TreeScope]::Descendants, $condition)) {
-            if (([string]$element.Current.Name).StartsWith($prefix) -and $element.Current.IsEnabled) {
+            $buttonMatches = if ($Exact) { [string]$element.Current.Name -eq $prefix } else { ([string]$element.Current.Name).StartsWith($prefix) }
+            if ($buttonMatches -and $element.Current.IsEnabled) {
                 if ($element.Current.IsOffscreen) {
                     $scroll = $null
                     if ($element.TryGetCurrentPattern([Windows.Automation.ScrollItemPattern]::Pattern, [ref]$scroll)) { $scroll.ScrollIntoView() }
@@ -97,7 +98,7 @@ try {
     New-Item -ItemType Directory -Path $bin -Force | Out-Null
     Copy-Item -Path (Join-Path $PackageDirectory '*') -Destination $bin
     $env:APPDATA, $env:LOCALAPPDATA = (Join-Path $root 'roaming'), (Join-Path $root 'local')
-    $source, $destination = (Join-Path $root 'source space'), (Join-Path $root 'destination')
+    $source, $destination = (Join-Path $root "source O'Brien ‘curly’ ‚low‛"), (Join-Path $root 'destination')
     foreach ($directory in @($env:APPDATA, $env:LOCALAPPDATA, $source, $destination)) {
         New-Item -ItemType Directory -Path $directory -Force | Out-Null
     }
@@ -121,6 +122,18 @@ try {
     Find-Control 'SOURCE' 'Edit' | Out-Null
     Set-Edit 'SOURCE' $source
     Set-Edit 'DESTINATION' $destination
+    Click-Button 'Copy' -Exact
+    $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    do {
+        $robocopyCommand = [string](Get-Clipboard -Raw)
+        if ($robocopyCommand.Contains('Robocopy.exe') -and $robocopyCommand.Contains($root)) { break }
+        Start-Sleep -Milliseconds 100
+    } while ([DateTime]::UtcNow -lt $deadline)
+    $literalTokens, $literalErrors = $null, $null
+    $literalAst = [Management.Automation.Language.Parser]::ParseInput($robocopyCommand, [ref]$literalTokens, [ref]$literalErrors)
+    $sourceLiteral = $literalAst.FindAll({ param($node) $node -is [Management.Automation.Language.StringConstantExpressionAst] -and $node.Value -eq $source }, $true)
+    if ($literalErrors.Count -ne 0 -or $sourceLiteral.Count -ne 1) { throw 'Robocopy clipboard command did not preserve typographic quotes literally' }
+    Write-Output 'COPY_NATIVE_QUOTING {"passed":true,"all_single_quote_delimiters":true,"source_preserved":true}'
     Click-Button 'Preview this job'
     Find-Control 'Preview ready' | Out-Null
     $plan = Wait-CompletedRecord 0 'planned'
@@ -195,6 +208,33 @@ try {
     if (-not $bitsCommand.Contains('BitsTransfer\Start-BitsTransfer') -or -not $bitsCommand.Contains($bitsDestination)) { throw 'Native BITS clipboard bridge did not return its file pair' }
     Save-DesktopScreenshot 'copy-native-bits.png'
     Write-Output 'COPY_NATIVE_BITS {"passed":true,"real_bridge":true,"literal_command_copy":true,"unicode_destination":true}'
+    Click-Button 'Design a job'
+    [IO.File]::WriteAllText((Join-Path $source 'locked-diagnostic.txt'), 'new source content')
+    [IO.File]::WriteAllText((Join-Path $destination 'locked-diagnostic.txt'), 'old')
+    $lockedStream = [IO.FileStream]::new((Join-Path $destination 'locked-diagnostic.txt'), [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+    try {
+        Click-Button 'Explain a command'
+        Set-Edit 'Robocopy command' ('robocopy "' + $source + '" "' + $destination + '" /E /R:0 /W:0 /XJ')
+        Click-Button 'Import and explain'
+        Click-Button 'Preview this job'
+        Find-Control 'Preview ready' | Out-Null
+        $lockedPlan = Wait-CompletedRecord 4 'planned'
+        Click-Button 'Start copy'
+        Click-Button 'Start copy'
+        Find-Control 'Copy failed' | Out-Null
+        $failed = Wait-CompletedRecord 5 'failed'
+        $lockedErrors = @($failed.phases | Where-Object { $_.name -eq 'copy' } | ForEach-Object { $_.diagnostics.errors } | Where-Object { $_.code -eq 32 })
+        if ($failed.normalized_exit -ne 2 -or $lockedErrors.Count -ne 1 -or $lockedErrors[0].cause -ne 'File in use') { throw 'Native locked-file cause was not saved' }
+        Find-Control 'File in use' | Out-Null
+        Find-Control 'Windows 32' | Out-Null
+        Save-DesktopScreenshot 'copy-native-errors.png'
+        Click-Button 'View run details'
+        Find-Control 'Run details' | Out-Null
+        Find-Control 'Native exit' | Out-Null
+        Save-DesktopScreenshot 'copy-native-record.png'
+        Click-Button 'Cancel' -Exact
+        Write-Output 'COPY_NATIVE_DIAGNOSTICS {"passed":true,"real_locked_file":true,"saved_error_32":true,"visible_cause":true,"run_details":true}'
+    } finally { $lockedStream.Dispose() }
     Write-Output 'COPY_NATIVE_GUI {"passed":true,"packaged_executable":true,"native_accessibility":true,"preview_unchanged":true,"unicode_content_equal":true,"convergence":true,"close_declined":true,"stop_canceled":true}'
 } catch {
     if ($window) {

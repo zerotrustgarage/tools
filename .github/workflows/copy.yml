@@ -37,6 +37,7 @@ jobs:
           go test ./internal/cmdline -run '^$' -fuzz '^FuzzRoundTrip$' -fuzztime 10s -parallel 2
           go test ./internal/template -run '^$' -fuzz '^FuzzTemplateReader$' -fuzztime 10s -parallel 2
           go test ./internal/parse -run '^$' -fuzz '^FuzzNativeSummary$' -fuzztime 10s -parallel 2
+          go test ./internal/parse -run '^$' -fuzz '^FuzzNativeDiagnostics$' -fuzztime 10s -parallel 2
           go test ./internal/spike -run '^$' -fuzz '^FuzzDecodeUnicode$' -fuzztime 10s -parallel 2
       - name: Cross build unsigned CLI and Windows test binaries
         run: |

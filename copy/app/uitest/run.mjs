@@ -88,6 +88,17 @@ try{
     await page.click('[data-view="history"]');
     await page.waitForSelector('#history-list tr');
     assert.equal(await page.locator('#history-list img').count(),0);
+    await page.locator('#history-list').getByRole('button',{name:'Details',exact:true}).click();
+    await page.getByText('Copy errors',{exact:true}).waitFor();
+    await page.getByText('Help output',{exact:true}).waitFor();
+    assert.doesNotMatch(await page.textContent('#modal-body .record-phases'),/Fatal error/);
+    await page.getByText('No completed native result',{exact:true}).waitFor();
+    assert.equal(await page.locator('#modal-body .record-phases tbody tr').filter({hasText:'convergence'}).locator('td').nth(1).textContent(),'—');
+    assert.match(await page.textContent('#modal-body'),/Windows 32/);
+    await page.locator('#modal-body details summary').click();
+    assert.match(await page.textContent('#modal-body'),/日本語/);
+    assert.equal(await page.locator('#modal-body img').count(),0);
+    await page.click('#modal-cancel');
     await page.locator('#history-list').getByRole('button',{name:'Load job'}).click();
     await page.waitForFunction(()=>document.getElementById('source').value==='C:\\History');
     await page.click('#preview');await page.waitForSelector('#preview-actions:not([hidden])');
@@ -98,6 +109,24 @@ try{
     assert.equal(await page.locator('#preview-actions').isVisible(),false);
     assert.equal(await page.locator('[data-phase="convergence"]').evaluate(node=>node.classList.contains('done')||node.classList.contains('active')),false);
     assert.equal(await page.textContent('#verification-badge'),'Incomplete');
+    console.log('UI_STAGE '+scheme+' failure diagnostics');
+    await page.click('#back-design');
+    await page.evaluate(()=>{window.__holdRun=false;});
+    await page.click('#preview');await page.waitForSelector('#preview-actions:not([hidden])');
+    await page.evaluate(()=>{window.__failNextCopy=true;});
+    await page.click('#start-copy');await page.click('#modal-submit');
+    await page.waitForFunction(()=>document.getElementById('phase').textContent==='Copy failed');
+    assert.equal(await page.locator('#error-details').isVisible(),true);
+    assert.match(await page.textContent('#error-groups'),/File in use/);
+    assert.match(await page.textContent('#error-groups'),/2 log entries/);
+    await page.locator('#error-groups details summary').click();
+    assert.match(await page.textContent('#error-groups'),/日本語/);
+    assert.equal(await page.locator('#error-groups img').count(),0);
+    await screenshot(page,'copy-errors-'+scheme+'.png');
+    await page.click('#view-latest');
+    assert.match(await page.textContent('#modal-body'),/normalized exit 2/);
+    assert.match(await page.textContent('#modal-body'),/Copy errors/);
+    await page.click('#modal-cancel');
     console.log('UI_STAGE '+scheme+' BITS designer');
     const robocopyStarts=await page.evaluate(()=>window.__calls.filter(call=>call[0]==='Start').length);
     await page.click('[data-view="bits"]');
@@ -159,7 +188,7 @@ try{
     assert.equal(requests,1);
     await page.click('#win-min');await page.click('#win-max');await page.click('#win-close');
     assert.deepEqual(errors,[]);
-    console.log('PASS '+scheme+': designer, option editing, preview, confirmed copy, stop, templates, history, safe text, BITS command design, themes and explicit updates');
+    console.log('PASS '+scheme+': designer, option editing, preview, confirmed copy, stop, templates, history, safe text, BITS command design, error causes, run details, themes and explicit updates');
     await page.close();
   }
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}

@@ -25,6 +25,10 @@ production support claim.
   2022 and 2025 captures. Raw mixed-encoding console bytes are preserved separately.
 - Per-user owner-only evidence folders, phase events, exact argument lists, log hashes, summaries,
   technician/host, native exits and normalized outcomes.
+- Error-by-cause details from streaming native Unicode logs, grouped by agreeing decimal/hex
+  Windows codes, with bounded excerpts and suggestions. Counts include retries and do not change
+  summary/exit-based outcomes. Activity and saved-run details show the grouped errors.
+- A saved-run inspector with per-phase native exit bitmap meanings, including older records.
 - Explicit update checks using the shared release contract, without background requests.
 
 Real-engine testing showed that /MT reports directory traversal as copied on a subsequent
@@ -42,7 +46,9 @@ are treated as completed bytes.
   catalog-aware signature decision.
 - Broader option/type/preset validation and RCJ import/export from the design.
 - More Windows releases/locales and optimized-copy fixtures as tracked in rc0.md.
-- Error-by-cause detail and the full run-record metadata required by design section 10.
+- Broader diagnostic format/locale coverage and the remaining run-record metadata required by
+  design section 10. Grouped native-log error headers are implemented; other diagnostic formats
+  remain available only in the raw log.
 - Additional acceptance tests for large trees, locked files and changing-source jobs in the
   production orchestration, beyond the separate RC0 experiments.
 

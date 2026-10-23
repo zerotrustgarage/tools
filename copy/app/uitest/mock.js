@@ -5,6 +5,7 @@
   const templates = [{schema:1,catalog_version:1,id:'sample',description:'<img src=x onerror="window.__pwned=true">',fields:[{name:'source',kind:'path',description:'Source folder'},{name:'destination',kind:'path',description:'Destination folder'}],job:{...base,source:'{source}',destination:'{destination}'}}];
   let state={id:0,running:false,messages:[],phase:''}, sequence=0, ticks=0, active, approved='';
   const summary={directories:{total:2,copied:0,skipped:2,mismatch:0,failed:0,extras:0},files:{total:12,copied:12,skipped:0,mismatch:0,failed:0,extras:0},bytes:{total:8388608,copied:8388608,skipped:0,mismatch:0,failed:0,extras:0}};
+  const diagnostics={errors:[{code:32,count:2,cause:'File in use',suggestion:'Close the application holding the file, or retry during a maintenance window.',samples:['2026/10/23 12:34:56 ERROR 32 (0x00000020) Copying File C:\\日本語\\<img src=x onerror="window.__pwned=true">.txt']}]};
   const known = new Map(window.__catalog.map(x=>[x.token,x]));
   const describe = j => {
     const issues=[];
@@ -57,9 +58,13 @@
     },
     Status:async()=>{
       if(state.running && ++ticks>=3 && !window.__holdRun){
-        const outcome=state.mode==='plan'?'planned':'copied';
-        state={...state,running:false,phase:outcome,messages:[...state.messages,outcome],record:{schema:1,job:active,mode:state.mode,state:outcome,normalized_exit:0,started:state.started,finished:new Date().toISOString(),directory:'C:\\records\\2026-10-22\\0123456789abcdef01234567',phases:[{name:'preview',summary:copy(summary)},...(state.mode==='run'?[{name:'copy',summary:copy(summary)},{name:'convergence',summary:{...copy(summary),files:{...summary.files,copied:0},bytes:{...summary.bytes,copied:0}}}]:[])]}};
+        const failed=state.mode==='run' && window.__failNextCopy;
+        const outcome=failed?'failed':state.mode==='plan'?'planned':'copied';
+        const copyPhase={name:'copy',process:{native_exit:failed?8:1},summary:copy(summary),...(failed?{diagnostics:copy(diagnostics)}:{})};
+        const verifyPhase={name:'convergence',process:{native_exit:failed?1:0},summary:{...copy(summary),files:{...summary.files,copied:failed?1:0},bytes:{...summary.bytes,copied:failed?1024:0}}};
+        state={...state,running:false,phase:outcome,messages:[...state.messages,outcome],record:{schema:1,job:active,mode:state.mode,state:outcome,normalized_exit:failed?2:0,started:state.started,finished:new Date().toISOString(),directory:'C:\\records\\2026-10-22\\0123456789abcdef01234567',phases:[{name:'preview',process:{native_exit:1},summary:copy(summary)},...(state.mode==='run'?[copyPhase,verifyPhase]:[])]}};
         if(state.mode==='plan')approved=JSON.stringify(active);
+        if(failed)window.__failNextCopy=false;
       }
       return copy(state);
     },
@@ -71,6 +76,7 @@
     AcceptTemplate:async(t,accepted)=>{calls.push(['AcceptTemplate',accepted]);if(!accepted)throw Error('acceptance required');templates.push(copy(t));},
     ExportTemplate:async id=>{calls.push(['ExportTemplate',id]);return 'D:\\'+id+'.json';},
     History:async()=>copy(history),
+    HistoryRecord:async id=>{calls.push(['HistoryRecord',id]);return {schema:1,mode:'run',state:'failed',normalized_exit:2,job:{...base,source:'C:\\History',destination:'D:\\Archive'},started:'2026-10-22T12:00:00Z',finished:'2026-10-22T12:01:00Z',phases:[{name:'help',process:{native_exit:16,in_job_before_resume:true}},{name:'copy',process:{native_exit:8,in_job_before_resume:true},diagnostics:copy(diagnostics)},{name:'convergence',process:{native_exit:0,in_job_before_resume:false}}]};},
     HistoryJob:async id=>{calls.push(['HistoryJob',id]);return describe({...base,source:'C:\\History',destination:'D:\\Archive'});},
     RevealRecord:async id=>calls.push(['RevealRecord',id])
   }}};

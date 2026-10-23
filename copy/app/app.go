@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/zerotrustgarage/tools/copy/internal/catalog"
+	"github.com/zerotrustgarage/tools/copy/internal/cmdline"
 	"github.com/zerotrustgarage/tools/copy/internal/guard"
 	"github.com/zerotrustgarage/tools/copy/internal/job"
 	"github.com/zerotrustgarage/tools/copy/internal/private"
@@ -114,7 +115,7 @@ func describe(j job.Job) View {
 	if err == nil {
 		parts := []string{"& (Join-Path ([Environment]::SystemDirectory) 'Robocopy.exe')"}
 		for _, arg := range j.Arguments() {
-			parts = append(parts, "'"+strings.ReplaceAll(arg, "'", "''")+"'")
+			parts = append(parts, cmdline.PowerShellLiteral(arg))
 		}
 		command = strings.Join(parts, " ")
 	}
@@ -615,4 +616,8 @@ func (a *App) RevealRecord(id string) error {
 		return err
 	}
 	return p.RevealDirectory(dir)
+}
+
+func (a *App) HistoryRecord(id string) (copyrun.Record, error) {
+	return a.readRecord(id)
 }
