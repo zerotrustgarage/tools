@@ -111,10 +111,12 @@ func TestWinLDAPBinaryAttributeRejectsMalformedSID(t *testing.T) {
 	}
 }
 
-func TestWinLDAPBinaryAttributeRejectsPartialRangedTokenGroups(t *testing.T) {
+func TestWinLDAPBinaryAttributeRejectsMismatchedRangeCardinality(t *testing.T) {
 	fixture := startLDAPFixture(t, func() ([][]byte, int) {
 		return [][]byte{ldapEntry("CN=User,DC=example,DC=test",
-			ldapBinaryAttribute("tokenGroups;range=0-1499", []byte{1}),
+			// A valid S-1-5-513 isolates the inconsistent range count: the
+			// descriptor promises 1500 values but the response supplies one.
+			ldapBinaryAttribute("tokenGroups;range=0-1499", []byte{1, 1, 0, 0, 0, 0, 0, 5, 1, 2, 0, 0}),
 		)}, 0
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
