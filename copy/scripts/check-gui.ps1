@@ -185,8 +185,14 @@ try {
     $bitsDestination = Join-Path $root 'destination\日本語.bin'
     Set-Edit 'BITS DESTINATIONS' $bitsDestination
     Click-Button 'Copy BITS command'
-    $bitsCommand = Get-Clipboard -Raw
-    if (-not $bitsCommand.Contains('BitsTransfer\Start-BitsTransfer') -or -not $bitsCommand.Contains($bitsDestination)) { throw 'Native BITS command did not preserve its file pair' }
+    # UIA Invoke returns before the asynchronous WebView clipboard bridge finishes.
+    $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    do {
+        $bitsCommand = [string](Get-Clipboard -Raw)
+        if ($bitsCommand.Contains('BitsTransfer\Start-BitsTransfer') -and $bitsCommand.Contains($bitsDestination)) { break }
+        Start-Sleep -Milliseconds 100
+    } while ([DateTime]::UtcNow -lt $deadline)
+    if (-not $bitsCommand.Contains('BitsTransfer\Start-BitsTransfer') -or -not $bitsCommand.Contains($bitsDestination)) { throw 'Native BITS clipboard bridge did not return its file pair' }
     Save-DesktopScreenshot 'copy-native-bits.png'
     Write-Output 'COPY_NATIVE_BITS {"passed":true,"real_bridge":true,"literal_command_copy":true,"unicode_destination":true}'
     Write-Output 'COPY_NATIVE_GUI {"passed":true,"packaged_executable":true,"native_accessibility":true,"preview_unchanged":true,"unicode_content_equal":true,"convergence":true,"close_declined":true,"stop_canceled":true}'
