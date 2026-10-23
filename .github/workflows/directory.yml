@@ -1,0 +1,64 @@
+name: Directory
+
+on:
+  pull_request:
+    paths: ['directory/**', '.github/workflows/directory.yml', 'scripts/ci/install-go.sh', 'scripts/updates/**']
+  push:
+    branches: [main]
+    paths: ['directory/**', '.github/workflows/directory.yml', 'scripts/ci/install-go.sh', 'scripts/updates/**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: directory-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  engine:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: directory
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: ../scripts/ci/install-go.sh
+      - name: Format
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: Vet Linux and Windows
+        run: |
+          go vet ./...
+          GOOS=windows GOARCH=amd64 go vet ./...
+          GOOS=windows GOARCH=arm64 go vet ./...
+      - name: Race tests
+        run: go test -race ./...
+      - name: Shared update source
+        run: cmp internal/update/update.go ../scripts/updates/update.go
+      - name: Unsigned cross builds
+        run: |
+          for arch in amd64 arm64; do
+            GOOS=windows GOARCH=$arch CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/ztg-directory-$arch.exe" ./cmd/ztg-directory
+          done
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: directory
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.26.10'
+          cache: false
+      - name: Native tests and loopback transport checks (no domain access)
+        run: |
+          go test -v -timeout 90s ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: CLI help and release status
+        run: |
+          go run ./cmd/ztg-directory --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go run ./cmd/ztg-directory check-updates --json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

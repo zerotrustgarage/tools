@@ -13,7 +13,7 @@ implementation checks versions and opens official downloads for the user to inst
 | Readout | **Check for updates** in the status bar, in desktop and browser builds | Implemented |
 | TFTP | **Check for updates** in the desktop header; `ztg-tftp check-updates [--json]` | Implemented |
 | Copy | **Check for updates** in the desktop toolbar; `ztg-copy check-updates [--json]` | Implemented |
-| Directory | `ztg-directory check-updates` from D1, **Check for updates** in the console from D2; tag prefix `directory-v` added to the shared checker with the first package (D7) | Planned (`directory/docs/design.md`) |
+| Directory | `ztg-directory check-updates [--json]` reports `unreleased` locally in D1, with no network request; shared source is vendored, and `directory-v` selection arrives with the first package (D7) | Initial CLI; no release check until D7 (`directory/docs/design.md`) |
 
 The shared standalone checker also supports all four products, including Copy's desktop and CLI previews. From `scripts/updates/`, with the pinned Go toolchain:
 
@@ -67,7 +67,7 @@ exit 0, while network/response errors exit nonzero. No action is taken automatic
 ## Maintaining it
 
 The shared Go and browser implementations live in `scripts/updates/`. The Go code uses only the
-standard library. `sync.mjs` vendors identical source into the independent Scanner, TFTP and Copy Go
+standard library. `sync.mjs` vendors identical source into the independent Scanner, TFTP, Copy and Directory Go
 modules, and into Scanner's and TFTP's embedded frontends. Readout imports the browser source directly.
 This adds no module or shipping dependency. CI and release builds reject stale copies.
 
