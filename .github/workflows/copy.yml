@@ -132,11 +132,10 @@ jobs:
           cd ../..
           scripts/ci/check-pe.sh out/copy-desktop/ZTGCopy.exe gui amd64
           cp copy/app/README.txt out/copy-desktop/
-          (cd out/copy-desktop && zip -j ../ZTG-Copy-preview-windows-x64.zip ZTGCopy.exe ztg-copy.exe SHA256SUMS.txt README.txt)
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: copy-desktop-preview
-          path: out/ZTG-Copy-preview-windows-x64.zip
+          path: out/copy-desktop/
           retention-days: 7
 
   desktop-windows:
@@ -158,7 +157,7 @@ jobs:
         run: |
           npm install --global --ignore-scripts playwright@1.56.1
           if ($LASTEXITCODE -ne 0) { throw 'Playwright installation failed' }
-          ./copy/scripts/check-gui.ps1 -Archive ./out/copy-package/ZTG-Copy-preview-windows-x64.zip
+          ./copy/scripts/check-gui.ps1 -PackageDirectory ./out/copy-package
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

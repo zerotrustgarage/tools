@@ -6,16 +6,23 @@ const {chromium}=createRequire(import.meta.url)('playwright');
 const [port,root,out]=process.argv.slice(2);
 if(!port||!root||!out)throw Error('native.mjs requires CDP port, fixture root and screenshot directory');
 await mkdir(out,{recursive:true});
-let browser;
+let browser,lastConnectionError;
+const watchdog=setTimeout(()=>{console.error('Native desktop UI test exceeded four minutes');process.exit(1);},240000);
 for(let attempt=0;attempt<45;attempt++){
   try{browser=await chromium.connectOverCDP('http://127.0.0.1:'+port,{timeout:1000});break;}
-  catch{await new Promise(resolve=>setTimeout(resolve,1000));}
+  catch(error){lastConnectionError=error;if(attempt===0)console.log('CDP first attempt: '+error.message);await new Promise(resolve=>setTimeout(resolve,1000));}
 }
-if(!browser)throw Error('Windows WebView2 debugging endpoint did not become ready');
+if(!browser){
+  console.error('CDP last attempt: '+lastConnectionError?.stack);
+  try{const response=await fetch('http://127.0.0.1:'+port+'/json/version');console.error('CDP version: '+await response.text());}catch(error){console.error('CDP HTTP: '+error);}
+  clearTimeout(watchdog);throw Error('Windows WebView2 debugging endpoint did not become ready');
+}
+console.log('Native desktop: CDP connected');
 try{
   const context=browser.contexts()[0];
   let page=context.pages()[0];
   if(!page)page=await context.waitForEvent('page',{timeout:15000});
+  page.setDefaultTimeout(15000);
   const errors=[];page.on('pageerror',error=>errors.push(String(error)));
   await page.waitForFunction(()=>window.go?.main?.App && document.getElementById('version')?.textContent.includes('0.1.0'),null,{timeout:30000});
   const source=join(root,'source space'),destination=join(root,'destination');
@@ -65,4 +72,4 @@ try{
   assert.equal(await page.locator('#preview-actions').isVisible(),false);
   assert.deepEqual(errors,[]);
   console.log('COPY_NATIVE_GUI '+JSON.stringify({passed:true,real_wails_bridge:true,preview_unchanged:true,unicode_content_equal:true,templates:true,history:true,stop_canceled:true,themes:['light','dark']}));
-}finally{await browser.close();}
+}finally{clearTimeout(watchdog);await browser.close();}
