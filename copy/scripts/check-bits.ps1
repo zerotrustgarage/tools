@@ -44,7 +44,7 @@ try {
     }
     $baseOptions = $job.options
     $marker = Join-Path $root 'injection-marker'
-    $description = "O'Brien ‘curly’ " + '$(New-Item ' + $marker + '); $env:TEMP & 日本語-😀'
+    $description = "O'Brien ‘curly’ ‚low‛ " + '$(New-Item ' + $marker + '); $env:TEMP & 日本語-😀'
     $view = Get-Design ($baseOptions + @(@{ name = 'Description'; values = @($description) }, @{ name = 'RetryInterval'; values = @('60') }, @{ name = 'RetryTimeout'; values = @('3600') }, @{ name = 'TransferPolicy'; values = @('Standard') }))
     $literalTokens, $literalErrors = $null, $null
     $descriptionAst = [Management.Automation.Language.Parser]::ParseInput($view.command, [ref]$literalTokens, [ref]$literalErrors)

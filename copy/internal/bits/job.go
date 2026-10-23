@@ -272,7 +272,7 @@ func digits(s string) bool {
 
 func quote(s string) string {
 	// PowerShell also recognizes typographic single quotes as string delimiters.
-	return "'" + strings.NewReplacer("'", "''", "‘", "‘‘", "’", "’’").Replace(s) + "'"
+	return "'" + strings.NewReplacer("'", "''", "‘", "‘‘", "’", "’’", "‚", "‚‚", "‛", "‛‛").Replace(s) + "'"
 }
 
 func Describe(j Job) View {

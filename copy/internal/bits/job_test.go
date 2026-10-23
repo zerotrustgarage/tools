@@ -15,10 +15,10 @@ func sample() Job {
 func TestQuotedPowerShellPreservesLiteralArguments(t *testing.T) {
 	j := sample()
 	j.Transfers = append(j.Transfers, Transfer{Source: "https://example.net/second.bin", Destination: `C:\Downloads\second.bin`})
-	payload := "O'Brien ‘curly’ $(New-Item C:\\injected); $env:TEMP & Unicode 日本語-😀"
+	payload := "O'Brien ‘curly’ ‚low‛ $(New-Item C:\\injected); $env:TEMP & Unicode 日本語-😀"
 	j.Options = append(j.Options, Option{Name: "Description", Values: []string{payload}}, Option{Name: "Credential"})
 	view := Describe(j)
-	if !view.Valid || !strings.Contains(view.Command, "'O''Brien ‘‘curly’’ $(New-Item") || !strings.Contains(view.Command, "'https://example.net/file.bin', 'https://example.net/second.bin'") {
+	if !view.Valid || !strings.Contains(view.Command, "'O''Brien ‘‘curly’’ ‚‚low‛‛ $(New-Item") || !strings.Contains(view.Command, "'https://example.net/file.bin', 'https://example.net/second.bin'") {
 		t.Fatalf("literal values were changed: %+v", view)
 	}
 	if !strings.Contains(view.Command, "-Credential (Get-Credential)") || !strings.HasSuffix(view.Command, "-ErrorAction Stop") || !strings.HasPrefix(view.Script, "Import-Module BitsTransfer") {
