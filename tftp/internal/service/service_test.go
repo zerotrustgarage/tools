@@ -87,6 +87,23 @@ func TestReloadRejectsInvalidAndRollsBack(t *testing.T) {
 	if e = get(); e != nil {
 		t.Fatal("failed binding did not roll back", e)
 	}
+	generationDir := filepath.Join(base, ".ztg-tftp-sessions")
+	before, e := os.ReadDir(generationDir)
+	if e != nil {
+		t.Fatal(e)
+	}
+	close(reload)
+	time.Sleep(100 * time.Millisecond)
+	if e = get(); e != nil {
+		t.Fatal("closed reload channel stopped service", e)
+	}
+	after, e := os.ReadDir(generationDir)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if len(after) != len(before) {
+		t.Fatalf("closed reload channel created %d audit generations; before=%d after=%d", len(after)-len(before), len(before), len(after))
+	}
 	cancel()
 	select {
 	case e := <-done:
@@ -95,6 +112,34 @@ func TestReloadRejectsInvalidAndRollsBack(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("service did not stop")
+	}
+}
+
+func TestLoadRejectsAmbiguousAndUnpairedTLSConfig(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "images")
+	if e := os.Mkdir(root, 0700); e != nil {
+		t.Fatal(e)
+	}
+	path := filepath.Join(base, "config.json")
+	for _, tc := range []struct {
+		name string
+		data string
+	}{
+		{"duplicate key", `{"root":"images","root":"images"}`},
+		{"case variant duplicate key", `{"root":"images","ROOT":"images"}`},
+		{"nested duplicate remap key", `{"root":"images","remap":[{"from":"a","FROM":"a","to":"b"}]}`},
+		{"trailing payload", `{"root":"images"} {}`},
+		{"CA without TLS", `{"root":"images","syslog_ca":"ca.pem"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if e := os.WriteFile(path, []byte(tc.data), 0600); e != nil {
+				t.Fatal(e)
+			}
+			if _, e := Load(path); e == nil {
+				t.Fatal("accepted invalid configuration")
+			}
+		})
 	}
 }
 func TestTLSForwardFramingAndTrust(t *testing.T) {
@@ -153,6 +198,27 @@ func TestTLSForwardFramingAndTrust(t *testing.T) {
 type brokenSink struct{}
 
 func (brokenSink) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
+
+type shortSink struct{}
+
+func (shortSink) Write(b []byte) (int, error) { return len(b) - 1, nil }
+
+func TestLocalAuditFailureCancelsService(t *testing.T) {
+	for _, local := range []io.Writer{brokenSink{}, shortSink{}} {
+		t.Run(fmt.Sprintf("%T", local), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			w := &fanout{local: local, remote: io.Discard, cancel: cancel}
+			if _, e := w.Write([]byte("record\n")); e == nil {
+				t.Fatal("local audit failure was ignored")
+			}
+			if ctx.Err() == nil {
+				t.Fatal("local audit failure did not cancel service")
+			}
+		})
+	}
+}
+
 func TestForwardFailureRetainsShutdownAudit(t *testing.T) {
 	var local bytes.Buffer
 	ctx, cancel := context.WithCancel(context.Background())

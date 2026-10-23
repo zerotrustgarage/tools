@@ -39,8 +39,8 @@ These actions were completed by the repository owner. New release workflows stil
 | R6 | CI time: cache the Microsoft SDK download (about 2 GB per Windows build) and the Rust build with `actions/cache`. This affects build time only; nothing cached ships, so installer size does not change | Medium | Open |
 | R7 | Public repository: every workflow runs on GitHub-hosted runners (free for public repositories, isolated from the organization's network); none may use the self-hosted pool (O8) | High | **Done** |
 | R8 | Real Windows in CI: the `windows-install` job installs the NSIS installer and the MSI on `windows-2025`, checks files, shortcut and registry, launches Readout (the window title proves the UI loaded) and opens a file, then uninstalls (`scripts/ci/test-installer-windows.ps1`) | High | **Done** |
-| R9 | Distinct application and tray icon assets using the ZTG palette and wordmark cursor; transparent backgrounds | Medium | **Built** for Scanner, Copy, TFTP and Readout. Scanner, TFTP and Readout consumers updated; Copy desktop consumer remains in its own release work |
-| R10 | Every tool must support Check for updates; shared version/release checks, safe browser handoff and CLI JSON status | High | **Built** for Scanner/TFTP/Readout UI and Scanner/TFTP CLI; shared Copy support ready, application action required when Copy ships. Automatic installation remains future work; `docs/updates.md` |
+| R9 | Distinct application and tray icon assets using the ZTG palette and wordmark cursor; transparent backgrounds | Medium | **Built** for Scanner, Copy, TFTP and Readout. Scanner, TFTP and Readout consumers updated; Copy desktop consumers remain in its future slices |
+| R10 | Every tool must support Check for updates; shared version/release checks, safe browser handoff and CLI JSON status | High | **Built** for Scanner/Readout/TFTP UI and Scanner/TFTP CLI; shared Copy support ready, application action required when Copy ships. Automatic installation remains future work; `docs/updates.md` |
 
 ## 3. ZTG Readout
 
@@ -113,7 +113,7 @@ is what makes Scanner easy to approve in client and CMMC environments.
 
 ## 5. ZTG TFTP
 
-T1 and T2 merged; T3 to T5 and the two approved T6 features are implemented. The research behind it (Tftpd64, SolarWinds TFTP Server, tftpd-hpa, atftpd,
+T1 to T5 and the two approved T6 features are merged. The research behind it (Tftpd64, SolarWinds TFTP Server, tftpd-hpa, atftpd,
 dnsmasq, Open TFTP Server, their CVE history and the gaps across them) is in
 `tftp/docs/research.md`, with its sources.
 
@@ -122,8 +122,8 @@ dnsmasq, Open TFTP Server, their CVE history and the gaps across them) is in
 | TF1 | T1 follows the proposed name, own protocol engine and 60-minute session; retention is manual deletion; include image manifests and Scanner import, defer HTTP boot and ProxyDHCP | High | Resolved |
 | TF2 | T1: protocol engine, read-only server, client, scope guard, limits, name policy, audit log, fuzzing, interop tests, `tftp.yml` | High | Merged |
 | TF3 | T2: drop box uploads and findings on collected configs | High | Merged |
-| TF4 | T3: Windows desktop app; palette enforcement, lifecycle and UI tests | Medium | Implemented |
-| TF5 | T4 service mode and T5 packaging and signing (reuses Scanner's S4 work, SC1) | Medium | Implemented |
+| TF4 | T3: Windows desktop app; palette enforcement, lifecycle and UI tests | Medium | Merged |
+| TF5 | T4 service mode and T5 packaging and signing (reuses Scanner's S4 work, SC1) | Medium | Merged; first production signing/publication run remains |
 
 ## 6. ZTG Directory
 
