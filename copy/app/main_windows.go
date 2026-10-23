@@ -90,11 +90,11 @@ func main() {
 				return false
 			}
 			answer, err := runtime.MessageDialog(ctx, runtime.MessageDialogOptions{
-				Type: runtime.WarningDialog, Title: "Copy in progress",
+				Type: runtime.QuestionDialog, Title: "Copy in progress",
 				Message: "Stop the current operation and close ZTG Copy?",
-				Buttons: []string{"Cancel", "Stop and close"}, DefaultButton: "Cancel", CancelButton: "Cancel",
+				Buttons: []string{"Yes", "No"}, DefaultButton: "No", CancelButton: "No",
 			})
-			if err != nil || answer != "Stop and close" {
+			if err != nil || answer != "Yes" {
 				return true
 			}
 			app.Stop()

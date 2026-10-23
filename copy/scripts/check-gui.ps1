@@ -139,12 +139,30 @@ try {
     Click-Button 'Start copy'
     Click-Button 'Start copy'
     Find-Control 'Copying' | Out-Null
+    # Declining the native close prompt must keep the operation and app alive.
+    if (-not $process.CloseMainWindow()) { throw 'Could not request native window close' }
+    $dialog = $null
+    $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    do {
+        $condition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Copy in progress')
+        $dialog = [Windows.Automation.AutomationElement]::RootElement.FindFirst([Windows.Automation.TreeScope]::Children, $condition)
+        if ($dialog) { break }
+        Start-Sleep -Milliseconds 100
+    } while ([DateTime]::UtcNow -lt $deadline)
+    if (-not $dialog) { throw 'Native close confirmation did not open' }
+    $noCondition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'No')
+    $noButton = $dialog.FindFirst([Windows.Automation.TreeScope]::Descendants, $noCondition)
+    if (-not $noButton) { throw 'Native close confirmation did not offer No' }
+    $noButton.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
+    $process.Refresh()
+    if ($process.HasExited) { throw 'Declining close exited the app' }
+    Write-Output 'Native close confirmation: No keeps the app open'
     Click-Button 'Stop'
     Find-Control 'Operation stopped' | Out-Null
     $stopped = Wait-CompletedRecord 3 'canceled'
     if ($stopped.normalized_exit -ne 3) { throw 'Stopped copy was reported as success' }
     Save-DesktopScreenshot 'copy-native-stopped.png'
-    Write-Output 'COPY_NATIVE_GUI {"passed":true,"packaged_executable":true,"native_accessibility":true,"preview_unchanged":true,"unicode_content_equal":true,"convergence":true,"stop_canceled":true}'
+    Write-Output 'COPY_NATIVE_GUI {"passed":true,"packaged_executable":true,"native_accessibility":true,"preview_unchanged":true,"unicode_content_equal":true,"convergence":true,"close_declined":true,"stop_canceled":true}'
 } catch {
     if ($window) {
         foreach ($element in $window.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition)) {
