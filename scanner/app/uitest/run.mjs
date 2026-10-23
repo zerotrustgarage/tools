@@ -53,6 +53,34 @@ try {
     // Prefilled from the machine's networks.
     await page.waitForFunction(() => document.getElementById("targets").value === "192.168.50.0/24");
     assert.equal(await page.title(), "ZTG Scanner 0.2.0-test");
+    assert.equal(await page.textContent("#build-version"), "v0.2.0-test");
+    assert.equal(await page.locator('#titlebar #theme').count(), 1, "appearance is in the app/title bar");
+    assert.equal(await page.locator('#titlebar #export-btn').count(), 1, "export is in the app/title bar");
+    assert.ok(await page.locator('#window-controls').isVisible());
+    // Explicit themes must override Windows, persist through restart, and reach native chrome.
+    await page.selectOption('#theme', 'dark');
+    assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(2, 12, 27)');
+    assert.ok((await page.evaluate(() => window.__calls)).some(c => c[0] === 'WindowSetDarkTheme'));
+    if (shots) await page.screenshot({ path: join(shots, `unified-bar-dark-${scheme}-system.png`) });
+    await page.reload();
+    await page.waitForFunction(() => document.getElementById('targets').value === '192.168.50.0/24');
+    assert.equal(await page.inputValue('#theme'), 'dark');
+    assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(2, 12, 27)');
+    await page.selectOption('#theme', 'light');
+    assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(245, 247, 249)');
+    assert.ok((await page.evaluate(() => window.__calls)).some(c => c[0] === 'WindowSetLightTheme'));
+    await page.selectOption('#theme', 'auto');
+    const otherScheme = scheme === 'dark' ? 'light' : 'dark';
+    await page.emulateMedia({ colorScheme: otherScheme });
+    await page.waitForFunction(expected => getComputedStyle(document.body).backgroundColor === expected,
+      otherScheme === 'dark' ? 'rgb(2, 12, 27)' : 'rgb(245, 247, 249)');
+    await page.waitForFunction(expected => window.__calls.filter(c => c[0] === 'WindowSetBackgroundColour').at(-1).slice(1, 4).join(',') === expected,
+      otherScheme === 'dark' ? '2,12,27' : '245,247,249');
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.click('#win-max');
+    await page.waitForFunction(() => document.getElementById('win-max').getAttribute('aria-label') === 'Restore');
+    await page.click('#win-max');
+    await page.waitForFunction(() => document.getElementById('win-max').getAttribute('aria-label') === 'Maximize');
     assert.equal(updateRequests, 0, "update checks must be explicit");
     await page.click("#check-updates");
     await page.waitForFunction(() => document.querySelector("#ztg-update-dialog [role=status]")?.textContent.includes("Update available: 0.5.0"));
@@ -259,20 +287,20 @@ try {
 
     // Theme: auto, then light, then dark, each overriding the Windows setting, and remembered.
     const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-    assert.equal(await page.getAttribute("#theme-btn", "data-choice"), "auto");
-    await page.click("#theme-btn");
+    assert.equal(await page.inputValue("#theme"), "auto");
+    await page.selectOption("#theme", "light");
     assert.equal(await page.getAttribute("html", "data-theme"), "light");
     assert.equal(await bg(), "rgb(245, 247, 249)");
     // The native window background follows the theme, so a light window never flashes dark.
     assert.deepEqual((await page.evaluate(() => window.__calls)).filter((c) => c[0] === "WindowSetBackgroundColour").at(-1), ["WindowSetBackgroundColour", 245, 247, 249, 255]);
-    await page.click("#theme-btn");
+    await page.selectOption("#theme", "dark");
     assert.equal(await page.getAttribute("html", "data-theme"), "dark");
     assert.equal(await bg(), "rgb(2, 12, 27)");
     if (shots) await page.screenshot({ path: join(shots, `ui-titlebar-dark-from-${scheme}.png`), clip: { x: 0, y: 0, width: 1320, height: 140 } });
     await page.reload();
     await page.waitForSelector("#titlebar:not([hidden])");
     assert.equal(await page.getAttribute("html", "data-theme"), "dark", "theme not remembered");
-    await page.click("#theme-btn");
+    await page.selectOption("#theme", "auto");
     assert.equal(await page.getAttribute("html", "data-theme"), null);
     assert.equal(await bg(), scheme === "dark" ? "rgb(2, 12, 27)" : "rgb(245, 247, 249)");
 
@@ -350,7 +378,7 @@ try {
     assert.equal(await page.inputValue("#site"), "Unsaved rename");
 
     await page.setViewportSize({ width: 960, height: 640 });
-    const clippedControls = await page.$$eval(".inventory-bar button, .filters button, .filters select", nodes => nodes.filter(n => n.getBoundingClientRect().right > innerWidth).map(n => n.id));
+    const clippedControls = await page.$$eval("#titlebar button, #titlebar select, .inventory-bar button, .filters button, .filters select", nodes => nodes.filter(n => n.getBoundingClientRect().right > innerWidth).map(n => n.id));
     assert.deepEqual(clippedControls, [], "inventory controls outside the minimum window");
 
     assert.deepEqual(errors, [], "page errors");
