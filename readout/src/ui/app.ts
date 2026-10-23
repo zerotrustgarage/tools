@@ -89,6 +89,8 @@ export class App {
   private readonly banner = el('div', { class: 'banner', role: 'status', hidden: '' });
   private readonly editorHost = el('div', { class: 'pane editor-pane' });
   private readonly preview = el('article', { class: 'markdown-body', 'aria-label': 'Preview' });
+  /** Folded callouts and <details> the reader opened or closed in this document, by position. */
+  private readonly folds = new Map<number, boolean>();
   private readonly previewPane = el('div', { class: 'pane preview-pane' }, this.preview);
   private readonly panes = el('div', { class: 'panes' });
   private readonly workspace = el('main', { class: 'workspace' });
@@ -128,6 +130,8 @@ export class App {
     window.addEventListener('keydown', (event) => this.globalShortcut(event));
     this.preview.addEventListener('click', (event) => void this.previewClick(event));
     this.preview.addEventListener('dblclick', (event) => this.previewDoubleClick(event));
+    // toggle does not bubble, so it is caught on the way down.
+    this.preview.addEventListener('toggle', (event) => this.rememberFold(event), true);
     try {
       const initial = await this.platform.initial();
       // A file named on the command line is remembered too; only the empty start is not.
@@ -362,6 +366,7 @@ export class App {
     });
     this.notify(readOnly);
     this.syncLine = 0;
+    this.folds.clear();
     this.previewPane.scrollTo({ top: 0 });
     this.status.cursor.textContent = 'Ln 1, Col 1';
     this.status.encoding.textContent = format.validUtf8 ? (format.bom ? 'UTF-8 with BOM' : 'UTF-8') : 'Not UTF-8';
@@ -571,6 +576,10 @@ export class App {
   private async print(): Promise<void> {
     window.clearTimeout(this.renderTimer);
     await this.renderPreview();
+    // Folded callouts and <details> print open; the reader's folds return afterwards.
+    const closed = [...this.preview.querySelectorAll('details')].filter((d) => !d.open);
+    closed.forEach((d) => (d.open = true));
+    window.addEventListener('afterprint', () => closed.forEach((d) => (d.open = false)), { once: true });
     window.print();
   }
 
@@ -630,6 +639,8 @@ export class App {
     this.objectUrls.forEach((u) => URL.revokeObjectURL(u));
     this.objectUrls = urls;
     this.preview.replaceChildren(...container.childNodes);
+    const details = this.preview.querySelectorAll('details');
+    for (const [index, open] of this.folds) if (details[index]) details[index].open = open;
     if (this.pendingFragment !== null) {
       this.scrollToFragment(this.pendingFragment);
       this.pendingFragment = null;
@@ -704,6 +715,14 @@ export class App {
   }
 
   /** Double-clicking rendered text moves the editor to its source line. */
+  /** Folds are kept by position, so a fold the reader opened stays open while they type. */
+  private rememberFold(event: Event): void {
+    const target = event.target;
+    if (!(target instanceof HTMLDetailsElement)) return;
+    const index = [...this.preview.querySelectorAll('details')].indexOf(target);
+    if (index >= 0) this.folds.set(index, target.open);
+  }
+
   private previewDoubleClick(event: MouseEvent): void {
     if (this.doc.readOnly) return;
     const block = (event.target as Element).closest<HTMLElement>('[data-line]');

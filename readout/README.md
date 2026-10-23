@@ -13,6 +13,7 @@ source.
 | --- | --- |
 | CommonMark and GitHub Flavored Markdown | Tables with alignment, task lists, strikethrough, autolinks, footnotes |
 | GitHub alerts | `> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]` |
+| Callouts and admonitions | Obsidian `> [!type] Title` with every type and alias, foldable with `+` or `-`; MkDocs `!!! type "Title"` and `???`/`???+`; Docusaurus `:::type[Title]` to `:::`. Folded callouts print open |
 | Inline HTML | Colour spans, highlights, `<details>`, `<kbd>`, `<sub>`, `<sup>`, `<picture>` (falls back to its `<img>`) |
 | Math | `$inline$`, `$$display$$` and ` ```math ` fences through KaTeX; `$5 to $10` stays money |
 | Diagrams | ` ```mermaid ` fences, loaded only when a document has one |
