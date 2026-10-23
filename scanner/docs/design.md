@@ -1,6 +1,6 @@
 # ZTG Scanner: design
 
-Status (October 22, 2026): slices S1 (engine and CLI), S2 (desktop app), S3 (SNMPv3 inventory) and S4 (packaging
+Status (October 23, 2026): slices S1 (engine and CLI), S2 (desktop app), S3 (SNMPv3 inventory) and S4 (packaging
 and release pipeline), and S5 (actions, local inventories and comparison) are built. Owner signing setup is
 complete; S4's first signed release awaits a successful production release run. S6 is planned.
 
@@ -172,6 +172,23 @@ addresses reach fixed executables in the Windows system directory, without a she
 standard service port; imported public addresses require a fresh authorization. Diagnostics have a 30-second limit.
 Wake-on-LAN is a separate, explicitly confirmed action: one magic packet to the most specific directly connected
 internal IPv4 network's broadcast address, never a forwarded or arbitrary broadcast. No credentials are persisted.
+
+### Saved target sets (SC9)
+
+Target sets contain a client/site label, a set name and target specifications only. Up to 50 sets are kept in the
+current user's WebView storage. They contain no probe settings, SNMP credentials or public-range authorization.
+Saving, selecting and importing sets never resolves a hostname or starts a scan. Syntax validation is local;
+the existing scope guard, DNS resolution and 65,536-host limit still run when the technician presses Scan.
+
+Text imports use an explicit file chooser and are limited to 64 KiB of UTF-8 text and 4,096 target specifications.
+Blank lines and `#` comments are allowed, with comma, semicolon or whitespace separators. Addresses, IPv4 CIDR
+blocks, IPv4 ranges and hostnames use the same syntax as the scan input. Invalid files leave the draft and active
+inventory unchanged. Public target specifications may be saved, but still require fresh authorization at scan time.
+
+Using a target set starts a new site inventory after an unsaved-changes confirmation, so annotations cannot carry
+into another client's scan. It clears SNMP credentials and disables SNMP. Importing fills the editable draft;
+the technician explicitly chooses when to use it. Duplicate names within a client require overwrite confirmation,
+and deletion requires confirmation. Storage failures must be reported as failures to save.
 
 ## 10. Not in scope
 

@@ -1,6 +1,6 @@
 # Roadmap: open work and recommended improvements
 
-Status as of October 22, 2026. This file lists what is not finished and what is recommended for
+Status as of October 23, 2026. This file lists what is not finished and what is recommended for
 ZTG Readout, ZTG Scanner, ZTG TFTP and the repository as a whole. The recommendations come from the work so
 far and from comparing both tools with established products in their categories (sources at the
 end). Each tool's own design and checks are in its folder (`readout/`, `scanner/`, `tftp/`); Scanner's
@@ -98,7 +98,7 @@ credentials, no cloud reporting.
 | SC6 | Saved scans per client site and change detection: new, missing and changed devices since the last scan (extends S5's compare). Shadow IT discovery is the main reason MSPs run these tools | High | **Built**: site-labeled files and comparison, with coverage and identity checks; Fing |
 | SC7 | Scheduled rescans with a desktop notification when a new device appears; local only | Medium | Fing |
 | SC8 | Per-device notes and tags (owner, location, inside the CUI boundary) kept in the scan file and exported, so an export is a starting point for a CMMC CM.L2-3.4.1 asset inventory and a client's SSP | High | **Built**: notes, tags, favorites and historical MACs in JSON/CSV; Lansweeper |
-| SC9 | Saved target sets per client; import target lists from a file | Medium | Angry IP Scanner |
+| SC9 | Saved target sets per client; import target lists from a file | Medium | **Built**: named local sets, bounded UTF-8 text import, explicit use and scan, fresh public-range authorization; Angry IP Scanner |
 | SC10 | Technician-defined "Open with" commands with `{ip}` and `{hostname}` placeholders (PuTTY, mstsc, an RMM console URL). Commands come from the technician's settings, never from what a device reports | Medium | Angry IP Scanner, Advanced IP Scanner |
 | SC11 | Deeper identification through single standard exchanges: WS-Discovery (printers, ONVIF cameras), LLMNR names, an SMB2 negotiate for OS and version, an HTTP favicon fingerprint | Medium | Fing |
 | SC12 | Client-ready reports: branded HTML or XLSX export, and CSV layouts that match common RMM and PSA import templates | Medium | Advanced IP Scanner |

@@ -49,6 +49,7 @@
              placeholder="192.168.1.0/24, 10.0.0.1-50, printer.lan" aria-describedby="target-help">
       <button type="button" id="suggest-btn" class="ghost" aria-haspopup="menu" aria-expanded="false" title="My networks">My networks ▾</button>
       <ul id="suggest-menu" class="menu" role="menu" hidden></ul>
+      <button type="button" id="target-sets-btn" class="ghost" aria-controls="target-sets" aria-expanded="false">Target sets</button>
       <button type="submit" id="scan-btn" class="primary">Scan</button>
     </form>
   </header>
@@ -125,6 +126,28 @@
     </div>
     <p class="muted small">Defaults identify devices without logging in to anything. Only private networks are scanned unless you confirm you are authorized to scan a public range.</p>
     <div class="row end"><button type="button" id="settings-reset" class="ghost">Restore defaults</button><button type="button" id="settings-close" class="primary">Done</button></div>
+  </aside>
+
+  <aside id="target-sets" class="drawer target-sets" hidden role="dialog" aria-modal="false" aria-labelledby="target-sets-title" tabindex="-1">
+    <button type="button" id="target-sets-close" class="ghost close" aria-label="Close saved target sets">✕</button>
+    <h2 id="target-sets-title">Saved target sets</h2>
+    <label for="target-set-list">Saved sets</label>
+    <select id="target-set-list" size="5" aria-describedby="target-set-status"></select>
+    <p id="target-set-status" class="muted small" role="status" aria-live="polite"></p>
+    <button type="button" id="target-set-reset" class="danger" hidden>Reset saved sets</button>
+    <label for="target-set-site">Client / site label</label>
+    <input id="target-set-site" type="text" maxlength="200" autocomplete="off">
+    <label for="target-set-name">Set name</label>
+    <input id="target-set-name" type="text" maxlength="100" autocomplete="off">
+    <label for="target-set-targets">Networks</label>
+    <textarea id="target-set-targets" rows="5" spellcheck="false" aria-describedby="target-set-help"></textarea>
+    <p id="target-set-help" class="muted small">Save up to 50 named sets on this computer. Import UTF-8 text files up to 64 KiB. Separate networks with spaces, newlines, commas or semicolons; # starts a comment. Choose Use targets, then Scan when ready.</p>
+    <div class="target-set-actions">
+      <button type="button" id="target-set-import">Import file</button>
+      <button type="button" id="target-set-save" class="primary">Save set</button>
+      <button type="button" id="target-set-load">Use targets</button>
+      <button type="button" id="target-set-delete" class="danger">Delete</button>
+    </div>
   </aside>
 
   <aside id="comparison" class="drawer comparison" hidden aria-label="Scan comparison">

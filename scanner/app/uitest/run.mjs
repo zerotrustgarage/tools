@@ -30,6 +30,216 @@ const url = `http://127.0.0.1:${server.address().port}/`;
 
 const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
 let failed = false;
+
+async function targetSetTests(scheme) {
+  const page = await browser.newPage({ viewport: { width: 1320, height: 820 }, colorScheme: scheme });
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await page.addInitScript({ path: join(here, "mock.js") });
+  await page.goto(url);
+  await page.waitForFunction(() => document.getElementById("targets")?.value === "192.168.50.0/24");
+  await page.click("#settings-btn");
+  await page.check("#snmp-on");
+  await page.fill("#snmp-user", "saved-target-test-user");
+  await page.fill("#snmp-auth-pass", "saved-target-auth-secret");
+  await page.fill("#snmp-priv-pass", "saved-target-priv-secret");
+  await page.click("#settings-close");
+  await page.click("#target-sets-btn");
+  await page.waitForSelector("#target-sets:not([hidden])");
+
+  const unsafeSite = '<img src=x onerror="window.__pwned=1">';
+  const unsafeName = '<svg onload="window.__pwned=2">';
+  await page.fill("#target-set-site", unsafeSite);
+  await page.fill("#target-set-name", unsafeName);
+  await page.fill("#target-set-targets", "192.168.60.0/24 # office\n192.168.60.1, printer.lan");
+  await page.click("#target-set-save");
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem("ztg-scanner:target-sets") || "{}").sets?.length === 1);
+  let stored = await page.evaluate(() => JSON.parse(localStorage.getItem("ztg-scanner:target-sets")));
+  assert.deepEqual(Object.keys(stored).sort(), ["sets", "version"]);
+  assert.equal(stored.version, 1);
+  assert.deepEqual(stored.sets[0], { site: unsafeSite, name: unsafeName, targets: "192.168.60.0/24, 192.168.60.1, printer.lan" });
+  assert.ok(!JSON.stringify(stored).includes("secret"), "saved target sets must exclude SNMP credentials");
+  assert.ok(!JSON.stringify(stored).includes("passphrase"));
+  assert.equal((await page.evaluate(() => window.__calls)).filter(c => ["StartScan", "DeviceAction", "OpenWeb"].includes(c[0])).length, 0,
+    "saving a target set must not scan, probe or authorize a public target");
+  assert.equal(await page.locator("#target-sets option").count(), 1);
+  assert.equal(await page.locator("#target-sets img, #target-sets svg").count(), 0, "saved labels must be inserted as text");
+  assert.equal(await page.evaluate(() => window.__pwned), undefined);
+
+  // Reload proves local persistence. Selecting a set fills an editable draft.
+  await page.reload();
+  await page.waitForFunction(() => document.getElementById("targets")?.value === "192.168.50.0/24");
+  await page.click("#target-sets-btn");
+  await page.selectOption("#target-set-list", { index: 0 });
+  assert.equal(await page.inputValue("#target-set-site"), unsafeSite);
+  assert.equal(await page.inputValue("#target-set-name"), unsafeName);
+  assert.equal(await page.inputValue("#target-set-targets"), stored.sets[0].targets);
+
+  // An import is a draft edit only. Cancellation and errors preserve it.
+  const draftBeforeImport = await page.inputValue("#target-set-targets");
+  await page.evaluate(() => { window.__targetImport = { result: "" }; });
+  await page.click("#target-set-import");
+  assert.equal(await page.inputValue("#target-set-targets"), draftBeforeImport);
+  await page.evaluate(() => { window.__targetImport = { error: "fixture import failure" }; });
+  await page.click("#target-set-import");
+  assert.equal(await page.inputValue("#target-set-targets"), draftBeforeImport);
+  assert.equal((await page.evaluate(() => window.__calls)).filter(c => ["StartScan", "DeviceAction"].includes(c[0])).length, 0);
+  await page.evaluate(() => { window.__targetImport = { result: "10.20.0.0/16\n10.20.0.0/16" }; });
+  await page.click("#target-set-import");
+  await page.waitForFunction(() => document.getElementById("target-set-targets").value === "10.20.0.0/16");
+
+  // Saving the same site/name asks before replacing the existing entry.
+  await page.fill("#target-set-targets", "10.20.1.0/24");
+  await page.click("#target-set-save");
+  await page.waitForSelector("#modal:not([hidden])");
+  await page.click("#modal-cancel");
+  stored = await page.evaluate(() => JSON.parse(localStorage.getItem("ztg-scanner:target-sets")));
+  assert.equal(stored.sets.length, 1);
+  assert.equal(stored.sets[0].targets, "192.168.60.0/24, 192.168.60.1, printer.lan");
+  await page.click("#target-set-save");
+  await page.waitForSelector("#modal:not([hidden])");
+  await page.click("#modal-ok");
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem("ztg-scanner:target-sets") || "{}").sets?.[0]?.targets === "10.20.1.0/24");
+
+  // Add a second client set, then apply the public target draft. Applying only
+  // changes the active client and target field; Scan still asks authorization.
+  await page.fill("#target-set-site", "Other client");
+  await page.fill("#target-set-name", "Public test");
+  await page.fill("#target-set-targets", "8.8.8.8");
+  await page.click("#target-set-save");
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem("ztg-scanner:target-sets") || "{}").sets?.length === 2);
+  if (shots) {
+    await page.screenshot({ path: join(shots, `target-sets-${scheme}.png`) });
+    await page.setViewportSize({ width: 960, height: 640 });
+    await page.screenshot({ path: join(shots, `target-sets-${scheme}-960.png`) });
+    await page.setViewportSize({ width: 1320, height: 820 });
+  }
+  await page.selectOption("#target-set-list", { index: 1 });
+  await page.click("#target-set-load");
+  await page.waitForFunction(() => document.getElementById("targets").value === "8.8.8.8");
+  assert.equal(await page.inputValue("#site"), "Other client");
+  let calls = await page.evaluate(() => window.__calls);
+  assert.ok(calls.some(c => c[0] === "ValidateTargets"));
+  assert.ok(calls.some(c => c[0] === "NewSite"));
+  assert.ok(calls.some(c => c[0] === "SetSite" && c[1] === "Other client"));
+  assert.equal(calls.filter(c => ["StartScan", "DeviceAction", "OpenWeb"].includes(c[0])).length, 0,
+    "applying a saved public target must not scan, probe or authorize it");
+  await page.click("#scan-btn");
+  await page.waitForSelector("#modal:not([hidden])");
+  await page.click("#modal-cancel");
+  assert.equal((await page.evaluate(() => window.__calls)).filter(c => c[0] === "StartScan").some(c => c[1].allow_public), false,
+    "the public authorization confirmation must remain explicit at Scan time");
+
+  // Create dirty results, then verify a canceled apply keeps them and their
+  // annotations and SNMP draft credentials. Confirmed apply clears them.
+  await page.fill("#targets", "192.168.50.0/24");
+  await page.evaluate(() => { window.__scanInterval = 250; });
+  await page.click("#scan-btn");
+  await page.waitForFunction(() => document.getElementById("target-set-save").disabled);
+  await page.waitForFunction(() => document.getElementById("status-text").textContent.startsWith("Done:"));
+  assert.equal(await page.isDisabled("#target-set-save"), false, "saved set controls unlock when scanning ends");
+  await page.click('#rows tr[data-ip="192.168.50.20"]');
+  await page.fill("#device-notes", "existing client note");
+  await page.click("#apply-notes");
+  await page.click("#settings-btn");
+  await page.check("#snmp-on");
+  await page.fill("#snmp-auth-pass", "transient-auth");
+  await page.fill("#snmp-priv-pass", "transient-priv");
+  await page.click("#settings-close");
+  await page.click("#target-sets-btn");
+  const newSiteCallsBeforeInvalidDraft = (await page.evaluate(() => window.__calls)).filter(c => c[0] === "NewSite").length;
+  await page.fill("#target-set-name", "Invalid label probe");
+  await page.locator("#target-set-site").evaluate((el) => {
+    el.value = "invalid\0client";
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await page.click("#target-set-load");
+  await page.waitForFunction(() => document.getElementById("target-set-status").textContent.includes("without control characters"));
+  assert.equal((await page.evaluate(() => window.__calls)).filter(c => c[0] === "NewSite").length, newSiteCallsBeforeInvalidDraft,
+    "invalid site labels must be rejected before clearing current results");
+  assert.equal(await page.locator('#rows tr[data-ip="192.168.50.20"]').count(), 1);
+  await page.click("#target-set-list");
+  await page.selectOption("#target-set-list", { index: 1 });
+  await page.evaluate(() => { window.__holdTargetValidation = true; });
+  await page.click("#target-set-load");
+  await page.waitForFunction(() => window.__releaseTargetValidation);
+  assert.equal(await page.isDisabled("#scan-btn"), true, "Scan stays disabled while target validation is pending");
+  await page.evaluate(() => { window.__holdTargetValidation = false; window.__releaseTargetValidation(); });
+  await page.waitForSelector("#modal:not([hidden])");
+  assert.equal(await page.isDisabled("#scan-btn"), true, "Scan stays disabled while dirty-result confirmation is pending");
+  await page.click("#modal-cancel");
+  await page.waitForFunction(() => !document.getElementById("scan-btn").disabled);
+  assert.equal(await page.inputValue("#targets"), "192.168.50.0/24");
+  assert.equal(await page.locator('#rows tr[data-ip="192.168.50.20"]').count(), 1);
+  assert.equal(await page.inputValue("#snmp-auth-pass"), "transient-auth");
+  assert.equal(await page.inputValue("#snmp-priv-pass"), "transient-priv");
+  await page.selectOption("#target-set-list", { index: 1 });
+  await page.evaluate(() => { window.__holdTargetValidation = true; });
+  await page.click("#target-set-load");
+  await page.waitForFunction(() => window.__releaseTargetValidation);
+  await page.evaluate(() => { window.__holdTargetValidation = false; window.__releaseTargetValidation(); });
+  await page.waitForSelector("#modal:not([hidden])");
+  await page.click("#modal-ok");
+  await page.waitForFunction(() => document.querySelectorAll("#rows tr").length === 0);
+  assert.equal(await page.locator("#device-notes").count(), 0, "applying another client clears the selected inventory detail");
+  assert.equal(await page.inputValue("#snmp-auth-pass"), "");
+  assert.equal(await page.inputValue("#snmp-priv-pass"), "");
+  assert.equal(await page.isChecked("#snmp-on"), false);
+
+  // Delete also requires confirmation, and cancel leaves the stored set.
+  await page.click("#target-sets-btn");
+  await page.selectOption("#target-set-list", { index: 1 });
+  await page.click("#target-set-delete");
+  await page.waitForSelector("#modal:not([hidden])");
+  await page.click("#modal-cancel");
+  assert.equal(await page.locator("#target-set-list option").count(), 2);
+  await page.click("#target-set-delete");
+  await page.waitForSelector("#modal:not([hidden])");
+  await page.click("#modal-ok");
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem("ztg-scanner:target-sets") || "{}").sets?.length === 1);
+
+  // A failed storage write is reported and leaves the stored sets unchanged.
+  const beforeFailedWrite = await page.evaluate(() => localStorage.getItem("ztg-scanner:target-sets"));
+  await page.fill("#target-set-site", "Storage failure client");
+  await page.fill("#target-set-name", "Unavailable");
+  await page.fill("#target-set-targets", "192.168.70.0/24");
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    window.__originalStorageSetItem = original;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === "ztg-scanner:target-sets") throw new Error("fixture storage failure");
+      return original.call(this, key, value);
+    };
+  });
+  await page.click("#target-set-save");
+  await page.waitForFunction(() => document.getElementById("target-set-status").textContent.includes("fixture storage failure"));
+  assert.equal(await page.evaluate(() => localStorage.getItem("ztg-scanner:target-sets")), beforeFailedWrite);
+  await page.evaluate(() => { Storage.prototype.setItem = window.__originalStorageSetItem; });
+
+  // Malformed persisted data is surfaced without crashing or being rewritten.
+  await page.evaluate(() => localStorage.setItem("ztg-scanner:target-sets", '{"version":2,"sets":[]}'));
+  await page.reload();
+  await page.waitForFunction(() => document.getElementById("targets")?.value === "192.168.50.0/24");
+  await page.click("#target-sets-btn");
+  await page.waitForFunction(() => document.getElementById("target-set-status").textContent.includes("malformed format"));
+  assert.equal(await page.locator("#target-set-list option").count(), 0);
+  assert.equal(await page.isDisabled("#target-set-save"), true);
+  assert.equal(await page.evaluate(() => localStorage.getItem("ztg-scanner:target-sets")), '{"version":2,"sets":[]}');
+  await page.click("#target-set-reset");
+  await page.waitForSelector("#modal:not([hidden])");
+  await page.click("#modal-cancel");
+  assert.equal(await page.evaluate(() => localStorage.getItem("ztg-scanner:target-sets")), '{"version":2,"sets":[]}');
+  assert.equal(await page.isVisible("#target-set-reset"), true, "canceling reset keeps recovery available");
+  await page.click("#target-set-reset");
+  await page.waitForSelector("#modal:not([hidden])");
+  await page.click("#modal-ok");
+  await page.waitForFunction(() => localStorage.getItem("ztg-scanner:target-sets") === null);
+  assert.equal(await page.locator("#target-set-list option").count(), 0);
+  assert.equal(await page.isVisible("#target-set-reset"), false);
+  assert.deepEqual(errors, [], "target set page errors");
+  await page.close();
+}
+
 try {
   for (const scheme of ["dark", "light"]) {
     const page = await browser.newPage({ viewport: { width: 1320, height: 820 }, colorScheme: scheme });
@@ -384,6 +594,8 @@ try {
     assert.deepEqual(errors, [], "page errors");
     console.log(`ok  ${scheme} scheme`);
     await page.close();
+    await targetSetTests(scheme);
+    console.log(`ok  ${scheme} target sets`);
   }
 } catch (e) {
   failed = true;

@@ -140,7 +140,17 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .annotation-form input[type=text] { width: 100%; }
 .annotation-form label.check { display: flex; align-items: center; gap: 6px; }
 .drawer.comparison { width: min(580px, calc(100% - 32px)); }
+.drawer.target-sets { width: min(480px, calc(100% - 32px)); }
 .comparison .close { float: right; }
+.target-sets .close { float: right; }
+.target-sets select { width: 100%; }
+.target-sets > input { width: 100%; }
+.target-sets > #target-set-reset { margin: 0 0 10px; }
+.target-sets textarea { min-height: 96px; }
+.target-set-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.target-set-actions button { padding: 6px 10px; }
+.target-set-actions #target-set-load { margin-left: auto; }
+.target-sets [role=status]:empty { display: none; }
 .comparison-list { padding: 0; list-style: none; }
 .comparison-list li { border-bottom: 1px solid var(--line); padding: 10px 0; overflow-wrap: anywhere; }
 .comparison-list p { margin: 4px 0; }
@@ -166,7 +176,8 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
   min-width: 260px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
   box-shadow: 0 8px 24px rgba(0,0,0,.25);
 }
-.targets .menu { right: 92px; }
+.targets .menu { right: 194px; }
+.targets > button { flex: none; white-space: nowrap; }
 .menu.right { right: 0; }
 .menu button { width: 100%; text-align: left; border: 0; background: none; padding: 6px 10px; }
 .menu button:hover, .menu button:focus-visible { background: var(--panel-2); }

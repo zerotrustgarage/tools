@@ -82,7 +82,7 @@ It needs the Microsoft Edge WebView2 runtime, which Windows 10 and 11 include.
 The unified app/title bar contains the build number, Theme selector, Settings, update checks, exports and
 window controls. Drag its empty space to move the window or double-click to maximize. Choose **Theme: Dark**
 or **Light** explicitly; **System** follows Windows. The choice is remembered, and native window styling follows
-it too. Version 0.5.1 upgrades the earlier 0.5.0 test installer so Windows replaces the versioned executables.
+it too. Version 0.6.0 upgrades earlier test installers so Windows replaces the versioned executables.
 
 ## Site inventories and device actions
 
@@ -120,6 +120,29 @@ as commands. A public address loaded from a file requires authorization before t
 Wake-on-LAN asks before sending one UDP magic packet and is limited to directly connected internal IPv4 networks;
 it can use the last known MAC of an offline favorite. Nothing is installed on the scanned device, and no credentials
 are collected by Scanner for these actions. Scheduled scans and custom command templates remain planned.
+
+## Saved target sets
+
+Choose **Target sets** beside **My networks** to keep named network lists for each client or site. Fill in the
+client/site, set name and networks, then choose **Save set**. Sets stay in the current Windows user's desktop
+preferences across launches and upgrades; portable packaging uses the same preferences. Up to 50 sets are kept.
+Saving an existing client/name asks before replacing it. Deleting a saved set also asks for confirmation.
+
+**Import file** reads a UTF-8 `.txt` list into the editable draft. Use IPv4 addresses, CIDR blocks, ranges or
+hostnames separated by spaces, newlines, commas or semicolons. Blank lines and `#` comments are supported:
+
+```text
+# Clinic, main office
+10.20.0.0/24
+10.20.5.10-25  # Printers
+printer.clinic.lan
+```
+
+Files are limited to 64 KiB and 4,096 target specifications. Importing does not save a set or replace the current
+scan. Choose **Use targets** to apply a saved set or draft, then press **Scan** when ready. Using targets starts
+a new site inventory, asks before discarding unsaved results, and clears SNMP credentials and the SNMP switch.
+Sets contain only the site, name and target list. They never remember public-range authorization; the usual
+authorization prompt and host limit still apply when scanning. No hostname is resolved while saving or importing.
 
 ## Windows packages and releases
 

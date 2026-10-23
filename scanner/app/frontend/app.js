@@ -23,6 +23,11 @@ import { showUpdateDialog } from "./updates.js";
     dirty: false,
     file: "",
     comparison: null,
+    targetSets: [],
+    targetSetsError: "",
+    targetSetsBusy: false,
+    targetSetsReturnFocus: null,
+    targetSetDraft: null,
   };
 
   // ---------- DOM helpers ----------
@@ -460,6 +465,7 @@ import { showUpdateDialog } from "./updates.js";
     const h = state.selected && state.hosts.get(state.selected);
     if (!h) {
       pane.hidden = true;
+      pane.replaceChildren();
       return;
     }
     pane.hidden = false;
@@ -597,14 +603,17 @@ import { showUpdateDialog } from "./updates.js";
       el("label", { class: "check" }, favorite, "Favorite"), button);
   }
 
-  async function replaceInventory(action) {
-    if (state.dirty && !await confirmDialog("Replace current results?", "The current scan has unsaved changes. Save the scan first if you want to keep them.", "Replace results")) return;
+  async function replaceInventory(action, options = {}) {
+    if (state.targetSetsBusy && action !== "target-set") return false;
+    if (!options.confirmed && state.dirty && !await confirmDialog("Replace current results?", "The current scan has unsaved changes. Save the scan first if you want to keep them.", "Replace results")) return false;
     try {
       let path = "";
       if (action === "load") { path = await api.LoadScan(); if (!path) return; }
       else await api.NewSite();
+      if (action === "target-set") await api.SetSite(state.targetSetDraft.site);
       state.file = path;
       state.settings.probes.snmp = false;
+      $("snmp-user").value = "";
       $("snmp-auth-pass").value = "";
       $("snmp-priv-pass").value = "";
       paintSettings();
@@ -614,14 +623,258 @@ import { showUpdateDialog } from "./updates.js";
       select(null);
       const snap = await api.Results(true);
       $("site").value = snap.site || "";
-      if ((snap.targets || []).length) $("targets").value = snap.targets.join(", ");
+      if (action === "target-set") {
+        $("site").value = state.targetSetDraft.site;
+        $("targets").value = state.targetSetDraft.targets;
+      } else if ((snap.targets || []).length) $("targets").value = snap.targets.join(", ");
       state.hosts.clear();
       for (const h of snap.hosts || []) state.hosts.set(h.ip, h);
       markDirty(false); render();
       $("status-text").textContent = path ? "Opened " + path : "Ready for a new site.";
       $("warnings").textContent = "";
       $("progress-bar").style.width = "0%";
-    } catch (e) { toast(String(e)); }
+      return true;
+    } catch (e) { toast(String(e)); return false; }
+  }
+
+  // ---------- local saved target sets ----------
+
+  const TARGET_SETS_KEY = "ztg-scanner:target-sets";
+  const TARGET_SET_LIMITS = { site: 200, name: 100, targets: 64 * 1024 };
+  const byteLength = (value) => new TextEncoder().encode(value).length;
+  const targetSetKey = (site, name) => site.toLowerCase() + "\u0000" + name.toLowerCase();
+
+  function normalizeTargetSetLabel(value, field) {
+    const limit = TARGET_SET_LIMITS[field];
+    if (/[\r\n\0]/.test(value)) throw new Error("The " + (field === "site" ? "client / site label" : "set name") + " must be on one line without control characters.");
+    const label = value.trim();
+    if (!label) throw new Error("Enter a " + (field === "site" ? "client / site label" : "set name") + ".");
+    if (byteLength(label) > limit) throw new Error("The " + (field === "site" ? "client / site label" : "set name") + " must be at most " + limit + " UTF-8 bytes.");
+    return label;
+  }
+
+  function validateTargetSetShape(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value) || value.version !== 1 || !Array.isArray(value.sets) || value.sets.length > 50 || Object.keys(value).some((key) => !["version", "sets"].includes(key))) {
+      throw new Error("Saved target sets have an unsupported or malformed format. The stored data was left untouched.");
+    }
+    const seen = new Set();
+    const sets = value.sets.map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry) || typeof entry.site !== "string" || typeof entry.name !== "string" || typeof entry.targets !== "string") {
+        throw new Error("A saved target set is malformed. The stored data was left untouched.");
+      }
+      if (Object.keys(entry).some((key) => !["site", "name", "targets"].includes(key))) throw new Error("A saved target set has unexpected fields. The stored data was left untouched.");
+      const site = entry.site.trim();
+      const name = entry.name.trim();
+      if (!site || !name || !entry.targets.trim() || /[\r\n\0]/.test(entry.site) || /[\r\n\0]/.test(entry.name) || byteLength(entry.site) > TARGET_SET_LIMITS.site || byteLength(entry.name) > TARGET_SET_LIMITS.name || byteLength(entry.targets) > TARGET_SET_LIMITS.targets) {
+        throw new Error("A saved target set exceeds its limits or has a blank label. The stored data was left untouched.");
+      }
+      const key = targetSetKey(site, name);
+      if (seen.has(key)) throw new Error("Saved target sets contain duplicate client and set names. The stored data was left untouched.");
+      seen.add(key);
+      return { site, name, targets: entry.targets };
+    });
+    return sets;
+  }
+
+  function readTargetSets() {
+    state.targetSetsError = "";
+    state.targetSets = [];
+    try {
+      const raw = localStorage.getItem(TARGET_SETS_KEY);
+      if (raw === null) return [];
+      state.targetSets = validateTargetSetShape(JSON.parse(raw));
+      return state.targetSets;
+    } catch (e) {
+      state.targetSetsError = String(e && e.message ? e.message : e);
+      state.targetSets = [];
+      return [];
+    }
+  }
+
+  function targetSetStatus(message = state.targetSetsError) {
+    $("target-set-status").textContent = state.targetSetsError && message !== state.targetSetsError
+      ? state.targetSetsError + (message ? " " + message : "")
+      : message;
+  }
+
+  function setTargetSetBusy(busy) {
+    state.targetSetsBusy = busy;
+    updateTargetSetControls();
+  }
+
+  function updateTargetSetControls() {
+    const locked = state.running || state.targetSetsBusy;
+    for (const id of ["target-set-site", "target-set-name", "target-set-targets", "target-set-save", "target-set-load", "target-set-delete", "target-set-import", "target-set-list", "target-set-reset"]) {
+      $(id).disabled = locked;
+    }
+    $("target-set-save").disabled ||= !!state.targetSetsError;
+    $("target-set-reset").hidden = !state.targetSetsError;
+    for (const id of ["site", "save-scan", "load-scan", "compare-scan", "new-site"]) $(id).disabled = locked;
+    $("targets").disabled = locked;
+    $("suggest-btn").disabled = locked;
+    $("scan-btn").disabled = state.targetSetsBusy;
+  }
+
+  function renderTargetSets(selectedKey = "") {
+    const list = $("target-set-list");
+    list.replaceChildren();
+    state.targetSets.forEach((entry, index) => {
+      const option = document.createElement("option");
+      option.value = String(index);
+      option.textContent = entry.site + " · " + entry.name;
+      option.dataset.key = targetSetKey(entry.site, entry.name);
+      list.append(option);
+    });
+    const selected = [...list.options].find((option) => option.dataset.key === selectedKey);
+    if (selected) list.value = selected.value;
+    updateTargetSetControls();
+  }
+
+  function writeTargetSets(sets) {
+    const value = { version: 1, sets };
+    // Validate our own output and verify the write so storage failures are visible.
+    validateTargetSetShape(value);
+    const serialized = JSON.stringify(value);
+    localStorage.setItem(TARGET_SETS_KEY, serialized);
+    if (localStorage.getItem(TARGET_SETS_KEY) !== serialized) throw new Error("Saved target sets could not be verified after writing.");
+    state.targetSets = sets;
+    state.targetSetsError = "";
+    targetSetStatus("");
+  }
+
+  async function normalizeDraftTargets(value) {
+    if (byteLength(value) > TARGET_SET_LIMITS.targets) throw new Error("Networks must be 64 KiB or smaller.");
+    const normalized = await api.ValidateTargets(value);
+    if (typeof normalized !== "string" || !normalized.trim()) throw new Error("Enter at least one network.");
+    if (byteLength(normalized) > TARGET_SET_LIMITS.targets) throw new Error("Normalized networks exceed the 64 KiB limit.");
+    return normalized;
+  }
+
+  function openTargetSets() {
+    if ($("target-sets").hidden) {
+      state.targetSetsReturnFocus = document.activeElement;
+      closeMenus();
+      for (const id of ["settings", "comparison", "diagnostics"]) $(id).hidden = true;
+      $("settings-btn").setAttribute("aria-expanded", "false");
+      $("target-set-site").value = $("site").value;
+      $("target-set-name").value = "";
+      $("target-set-targets").value = $("targets").value;
+      readTargetSets();
+      renderTargetSets();
+      targetSetStatus();
+      $("target-sets").hidden = false;
+      $("target-sets-btn").setAttribute("aria-expanded", "true");
+      $("target-set-list").focus();
+    }
+  }
+
+  function closeTargetSets() {
+    if ($("target-sets").hidden) return;
+    $("target-sets").hidden = true;
+    $("target-sets-btn").setAttribute("aria-expanded", "false");
+    if (state.targetSetsReturnFocus && state.targetSetsReturnFocus.focus) state.targetSetsReturnFocus.focus();
+    state.targetSetsReturnFocus = null;
+  }
+
+  function fillTargetSetDraft(entry) {
+    if (!entry) return;
+    $("target-set-site").value = entry.site;
+    $("target-set-name").value = entry.name;
+    $("target-set-targets").value = entry.targets;
+    targetSetStatus("");
+  }
+
+  async function saveTargetSet() {
+    if (!api || state.running || state.targetSetsBusy || state.targetSetsError) return;
+    let site, name;
+    try {
+      site = normalizeTargetSetLabel($("target-set-site").value, "site");
+      name = normalizeTargetSetLabel($("target-set-name").value, "name");
+    } catch (e) { return targetSetStatus(String(e && e.message ? e.message : e)); }
+    $("target-set-site").value = site;
+    $("target-set-name").value = name;
+    const inputTargets = $("target-set-targets").value;
+    setTargetSetBusy(true);
+    try {
+      const targets = await normalizeDraftTargets(inputTargets);
+      const key = targetSetKey(site, name);
+      const existing = state.targetSets.findIndex((entry) => targetSetKey(entry.site, entry.name) === key);
+      if (existing >= 0 && !await confirmDialog("Replace set?", "A saved set with this client and name already exists. Replace it?", "Replace set")) return;
+      const sets = [...state.targetSets];
+      const entry = { site, name, targets };
+      if (existing >= 0) sets[existing] = entry;
+      else if (sets.length >= 50) throw new Error("You can save up to 50 target sets.");
+      else sets.push(entry);
+      writeTargetSets(sets);
+      renderTargetSets(key);
+      targetSetStatus("Target set saved.");
+    } catch (e) {
+      targetSetStatus(String(e && e.message ? e.message : e));
+    } finally { setTargetSetBusy(false); }
+  }
+
+  async function importTargetSetFile() {
+    if (!api || state.running || state.targetSetsBusy) return;
+    setTargetSetBusy(true);
+    try {
+      const imported = await api.ImportTargets();
+      if (imported === "") return;
+      if (typeof imported !== "string") throw new Error("The imported target list was not valid text.");
+      const normalized = await normalizeDraftTargets(imported);
+      $("target-set-targets").value = normalized;
+      targetSetStatus("Imported targets into the draft. Save the set or use targets when ready.");
+    } catch (e) { targetSetStatus(String(e && e.message ? e.message : e)); }
+    finally { setTargetSetBusy(false); }
+  }
+
+  async function useTargetSetDraft() {
+    if (!api || state.running || state.targetSetsBusy) return;
+    setTargetSetBusy(true);
+    try {
+      const site = $("target-set-site").value;
+      const normalizedSite = normalizeTargetSetLabel(site, "site");
+      const normalizedName = normalizeTargetSetLabel($("target-set-name").value, "name");
+      const targets = await normalizeDraftTargets($("target-set-targets").value);
+      if (state.dirty && !await confirmDialog("Replace current results?", "Using these targets clears the current inventory and its notes. Save the scan first if you want to keep them.", "Replace results")) return;
+      state.targetSetDraft = { site: normalizedSite, name: normalizedName, targets };
+      $("target-set-site").value = normalizedSite;
+      $("target-set-name").value = normalizedName;
+      if (await replaceInventory("target-set", { confirmed: true })) closeTargetSets();
+    } catch (e) { targetSetStatus(String(e && e.message ? e.message : e)); }
+    finally { setTargetSetBusy(false); }
+  }
+
+  async function deleteTargetSet() {
+    if (state.running || state.targetSetsBusy || state.targetSetsError) return;
+    const option = $("target-set-list").selectedOptions[0];
+    const entry = option && state.targetSets[Number(option.value)];
+    if (!entry) return targetSetStatus("Choose a saved set to delete.");
+    setTargetSetBusy(true);
+    try {
+      if (!await confirmDialog("Delete target set?", "Delete “" + entry.name + "” for “" + entry.site + "”?", "Delete set")) return;
+      const key = targetSetKey(entry.site, entry.name);
+      writeTargetSets(state.targetSets.filter((candidate) => targetSetKey(candidate.site, candidate.name) !== key));
+      renderTargetSets();
+      targetSetStatus("Target set deleted.");
+    } catch (e) { targetSetStatus(String(e && e.message ? e.message : e)); }
+    finally { setTargetSetBusy(false); }
+  }
+
+  async function resetTargetSets() {
+    if (!state.targetSetsError || state.running || state.targetSetsBusy) return;
+    setTargetSetBusy(true);
+    try {
+      if (!await confirmDialog("Reset saved target sets?", "This permanently removes the malformed saved target data from this app.", "Reset saved sets")) return;
+      localStorage.removeItem(TARGET_SETS_KEY);
+      if (localStorage.getItem(TARGET_SETS_KEY) !== null) throw new Error("Saved target sets could not be removed from local storage.");
+      state.targetSets = [];
+      state.targetSetsError = "";
+      renderTargetSets();
+      targetSetStatus("Saved target sets were reset.");
+    } catch (e) {
+      state.targetSetsError = String(e && e.message ? e.message : e);
+      targetSetStatus();
+    } finally { setTargetSetBusy(false); }
   }
 
   function renderComparison() {
@@ -662,6 +915,7 @@ import { showUpdateDialog } from "./updates.js";
     b.classList.toggle("stop", running);
     $("targets").disabled = running;
     for (const id of ["site", "save-scan", "load-scan", "compare-scan", "new-site"]) $(id).disabled = running;
+    updateTargetSetControls();
     renderDetail();
   }
 
@@ -695,6 +949,7 @@ import { showUpdateDialog } from "./updates.js";
   }
 
   async function startScan(allowPublic = false) {
+    if (state.targetSetsBusy) return;
     if (!api) return toast("Not connected to the scanner engine.");
     store.set("targets", $("targets").value);
     try {
@@ -885,6 +1140,17 @@ import { showUpdateDialog } from "./updates.js";
     });
     for (const id of ["filter", "type-filter", "findings-only", "favorites-only"]) $(id).addEventListener("input", render);
     $("site").addEventListener("input", () => markDirty());
+    $("target-sets-btn").addEventListener("click", openTargetSets);
+    $("target-sets-close").addEventListener("click", closeTargetSets);
+    $("target-set-list").addEventListener("change", () => {
+      const option = $("target-set-list").selectedOptions[0];
+      fillTargetSetDraft(option && state.targetSets[Number(option.value)]);
+    });
+    $("target-set-save").addEventListener("click", saveTargetSet);
+    $("target-set-load").addEventListener("click", useTargetSetDraft);
+    $("target-set-delete").addEventListener("click", deleteTargetSet);
+    $("target-set-import").addEventListener("click", importTargetSetFile);
+    $("target-set-reset").addEventListener("click", resetTargetSets);
     $("save-scan").addEventListener("click", async () => {
       try {
         const path = await api.SaveScan($("site").value);
@@ -917,7 +1183,7 @@ import { showUpdateDialog } from "./updates.js";
       if (state.running) {
         api && api.StopScan();
         $("status-text").textContent = "Stopping…";
-      } else startScan(false);
+      } else if (!state.targetSetsBusy) startScan(false);
     });
 
     $("suggest-btn").addEventListener("click", (e) => {
@@ -949,10 +1215,11 @@ import { showUpdateDialog } from "./updates.js";
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
         closeMenus();
-        if (!$("comparison").hidden) $("comparison").hidden = true;
+        if (!$("modal").hidden) $("modal-cancel").click();
+        else if (!$("target-sets").hidden) closeTargetSets();
+        else if (!$("comparison").hidden) $("comparison").hidden = true;
         else if (!$("diagnostics").hidden) $("diagnostics").hidden = true;
         else if (!$("settings").hidden) toggle($("settings-btn"), $("settings"), false);
-        else if (!$("modal").hidden) $("modal-cancel").click();
         else select(null);
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
