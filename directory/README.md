@@ -50,6 +50,10 @@ Use `--limit` to bound a search and check the truncation indicator. Group member
 calculation. Token group SIDs outside the search base remain in the result with `Resolved: false` and empty
 name and DN fields. Use the domain naming context as the base to resolve more names. Last-logon results
 describe one DC and explicitly report partial coverage across the domain.
+`--base-dn` scopes searches and group-name resolution; direct DN lookups use the technician's existing AD
+permissions. It is not an authorization boundary. Effective groups require a Global Catalog to be available.
+If AD returns only a range of a multivalued attribute, the lookup reports an incomplete-result error instead
+of silently dropping values. Full range retrieval is still pending.
 
 `check-updates` currently reports `unreleased` locally. It makes no network request and does not establish
 that a build is up to date. The shared release checker source is vendored for D7, when `directory-v` selection

@@ -209,7 +209,7 @@ func writeObjects(out io.Writer, objects []ad.Object, truncated bool) error {
 		}
 	}
 	if truncated {
-		_, err := fmt.Fprintln(out, "Results truncated. Increase --limit to retrieve more entries.")
+		_, err := fmt.Fprintln(out, "Results truncated. Narrow the query or increase --limit within the allowed range.")
 		return err
 	}
 	if len(objects) == 0 {
@@ -242,7 +242,7 @@ func writeGroups(out io.Writer, groups []ad.Group) error {
 		return err
 	}
 	for _, group := range groups {
-		if _, err := fmt.Fprintf(out, "%q  DN=%q  SID=%q  primary=%t\n", group.Name, group.DN, group.SID, group.Primary); err != nil {
+		if _, err := fmt.Fprintf(out, "%q  DN=%q  SID=%q  primary=%t  resolved=%t\n", group.Name, group.DN, group.SID, group.Primary, group.Resolved); err != nil {
 			return err
 		}
 	}

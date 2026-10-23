@@ -3,6 +3,7 @@ package ad
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -65,5 +66,22 @@ func TestFakeClosedAndNotFound(t *testing.T) {
 	_ = f.Close()
 	if _, err := f.Search(context.Background(), SearchRequest{}); !errors.Is(err, ErrClosed) {
 		t.Fatalf("Search error = %v", err)
+	}
+}
+
+func TestFakeUsesNativeSearchCapsWithoutLimitingObjectLookup(t *testing.T) {
+	objects := make([]Object, 5001)
+	for i := range objects {
+		objects[i] = Object{DN: fmt.Sprintf("CN=User%d,DC=example", i)}
+	}
+	f := NewFake(objects)
+	for _, tc := range []struct{ limit, want int }{{0, 500}, {1, 1}, {10000, 5000}} {
+		result, err := f.Search(context.Background(), SearchRequest{Limit: tc.limit})
+		if err != nil || !result.Truncated || len(result.Objects) != tc.want {
+			t.Fatalf("limit %d: len=%d truncated=%t err=%v", tc.limit, len(result.Objects), result.Truncated, err)
+		}
+	}
+	if _, err := f.Get(context.Background(), objects[5000].DN); err != nil {
+		t.Fatalf("base lookup must not inherit search cap: %v", err)
 	}
 }

@@ -11,6 +11,22 @@ import (
 var ErrUnsupportedPlatform = errors.New("Active Directory LDAP is supported only on Windows")
 var ErrClosed = errors.New("directory client is closed")
 var ErrNotFound = errors.New("directory object not found")
+var ErrIncomplete = errors.New("directory result is incomplete")
+
+const (
+	defaultSearchLimit = 500
+	maxSearchLimit     = 5000
+)
+
+func searchLimit(limit int) int {
+	if limit <= 0 {
+		return defaultSearchLimit
+	}
+	if limit > maxSearchLimit {
+		return maxSearchLimit
+	}
+	return limit
+}
 
 // Config selects one domain controller and the search root. Server may be a
 // host name or host:port. Credentials are always the current Windows identity.

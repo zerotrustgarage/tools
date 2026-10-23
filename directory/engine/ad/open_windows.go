@@ -22,6 +22,7 @@ var (
 	ldapConnect, ldapSearch, ldapFirstEntry, ldapNextEntry, ldapGetDN  *syscall.LazyProc
 	ldapGetValues, ldapGetValuesLen, ldapValuesFree, ldapValuesFreeLen *syscall.LazyProc
 	ldapMemFree, ldapMsgFree, ldapUnbind                               *syscall.LazyProc
+	ldapFirstAttribute, ldapNextAttribute, berFree                     *syscall.LazyProc
 	dllOnce                                                            sync.Once
 	dllErr                                                             error
 )
@@ -38,10 +39,9 @@ const (
 	ldapAuthNegotiate      = 0x486
 	ldapSuccess            = 0
 	ldapSizeLimitExceeded  = 4
+	ldapNoSuchObject       = 32
 	ldapScopeBase          = 0
 	ldapScopeSubtree       = 2
-	defaultSearchLimit     = 500
-	maxSearchLimit         = 5000
 )
 
 // Attributes returned by normal searches are deliberately allowlisted. In
@@ -220,6 +220,9 @@ func loadSystemLDAP() error {
 		ldapMemFree = wldap.NewProc("ldap_memfreeW")
 		ldapMsgFree = wldap.NewProc("ldap_msgfree")
 		ldapUnbind = wldap.NewProc("ldap_unbind_s")
+		ldapFirstAttribute = wldap.NewProc("ldap_first_attributeW")
+		ldapNextAttribute = wldap.NewProc("ldap_next_attributeW")
+		berFree = wldap.NewProc("ber_free")
 		dllErr = wldap.Load()
 	})
 	return dllErr
@@ -263,13 +266,7 @@ func (c *windowsClient) Search(ctx context.Context, req SearchRequest) (SearchRe
 		q := EscapeFilterValue(query)
 		filter = "(|(anr=*" + q + "*)(sAMAccountName=*" + q + "*)(userPrincipalName=*" + q + "*)(mail=*" + q + "*)(telephoneNumber=*" + q + "*)(employeeID=*" + q + "*))"
 	}
-	limit := req.Limit
-	if limit <= 0 {
-		limit = defaultSearchLimit
-	}
-	if limit > maxSearchLimit {
-		limit = maxSearchLimit
-	}
+	limit := searchLimit(req.Limit)
 	return c.search(ctx, c.base, ldapScopeSubtree, filter, limit)
 }
 
@@ -321,6 +318,9 @@ func (c *windowsClient) search(ctx context.Context, base string, scope uintptr, 
 		defer ldapMsgFree.Call(msg)
 	}
 	if code != ldapSuccess && code != ldapSizeLimitExceeded {
+		if code == ldapNoSuchObject {
+			return SearchResult{}, ErrNotFound
+		}
 		return SearchResult{}, fmt.Errorf("LDAP search failed: %d (%v)", code, callErr)
 	}
 	result := SearchResult{Objects: []Object{}}
@@ -352,11 +352,22 @@ func (c *windowsClient) readEntry(entry uintptr) (Object, error) {
 	if dnptr == 0 {
 		return Object{}, errors.New("LDAP entry has no distinguished name")
 	}
-	dn := utf16FromPtr((*uint16)(nativePointer(dnptr)))
+	dn, err := utf16FromPtr((*uint16)(nativePointer(dnptr)))
 	ldapMemFree.Call(dnptr)
+	if err != nil {
+		return Object{}, err
+	}
+	attributes, err := c.responseAttributes(entry)
+	if err != nil {
+		return Object{}, err
+	}
 	obj := Object{DN: dn, Attributes: map[string][]string{}}
 	for _, name := range safeAttrs {
-		p, err := syscall.UTF16PtrFromString(name)
+		descriptor, exists := attributes[lowerASCII(name)]
+		if !exists {
+			continue
+		}
+		p, err := syscall.UTF16PtrFromString(descriptor)
 		if err != nil {
 			continue
 		}
@@ -372,30 +383,67 @@ func (c *windowsClient) readEntry(entry uintptr) (Object, error) {
 				terminated = true
 				break
 			}
-			obj.Attributes[lowerASCII(name)] = append(obj.Attributes[lowerASCII(name)], utf16FromPtr((*uint16)(nativePointer(v))))
+			text, err := utf16FromPtr((*uint16)(nativePointer(v)))
+			if err != nil {
+				ldapValuesFree.Call(valuesBase)
+				return Object{}, err
+			}
+			obj.Attributes[lowerASCII(name)] = append(obj.Attributes[lowerASCII(name)], text)
 		}
 		if !terminated && *(*uintptr)(nativePointer(valuesBase + 4096*unsafe.Sizeof(uintptr(0)))) != 0 {
 			ldapValuesFree.Call(valuesBase)
-			return Object{}, errors.New("LDAP attribute has too many values")
+			return Object{}, fmt.Errorf("%w: LDAP attribute has too many values", ErrIncomplete)
 		}
 		ldapValuesFree.Call(valuesBase)
 	}
 	return obj, nil
 }
 
-func utf16FromPtr(p *uint16) string {
+func utf16FromPtr(p *uint16) (string, error) {
 	if p == nil {
-		return ""
+		return "", nil
 	}
 	var units []uint16
 	for i := uintptr(0); i < 32768; i++ {
 		v := *(*uint16)(unsafe.Add(unsafe.Pointer(p), i*2))
 		if v == 0 {
-			break
+			return syscall.UTF16ToString(units), nil
 		}
 		units = append(units, v)
 	}
-	return syscall.UTF16ToString(append(units, 0))
+	return "", fmt.Errorf("%w: LDAP string exceeds the safety limit", ErrIncomplete)
+}
+
+// Inspect returned attribute descriptors before reading values. AD may rename
+// a large multivalued attribute with ;range=0-N. Reading the bare name would
+// silently omit those values. D1 rejects partial ranges instead of guessing.
+func (c *windowsClient) responseAttributes(entry uintptr) (map[string]string, error) {
+	var cursor uintptr
+	nameptr, _, _ := ldapFirstAttribute.Call(c.conn, entry, uintptr(unsafe.Pointer(&cursor)))
+	if cursor != 0 {
+		defer berFree.Call(cursor, 0)
+	}
+	attributes := map[string]string{}
+	for count := 0; nameptr != 0; count++ {
+		descriptor, err := utf16FromPtr((*uint16)(nativePointer(nameptr)))
+		ldapMemFree.Call(nameptr)
+		if err != nil {
+			return nil, err
+		}
+		if count >= 256 {
+			return nil, fmt.Errorf("%w: too many LDAP attribute descriptors", ErrIncomplete)
+		}
+		base, err := completeAttribute(descriptor)
+		if err != nil {
+			return nil, err
+		}
+		if _, duplicate := attributes[base]; duplicate {
+			return nil, fmt.Errorf("%w: duplicate LDAP attribute descriptor", ErrIncomplete)
+		}
+		attributes[base] = descriptor
+		nameptr, _, _ = ldapNextAttribute.Call(c.conn, entry, cursor)
+	}
+	return attributes, nil
 }
 
 // nativePointer reinterprets a pointer returned by WinLDAP. The address is
@@ -457,7 +505,16 @@ func (c *windowsClient) binaryAttribute(ctx context.Context, dn, attr string) ([
 	if entry == 0 {
 		return nil, ErrNotFound
 	}
-	values, _, _ := ldapGetValuesLen.Call(c.conn, entry, uintptr(unsafe.Pointer(attrp)))
+	attributes, err := c.responseAttributes(entry)
+	if err != nil {
+		return nil, err
+	}
+	descriptor, exists := attributes[lowerASCII(attr)]
+	if !exists {
+		return nil, nil
+	}
+	valueName, _ := syscall.UTF16PtrFromString(descriptor)
+	values, _, _ := ldapGetValuesLen.Call(c.conn, entry, uintptr(unsafe.Pointer(valueName)))
 	if values == 0 {
 		return nil, nil
 	}
@@ -483,7 +540,7 @@ func (c *windowsClient) binaryAttribute(ctx context.Context, dn, attr string) ([
 		out = append(out, append([]byte(nil), value...))
 	}
 	if !terminated {
-		return nil, errors.New("LDAP binary attribute has too many values")
+		return nil, fmt.Errorf("%w: LDAP binary attribute has too many values", ErrIncomplete)
 	}
 	return out, nil
 }
@@ -532,7 +589,7 @@ func (c *windowsClient) EffectiveGroups(ctx context.Context, dn string) ([]Group
 		return nil, err
 	}
 	if len(tokenSIDs) == 0 {
-		return nil, errors.New("AD did not return tokenGroups for this user")
+		return nil, errors.New("AD did not return tokenGroups for this user; a Global Catalog must be available and the technician must be able to read the attribute")
 	}
 	seen := map[string]bool{}
 	out := make([]Group, 0, len(tokenSIDs)+1)

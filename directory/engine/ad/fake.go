@@ -8,7 +8,7 @@ import (
 
 // FakeClient is a deterministic in-memory Client for callers and tests. If
 // SearchFunc is supplied it controls filtering; otherwise Search returns all
-// objects for an empty query or the conventional (objectClass=*) filter.
+// objects for an empty query, applying the native client's result limits.
 type FakeClient struct {
 	mu         sync.Mutex
 	Objects    []Object
@@ -44,21 +44,26 @@ func (f *FakeClient) Search(ctx context.Context, req SearchRequest) (SearchResul
 	if err != nil {
 		return SearchResult{}, err
 	}
-	truncated := req.Limit > 0 && len(found) > req.Limit
+	limit := searchLimit(req.Limit)
+	truncated := len(found) > limit
 	if truncated {
-		found = found[:req.Limit]
+		found = found[:limit]
 	}
 	return SearchResult{Objects: cloneObjects(found), Truncated: truncated}, nil
 }
 
 func (f *FakeClient) Get(ctx context.Context, dn string) (Object, error) {
-	res, err := f.Search(ctx, SearchRequest{})
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return Object{}, err
 	}
-	for _, o := range res.Objects {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.closed {
+		return Object{}, ErrClosed
+	}
+	for _, o := range f.Objects {
 		if strings.EqualFold(o.DN, dn) {
-			return o, nil
+			return cloneObjects([]Object{o})[0], nil
 		}
 	}
 	return Object{}, ErrNotFound

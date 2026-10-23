@@ -4,6 +4,7 @@ package ad
 
 import (
 	"context"
+	"errors"
 	"syscall"
 	"testing"
 	"unsafe"
@@ -24,7 +25,7 @@ func TestSystemLDAPEntryPoints(t *testing.T) {
 	for _, proc := range []*syscall.LazyProc{ldapInit, ldapSetOption, ldapBind,
 		ldapConnect, ldapSearch, ldapFirstEntry, ldapNextEntry, ldapGetDN,
 		ldapGetValues, ldapGetValuesLen, ldapValuesFree, ldapValuesFreeLen,
-		ldapMemFree, ldapMsgFree, ldapUnbind} {
+		ldapMemFree, ldapMsgFree, ldapUnbind, ldapFirstAttribute, ldapNextAttribute, berFree} {
 		if err := proc.Find(); err != nil {
 			t.Errorf("resolve %s: %v", proc.Name, err)
 		}
@@ -36,5 +37,19 @@ func TestSystemLDAPEntryPoints(t *testing.T) {
 	var berval ldapBerval
 	if unsafe.Sizeof(timeval) != 8 || unsafe.Sizeof(berval.Length) != 4 || unsafe.Offsetof(berval.Value) != unsafe.Sizeof(uintptr(0)) {
 		t.Fatal("WinLDAP ULONG/timeval/BERVAL layout does not match the Windows ABI")
+	}
+}
+
+func TestUTF16ResponseLimitCannotSilentlyTruncate(t *testing.T) {
+	units := make([]uint16, 32769)
+	for i := 0; i < 32768; i++ {
+		units[i] = 'a'
+	}
+	if _, err := utf16FromPtr(&units[0]); !errors.Is(err, ErrIncomplete) {
+		t.Fatalf("expected incomplete long string, got %v", err)
+	}
+	short, _ := syscall.UTF16FromString("Zoë 東京")
+	if got, err := utf16FromPtr(&short[0]); err != nil || got != "Zoë 東京" {
+		t.Fatalf("Unicode decode: %q %v", got, err)
 	}
 }

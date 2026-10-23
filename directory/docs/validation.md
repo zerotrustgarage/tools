@@ -18,8 +18,19 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o ztg-directory.exe ./cmd/ztg-
 cmp internal/update/update.go ../scripts/updates/update.go
 ```
 
-The path-filtered Directory workflow also runs unit tests on a GitHub-hosted `windows-2025` runner. That runner
-is not a domain controller and its unit tests do not meet the live D1 exit condition.
+The path-filtered Directory workflow also runs tests on a GitHub-hosted `windows-2025` runner. Its initial run
+passed both Linux and native Windows checks ([run 39964322829](https://github.com/zerotrustgarage/tools/actions/runs/39964322829)).
+The Windows suite also uses ephemeral loopback listeners to exercise the native LDAP response parser and
+reject an untrusted LDAPS certificate. The protocol fixture uses anonymous authentication only inside the
+test and checks that no non-anonymous bind is accepted; the application always uses Negotiate.
+No fixture changes the trust store or connects to a real directory. These checks are not a domain controller
+lab and do not meet the live D1 exit condition. They do not establish successful sign/seal negotiation,
+channel binding, or correct matching against live AD.
+
+Regression cases cover Unicode/multivalue responses, missing objects, malformed SIDs, range truncation,
+string safety limits and the portable fake's search caps. AD partial range responses fail explicitly;
+range retrieval is not yet implemented, so large memberships can require using native administration tools
+until that work is complete.
 
 ## Isolated AD lab
 
