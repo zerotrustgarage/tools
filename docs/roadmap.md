@@ -101,7 +101,7 @@ credentials, no cloud reporting.
 | SC9 | Saved target sets per client; import target lists from a file | Medium | **Built**: named local sets, bounded UTF-8 text import, explicit use and scan, fresh public-range authorization; Angry IP Scanner |
 | SC10 | Technician-defined "Open with" commands with `{ip}` and `{hostname}` placeholders (PuTTY, mstsc, an RMM console URL). Commands come from the technician's settings, never from what a device reports | Medium | Angry IP Scanner, Advanced IP Scanner |
 | SC11 | Deeper identification through single standard exchanges: WS-Discovery (printers, ONVIF cameras), LLMNR names, an SMB2 negotiate for OS and version, an HTTP favicon fingerprint | Medium | Fing |
-| SC12 | Client-ready reports: branded HTML or XLSX export, and CSV layouts that match common RMM and PSA import templates | Medium | Advanced IP Scanner |
+| SC12 | Client-ready reports: branded HTML or XLSX export, and CSV layouts that match common RMM and PSA import templates | Medium | **HTML built**: offline, printable reports with scope, findings, notes and evidence from desktop or CLI; XLSX and RMM/PSA CSV layouts remain open |
 | SC13 | A gentle scan mode (lower rate, fewer probes) for fragile OT, medical or old printer networks | Medium | |
 | SC14 | Shared folder listing, only as an opt-in per scan; needs a design decision under Scanner's principles | Low | Advanced IP Scanner |
 

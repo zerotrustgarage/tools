@@ -1,0 +1,81 @@
+{
+  "tool": "ztg-scanner",
+  "version": "0.7.0",
+  "targets": ["192.168.50.10", "192.168.50.20", "192.168.50.30"],
+  "summary": {
+    "started": "2026-10-22T09:00:00Z",
+    "finished": "2026-10-22T09:00:08Z",
+    "total": 3,
+    "up": 2,
+    "methods": ["icmp", "tcp-connect"]
+  },
+  "site": "Example Clinic / Main office",
+  "hosts": [
+    {
+      "ip": "192.168.50.10",
+      "status": "up",
+      "evidence": ["icmp"],
+      "mac": "00:11:22:33:44:55",
+      "vendor": "Example Networking",
+      "name": "Clinic gateway",
+      "type": "router",
+      "type_reason": "SNMP reported a network appliance",
+      "snmp": {
+        "sys_name": "clinic-gateway",
+        "sys_descr": "ExampleOS 4.2",
+        "sys_location": "Main office closet",
+        "manufacturer": "Example Networks",
+        "model": "Edge Router 200",
+        "serial": "EX-ROUTER-2048",
+        "firmware_rev": "4.2.1"
+      },
+      "services": [
+        {"port": 23, "name": "telnet"},
+        {"port": 443, "name": "https"}
+      ],
+      "findings": [
+        {"severity": "high", "code": "telnet", "message": "Telnet is open"}
+      ],
+      "notes": "Router at the nurses' station. <img src=\"https://scanner-report.invalid/pixel\" onerror=\"window.__pwned=1\">",
+      "tags": ["network", "core"],
+      "favorite": true,
+      "scanned_at": "2026-10-22T09:00:04Z"
+    },
+    {
+      "ip": "192.168.50.20",
+      "status": "up",
+      "evidence": ["icmp", "tcp-reset"],
+      "mac": "00:AA:BB:CC:DD:EE",
+      "vendor": "Example Imaging",
+      "name": "Front desk printer",
+      "dns_name": "printer.example.clinic",
+      "type": "printer",
+      "type_reason": "Printer service detected",
+      "upnp": {
+        "friendly_name": "Reception printer",
+        "manufacturer": "Example Imaging",
+        "model_name": "OfficeJet C",
+        "model_number": "500"
+      },
+      "services": [
+        {"port": 9100, "name": "printer"},
+        {"port": 443, "name": "https"}
+      ],
+      "findings": [],
+      "notes": "Use the lower paper tray for letterhead.",
+      "tags": ["front desk", "printer"],
+      "scanned_at": "2026-10-22T09:00:06Z"
+    },
+    {
+      "ip": "192.168.50.30",
+      "status": "down",
+      "last_known_mac": "00:66:77:88:99:AA",
+      "name": "Former records terminal",
+      "type": "workstation",
+      "type_reason": "Previously identified workstation",
+      "notes": "Not responding in this scan; historical identity only.",
+      "tags": ["records", "historical"],
+      "scanned_at": "2026-10-22T09:00:08Z"
+    }
+  ]
+}

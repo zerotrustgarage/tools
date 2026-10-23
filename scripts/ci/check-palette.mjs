@@ -61,6 +61,23 @@ const TOOLS = [
     },
   },
   {
+    name: 'ZTG Scanner reports',
+    file: 'scanner/internal/report/report.html.tmpl',
+    blocks: { light: ':root {', dark: '@media screen and (prefers-color-scheme: dark) {', print: '@media print {' },
+    dark: {
+      bg: 'bg', panel: 'panel', 'panel-2': 'panel2', line: 'line', text: 'text', muted: 'dim',
+      accent: 'acc', high: 'crit', medium: 'warn', info: 'info',
+    },
+    light: {
+      bg: 'light-bg', panel: 'light-panel', 'panel-2': 'light-panel2', line: 'light-line', text: 'light-text',
+      muted: 'light-dim', accent: 'light-ok', high: 'light-crit', medium: 'light-warn', info: 'light-info',
+    },
+    print: {
+      bg: 'light-panel', panel: 'light-panel', 'panel-2': 'light-panel2', line: 'light-line', text: 'light-text',
+      muted: 'light-dim', accent: 'light-ok', high: 'light-crit', medium: 'light-warn', info: 'light-info',
+    },
+  },
+  {
     name: 'ZTG TFTP',
     file: 'tftp/app/frontend/app.css',
     blocks: {
@@ -102,7 +119,7 @@ function blockVars(css, selector, file) {
 const problems = [];
 for (const tool of TOOLS) {
   const css = readFileSync(join(root, tool.file), 'utf8');
-  for (const theme of ['dark', 'light']) {
+  for (const theme of ['dark', 'light', ...(tool.print ? ['print'] : [])]) {
     const vars = blockVars(css, tool.blocks[theme], tool.file);
     for (const [name, token] of Object.entries(tool[theme])) {
       if (!(token in tokens)) problems.push(`${tool.name}: unknown token ${token}`);

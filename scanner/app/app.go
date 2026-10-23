@@ -248,7 +248,9 @@ func (a *App) StartScan(req ScanRequest) (int, error) {
 	a.cancel = cancel
 	a.previous = a.hosts
 	a.hosts = nil
-	a.summary = nil
+	// Keep accurate scope and start time available while observations stream in.
+	// scan.Run replaces this provisional summary with its final result.
+	a.summary = &scan.Summary{Started: time.Now(), Total: len(addrs)}
 	a.lastReq = specs
 	a.allowPub = req.AllowPublic
 	a.mu.Unlock()
@@ -305,15 +307,28 @@ func (a *App) Results(all bool) Snapshot {
 	return Snapshot{Running: a.running, Hosts: hosts, Summary: a.summary, Site: a.site, Targets: append([]string(nil), a.lastReq...), File: a.filename, Dirty: a.revision != a.savedRevision}
 }
 
-// Export writes the results to a file the user picks. format is "csv"
-// or "json". It returns the path written, or "" if the user canceled.
+// Export writes the results to a file the user picks. HTML always includes
+// every recorded address; CSV and JSON retain their all argument semantics.
+// It returns the path written, or "" if the user canceled.
 func (a *App) Export(format string, all bool) (string, error) {
 	if a.platform == nil {
 		return "", errors.New("export is not available")
 	}
-	snap := a.Results(all)
-	if len(snap.Hosts) == 0 {
+	// Take the complete document while holding the inventory lock, before the
+	// native dialog can yield to a scan finishing or another inventory loading.
+	a.mu.Lock()
+	includeAll := all || format == "html"
+	doc := a.documentLocked(includeAll)
+	running := a.running
+	a.mu.Unlock()
+	if len(doc.Hosts) == 0 {
 		return "", errors.New("there are no results to export")
+	}
+	if format == "html" && running {
+		// A snapshot taken during a scan is useful, but must describe itself as
+		// partial even if the scan finishes while the chooser is open.
+		doc.Summary.Canceled = false
+		doc.Summary.Finished = time.Time{}
 	}
 	stamp := time.Now().Format("2006-01-02-1504")
 	var name, filter, pattern string
@@ -322,6 +337,8 @@ func (a *App) Export(format string, all bool) (string, error) {
 		name, filter, pattern = "ztg-scan-"+stamp+".csv", "CSV (*.csv)", "*.csv"
 	case "json":
 		name, filter, pattern = "ztg-scan-"+stamp+".json", "JSON (*.json)", "*.json"
+	case "html":
+		name, filter, pattern = "ztg-scan-"+stamp+".html", "HTML (*.html)", "*.html"
 	default:
 		return "", fmt.Errorf("unknown export format %q", format)
 	}
@@ -329,12 +346,14 @@ func (a *App) Export(format string, all bool) (string, error) {
 	if err != nil || path == "" {
 		return "", err
 	}
-	doc := a.document(all)
 	err = report.WriteFile(path, func(w io.Writer) error {
 		if format == "csv" {
 			return report.CSV(w, doc.Hosts)
 		}
-		return report.JSONBounded(w, doc, report.MaxDocumentBytes)
+		if format == "json" {
+			return report.JSONBounded(w, doc, report.MaxDocumentBytes)
+		}
+		return report.HTML(w, doc)
 	})
 	if err != nil {
 		return "", err

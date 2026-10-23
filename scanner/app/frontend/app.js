@@ -1203,7 +1203,7 @@ import { showUpdateDialog } from "./updates.js";
       if (b.dataset.export === "view") return exportView();
       try {
         if (!state.running) await api.SetSite($("site").value);
-        const path = await api.Export(b.dataset.export, $("show-down").checked);
+        const path = await api.Export(b.dataset.export, b.dataset.export === "html" || $("show-down").checked);
         if (path) toast("Saved " + path);
       } catch (err) {
         toast(String(err && err.message ? err.message : err));

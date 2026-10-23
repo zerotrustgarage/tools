@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -42,6 +43,8 @@ func main() {
 		err = update.Command(context.Background(), "scanner", version, os.Args[2:], os.Stdout, os.Stderr)
 	case "scan":
 		err = cmdScan(os.Args[2:])
+	case "report":
+		err = cmdReport(os.Args[2:], os.Stdout)
 	case "vendor":
 		err = cmdVendor(os.Args[2:])
 	case "version", "--version", "-v":
@@ -64,6 +67,7 @@ func usage(w io.Writer) {
 
 Usage:
   ztg-scanner scan [flags] <target>...   scan addresses, ranges, CIDR blocks or hostnames
+  ztg-scanner report [flags] <scan.json> render a saved scan as HTML, offline
   ztg-scanner vendor <mac>...            look up the manufacturer of a MAC address
   ztg-scanner version
   ztg-scanner check-updates [--json]    check published releases on request
@@ -71,7 +75,7 @@ Usage:
 Targets: 192.168.1.0/24  10.0.0.1-50  10.0.0.1-10.0.1.20  10.0.0.7  printer.lan
 Only private, CGNAT, link-local and loopback space is scanned unless --allow-public is given.
 
-Run "ztg-scanner scan -h" for scan flags.
+Run "ztg-scanner scan -h" or "ztg-scanner report -h" for command flags.
 `)
 }
 
@@ -94,6 +98,8 @@ func cmdScan(args []string) error {
 	var (
 		jsonOut     = fs.Bool("json", false, "write JSON instead of a table")
 		csvOut      = fs.Bool("csv", false, "write CSV instead of a table")
+		htmlOut     = fs.Bool("html", false, "write a self-contained HTML report")
+		site        = fs.String("site", "", "site or client label (included in JSON and HTML)")
 		outFile     = fs.String("o", "", "write results to this file instead of standard output")
 		all         = fs.Bool("all", false, "include hosts that did not answer (table and CSV)")
 		portsFlag   = fs.String("ports", "", "comma-separated TCP ports and ranges to probe (default: built-in list of 40)")
@@ -120,12 +126,23 @@ func cmdScan(args []string) error {
 		}
 		return err
 	}
+	formats := 0
+	for _, selected := range []bool{*jsonOut, *csvOut, *htmlOut} {
+		if selected {
+			formats++
+		}
+	}
+	if formats > 1 {
+		return errors.New("choose only one of --json, --csv and --html")
+	}
+	validatedSite, siteErr := validateSiteLabel(*site)
+	if siteErr != nil {
+		return siteErr
+	}
+	*site = validatedSite
 	if fs.NArg() == 0 {
 		fs.Usage()
 		return errors.New("no targets given")
-	}
-	if *jsonOut && *csvOut {
-		return errors.New("choose one of --json and --csv")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -190,27 +207,98 @@ func cmdScan(args []string) error {
 	}
 	report.SortHosts(col.hosts)
 
-	var w io.Writer = os.Stdout
+	doc := report.Document{Tool: "ztg-scanner", Version: version, Targets: fs.Args(), Summary: sum, Hosts: col.hosts, Site: *site}
+	write := func(w io.Writer) error {
+		switch {
+		case *jsonOut:
+			return report.JSON(w, doc)
+		case *htmlOut:
+			return report.HTML(w, doc)
+		case *csvOut:
+			hosts := col.hosts
+			if !*all {
+				hosts = upOnly(hosts)
+			}
+			return report.CSV(w, hosts)
+		default:
+			return report.Table(w, col.hosts, *all)
+		}
+	}
 	if *outFile != "" {
-		f, err := os.Create(*outFile)
-		if err != nil {
+		return report.WriteFile(*outFile, write)
+	}
+	return write(os.Stdout)
+}
+
+func cmdReport(args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("report", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	outFile := fs.String("o", "", "write HTML to this file instead of standard output")
+	site := fs.String("site", "", "override the saved client/site label")
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "Usage: ztg-scanner report [flags] <scan.json>")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	if fs.NArg() != 1 {
+		fs.Usage()
+		return errors.New("provide one saved scan JSON file")
+	}
+	source := fs.Arg(0)
+	f, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	doc, readErr := report.Read(f)
+	closeErr := f.Close()
+	if readErr != nil {
+		return readErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	siteSupplied := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "site" {
+			siteSupplied = true
+		}
+	})
+	if siteSupplied {
+		if doc.Site, err = validateSiteLabel(*site); err != nil {
 			return err
 		}
-		defer f.Close()
-		w = f
 	}
-	switch {
-	case *jsonOut:
-		return report.JSON(w, report.Document{Tool: "ztg-scanner", Version: version, Targets: fs.Args(), Summary: sum, Hosts: col.hosts})
-	case *csvOut:
-		hosts := col.hosts
-		if !*all {
-			hosts = upOnly(hosts)
-		}
-		return report.CSV(w, hosts)
-	default:
-		return report.Table(w, col.hosts, *all)
+	if *outFile == "" {
+		return report.HTML(stdout, doc)
 	}
+	if samePath(source, *outFile) {
+		return errors.New("output file must differ from the source scan file")
+	}
+	return report.WriteFile(*outFile, func(w io.Writer) error { return report.HTML(w, doc) })
+}
+
+func validateSiteLabel(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if len(value) > 200 || strings.ContainsAny(value, "\r\n\x00") {
+		return "", errors.New("site label must be at most 200 UTF-8 bytes and contain no line breaks or NUL")
+	}
+	return value, nil
+}
+
+func samePath(source, destination string) bool {
+	a, errA := filepath.Abs(source)
+	b, errB := filepath.Abs(destination)
+	if errA == nil && errB == nil && filepath.Clean(a) == filepath.Clean(b) {
+		return true
+	}
+	fiA, errA := os.Stat(source)
+	fiB, errB := os.Stat(destination)
+	return errA == nil && errB == nil && os.SameFile(fiA, fiB)
 }
 
 func upOnly(hs []scan.Host) []scan.Host {

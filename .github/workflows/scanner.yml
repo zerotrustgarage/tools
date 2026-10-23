@@ -137,3 +137,11 @@ jobs:
           npm install --global --ignore-scripts playwright@1.56.1
           npx --yes playwright@1.56.1 install --with-deps chromium
       - run: NODE_PATH="$(npm root --global)" node uitest/run.mjs
+      - name: Install pinned Go toolchain for generated report
+        run: ../ci/install-go.sh
+      - name: Generate and inspect HTML report
+        run: |
+          cd ..
+          go run ./cmd/ztg-scanner report -o "$RUNNER_TEMP/scanner-report.html" internal/report/testdata/client-report.json
+          cd app
+          NODE_PATH="$(npm root --global)" node uitest/report.mjs "$RUNNER_TEMP/scanner-report.html"

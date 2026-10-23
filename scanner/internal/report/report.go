@@ -1,4 +1,4 @@
-// Package report renders scan results as a terminal table, CSV or JSON.
+// Package report renders scan results as a terminal table, CSV, JSON or HTML.
 package report
 
 import (
@@ -15,7 +15,7 @@ import (
 	"github.com/zerotrustgarage/tools/scanner/internal/scan"
 )
 
-// Document is the JSON export: the scan summary and every host.
+// Document is a saved inventory: the scan summary and recorded hosts.
 type Document struct {
 	Tool        string                     `json:"tool"`
 	Version     string                     `json:"version"`

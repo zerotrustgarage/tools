@@ -27,6 +27,11 @@ Target sets: save named network lists per client, or import a UTF-8 text file
 new site inventory and clears SNMP credentials; press Scan explicitly to begin.
 Target sets never remember public-range authorization.
 
+Client reports: Export > HTML, client report saves a printable, self-contained
+inventory with findings and notes. Open it offline in a browser; print to paper
+or PDF. The CLI can render a saved scan without probing devices:
+  ztg-scanner.exe report -o report.html inventory.json
+
 No service, agent, scheduled scan, firewall exception or PATH change is installed.
 Nothing starts automatically. Scan only networks you are authorized to inspect.
 Results stay local unless you export them. SNMP credentials are never saved.
