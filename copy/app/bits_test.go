@@ -53,6 +53,14 @@ func TestBitsNativeImportExportAndCredentialRefusal(t *testing.T) {
 	if _, err := os.Stat(invalid); !os.IsNotExist(err) {
 		t.Fatal("invalid export created a file")
 	}
+	credentialJob, _ := json.Marshal(j)
+	if err := os.WriteFile(jobFile, credentialJob, 0600); err != nil {
+		t.Fatal(err)
+	}
+	a.setPlatform(context.Background(), bitsTestPlatform{fakePlatform: fakePlatform{open: jobFile}})
+	if _, err := a.ImportBitsJob(); err == nil {
+		t.Fatal("saved credential value reached the UI bridge")
+	}
 	document, _ := json.Marshal(map[string]any{"schema": 1, "engine": "bits", "password": "secret"})
 	if err := os.WriteFile(jobFile, document, 0600); err != nil {
 		t.Fatal(err)

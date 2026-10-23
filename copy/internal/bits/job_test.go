@@ -112,6 +112,8 @@ func TestStrictImportAndUnknownParameterRetention(t *testing.T) {
 	for _, document := range []string{
 		`{"schema":1,"engine":"bits","password":"secret"}`,
 		`{"schema":1,"engine":"bits","transfers":[],"options":[{"name":"Credential","password":"secret"}]}`,
+		`{"schema":1,"engine":"bits","options":[{"name":"Credential","values":["secret"]}]}`,
+		`{"schema":1,"engine":"bits","options":[{"name":"proxycredential","values":["secret"]}]}`,
 		`{"schema":1,"engine":"robocopy"}`,
 		`{"schema":2,"engine":"bits"}`,
 	} {

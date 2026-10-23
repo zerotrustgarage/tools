@@ -56,6 +56,11 @@ func Decode(r io.Reader) (Job, error) {
 	if j.Schema != Schema || j.Engine != "bits" {
 		return j, errors.New("expected a schema 1 BITS job")
 	}
+	for _, option := range j.Options {
+		if entry, known := lookup(option.Name); known && entry.Kind == "prompt" && len(option.Values) != 0 {
+			return Job{}, errors.New("BITS credential options cannot contain saved values")
+		}
+	}
 	return j, nil
 }
 
