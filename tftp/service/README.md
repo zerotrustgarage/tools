@@ -2,7 +2,8 @@
 
 Service mode is opt-in. Installing the desktop MSI does not install or start a service.
 `ztg-tftp service check --config FILE` validates JSON, paths, imports and provisioning rules.
-Unknown fields, trailing data and invalid durations are rejected. Relative paths resolve beside FILE.
+Unknown fields, duplicate keys (including case variants), trailing data and invalid durations are rejected.
+Relative paths resolve beside FILE.
 
 Copy `config.example.json` and choose your root, bind and allowlist. Keep the configuration,
 served files and executables writable only by administrators. Set `upload` to a separate directory
@@ -51,7 +52,8 @@ the service. Audit generation directories are unique; logs are never replaced.
 
 `"syslog_tls": "logs.example.com:6514"` enables RFC 5424 messages with RFC 6587 octet framing over
 TLS 1.2 or later. The destination certificate and hostname must verify against the system trust
-store, optionally extended by a PEM `syslog_ca`. No plaintext or insecure TLS fallback exists.
+store, optionally extended by a PEM `syslog_ca`. A CA setting without `syslog_tls` is rejected.
+No plaintext or insecure TLS fallback exists.
 `"event_log": true` forwards to the Windows Application log under provider `ZTGTFTP`.
 Forwarding failures stop the generation rather than silently discarding evidence. The local JSONL
 file is written first. No file contents or detected credential values are forwarded.
