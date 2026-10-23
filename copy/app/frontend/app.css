@@ -64,3 +64,4 @@ main{min-width:0;padding:34px 34px 0}.page-heading{display:flex;align-items:cent
 .verification{background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:15px 17px;margin-top:20px}.verification>div{display:flex;align-items:center;justify-content:space-between;gap:12px}.verification strong{font-size:12px;color:var(--bright)}.verification p{font-size:11px;color:var(--muted);line-height:1.7;margin:10px 0 0}
 
 .bits-file-note{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:17px}.bits-file-note .field-note{margin:6px 0}.bits-file-note button{flex-shrink:0}#bits-source,#bits-destination{font:12px/1.7 ui-monospace,monospace}#bits-validation{max-height:270px;overflow:auto}#bits-validation .field-note{line-height:1.7}#view-bits .review-card .command{max-height:310px}
+#bits-catalog .catalog-row{grid-template-columns:148px minmax(0,1fr) auto}#bits-catalog .catalog-token{word-break:normal;overflow-wrap:anywhere}

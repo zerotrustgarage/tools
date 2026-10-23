@@ -44,8 +44,12 @@ try {
     }
     $baseOptions = $job.options
     $marker = Join-Path $root 'injection-marker'
-    $description = "O'Brien " + '$(New-Item ' + $marker + '); $env:TEMP & 日本語-😀'
+    $description = "O'Brien ‘curly’ " + '$(New-Item ' + $marker + '); $env:TEMP & 日本語-😀'
     $view = Get-Design ($baseOptions + @(@{ name = 'Description'; values = @($description) }, @{ name = 'RetryInterval'; values = @('60') }, @{ name = 'RetryTimeout'; values = @('3600') }, @{ name = 'TransferPolicy'; values = @('Standard') }))
+    $literalTokens, $literalErrors = $null, $null
+    $descriptionAst = [Management.Automation.Language.Parser]::ParseInput($view.command, [ref]$literalTokens, [ref]$literalErrors)
+    $descriptionValue = $descriptionAst.FindAll({ param($node) $node -is [Management.Automation.Language.StringConstantExpressionAst] -and $node.Value -eq $description }, $true)
+    if ($descriptionValue.Count -ne 1) { throw 'PowerShell literal changed straight or typographic quotes' }
     # WhatIf binds the generated arguments to the real inbox cmdlet without starting a transfer.
     & ([ScriptBlock]::Create($view.command + ' -WhatIf'))
     if (Test-Path -LiteralPath $marker) { throw 'Literal command text executed' }

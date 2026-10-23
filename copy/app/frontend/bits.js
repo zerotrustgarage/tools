@@ -20,6 +20,15 @@ export async function initBits({api, make, modal, field, toast, attempt}) {
     review = null; lockActions(true);
     $('bits-command').textContent = 'Checking this design…';
     renderChips();
+    const value = (name, fallback) => draft.options.find(option=>option.name.toLowerCase()===name.toLowerCase())?.values?.[0]?.toLowerCase() || fallback;
+    const asynchronous = draft.options.some(option=>option.name.toLowerCase()==='asynchronous');
+    for (const button of document.querySelectorAll('[data-bits-preset]')) {
+      const preset = button.dataset.bitsPreset, upload = preset === 'upload';
+      const selected = value('TransferType','download') === (upload ? 'upload' : 'download') &&
+        value('Priority','foreground') === (preset === 'background' ? 'normal' : 'foreground') &&
+        asynchronous === (preset === 'background');
+      button.classList.toggle('selected',selected);
+    }
     timer = setTimeout(async () => {
       try {
         const result = await api.DescribeBits(j);
@@ -112,7 +121,6 @@ export async function initBits({api, make, modal, field, toast, attempt}) {
     const preset = button.dataset.bitsPreset;
     draft.options = [{name:'TransferType',values:[preset === 'upload' ? 'Upload' : 'Download']},{name:'Priority',values:[preset === 'background' ? 'Normal' : 'Foreground']}];
     if (preset === 'background') draft.options.push({name:'Asynchronous'});
-    for (const item of document.querySelectorAll('[data-bits-preset]')) item.classList.toggle('selected',item===button);
     refresh();
   };
   for (const button of document.querySelectorAll('[data-bits-browse]')) button.onclick = attempt(async () => {

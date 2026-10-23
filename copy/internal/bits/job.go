@@ -265,7 +265,10 @@ func digits(s string) bool {
 	return true
 }
 
-func quote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
+func quote(s string) string {
+	// PowerShell also recognizes typographic single quotes as string delimiters.
+	return "'" + strings.NewReplacer("'", "''", "‘", "‘‘", "’", "’’").Replace(s) + "'"
+}
 
 func Describe(j Job) View {
 	view := View{Job: j, Issues: j.Issues(), Valid: true}
