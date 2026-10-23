@@ -89,9 +89,14 @@ try{
     assert.equal(await page.locator('#history-list img').count(),0);
     await page.locator('#history-list').getByRole('button',{name:'Load job'}).click();
     await page.waitForFunction(()=>document.getElementById('source').value==='C:\\History');
-    await page.click('#preview');await page.waitForSelector('#stop:not([disabled])');await page.click('#stop');
+    await page.click('#preview');await page.waitForSelector('#preview-actions:not([hidden])');
+    await page.evaluate(()=>{window.__holdRun=true;});
+    await page.click('#start-copy');await page.click('#modal-submit');
+    await page.waitForSelector('#stop:not([disabled])');await page.click('#stop');
     await page.waitForFunction(()=>document.getElementById('phase').textContent==='Operation stopped');
     assert.equal(await page.locator('#preview-actions').isVisible(),false);
+    assert.equal(await page.locator('[data-phase="convergence"]').evaluate(node=>node.classList.contains('done')||node.classList.contains('active')),false);
+    assert.equal(await page.textContent('#verification-badge'),'Incomplete');
     console.log('UI_STAGE '+scheme+' themes');
     await page.selectOption('#theme','light');await page.reload();await page.waitForFunction(()=>document.getElementById('version').textContent==='0.1.0-preview');
     assert.equal(await page.getAttribute('html','data-theme'),'light');

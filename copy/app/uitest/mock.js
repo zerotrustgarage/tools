@@ -39,7 +39,7 @@
       active=copy(j);approved='';ticks=0;state={id:++sequence,running:true,mode:data?'run':'plan',phase:'Previewing',started:new Date().toISOString(),messages:['preview...'],phases:[{name:'preview',summary:copy(summary)}]};return sequence;
     },
     Status:async()=>{
-      if(state.running && ++ticks>=3){
+      if(state.running && ++ticks>=3 && !window.__holdRun){
         const outcome=state.mode==='plan'?'planned':'copied';
         state={...state,running:false,phase:outcome,messages:[...state.messages,outcome],record:{schema:1,job:active,mode:state.mode,state:outcome,normalized_exit:0,started:state.started,finished:new Date().toISOString(),directory:'C:\\records\\2026-10-22\\0123456789abcdef01234567',phases:[{name:'preview',summary:copy(summary)},...(state.mode==='run'?[{name:'copy',summary:copy(summary)},{name:'convergence',summary:{...copy(summary),files:{...summary.files,copied:0},bytes:{...summary.bytes,copied:0}}}]:[])]}};
         if(state.mode==='plan')approved=JSON.stringify(active);

@@ -345,7 +345,7 @@ function renderState(next) {
   $('bytes-total').textContent = summary ? bytes(summary.bytes.copied) : '—';
   $('extras-total').textContent = summary ? number(summary.files.extras) : '—';
   $('outcome').textContent = next.record ? (next.record.normalized_exit === 0 ? 'Passed' : next.record.normalized_exit === 1 ? 'Review' : next.phase === 'canceled' ? 'Stopped' : 'Failed') : '—';
-  $('progress-note').textContent = next.running ? 'Phase status is live. File and byte counts update after each phase; a file announcement does not establish completion.' : next.record?.mode === 'plan' ? 'These are preview totals. Extra destination files are listed and will be kept by an ordinary copy.' : 'The final record includes native logs and the convergence result.';
+  $('progress-note').textContent = next.running ? 'Phase status is live. File and byte counts update after each phase; a file announcement does not establish completion.' : next.record?.mode === 'plan' ? 'These are preview totals. Extra destination files are listed and will be kept by an ordinary copy.' : 'The final record includes native logs and completed phase results.';
   const verification = phases.find(p => p.name === 'convergence' && p.summary);
   $('verification').hidden = next.mode !== 'run' || !next.id;
   if (verification) {
@@ -368,10 +368,13 @@ function renderState(next) {
   const engineFailure = ['failed','invalid','preview-failed'].includes(next.phase);
   $('operation-error').hidden = !next.error && next.phase !== 'canceled' && !engineFailure;
   $('operation-error').textContent = next.phase === 'canceled' ? 'The operation was stopped. Some files may have copied; review the native log before trying again.' : next.error || (engineFailure ? 'Robocopy did not approve this operation. Open the run records to review its native log.' : '');
-  const currentPhase = next.phase?.includes('convergence') || next.phase === 'Checking convergence' ? 3 : next.phase === 'Copying' ? 2 : next.phase === 'Previewing' || next.phase === 'planned' ? 1 : next.record?.mode === 'run' && !next.running ? 3 : 0;
+  const completed = name => phases.some(p => p.name === name && !p.error && !p.process?.canceled && (p.process?.native_exit ?? 0) < 8 && (name === 'validate' || p.summary));
+  const finishedSteps = [completed('validate') || completed('preview'), completed('preview'), completed('copy'), completed('convergence')];
+  const livePhase = {'Validating options':0,'Previewing':1,'Copying':2,'Checking convergence':3}[next.phase];
+  const currentPhase = next.running ? livePhase ?? (finishedSteps[2] ? 3 : finishedSteps[1] ? 2 : 0) : next.phase === 'planned' ? 1 : -1;
   for (const [index, node] of [...$('steps').children].entries()) {
     node.classList.toggle('active', index === currentPhase);
-    node.classList.toggle('done', index < currentPhase || !next.running && next.phase === 'copied');
+    node.classList.toggle('done', finishedSteps[index]);
   }
   $('finished-actions').hidden = next.running || !next.record?.directory;
   $('open-latest').disabled = !next.record?.directory;
