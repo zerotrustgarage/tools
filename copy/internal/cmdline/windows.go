@@ -66,7 +66,7 @@ func Tokenize(command string) ([]string, error) {
 func Render(args []string) (string, error) {
 	var result []string
 	for _, arg := range args {
-		if !utf8.ValidString(arg) || strings.ContainsAny(arg, "\x00\r\n") {
+		if !utf8.ValidString(arg) || strings.ContainsFunc(arg, func(r rune) bool { return r < 32 || r == 127 }) {
 			return "", errors.New("argument contains invalid text")
 		}
 		var b strings.Builder

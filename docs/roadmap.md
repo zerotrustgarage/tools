@@ -137,7 +137,9 @@ ships. Caching only keeps those files on the runners between builds. The Readout
 The build plan is in [copy/docs/design.md](../copy/docs/design.md). Owner-selected defaults are
 recorded there. RC0 has passing local, SMB and contained-logon experiments on English Server
 2022 and 2025. Other releases, locales and optimized-copy progress remain validation work.
-RC1 CLI development is next; desktop, reports, credentials UX and packaging follow its slices.
+RC1 now has a CLI designer, templates and a guarded local copy runner with preview, convergence
+and records. Desktop, full destructive guards, network/credentials UX, metrics, reports and packaging
+remain in their slices.
 See [the evidence review](../copy/docs/rc0.md) and [PR #6](https://github.com/zerotrustgarage/tools/pull/6).
 
 ## Sources

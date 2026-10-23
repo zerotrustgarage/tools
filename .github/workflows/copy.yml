@@ -91,6 +91,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Preview/copy/convergence tests failed' }
           & ./spike/ztg-copy.exe flags --search encryption --json
           if ($LASTEXITCODE -ne 0) { throw 'CLI catalog failed' }
+      - name: Exercise CLI commands and inspect owner-only DACLs
+        shell: pwsh
+        run: ./copy/scripts/check-cli.ps1 -CLI ./spike/ztg-copy.exe
       - name: Capture synthetic fixtures and environment facts
         shell: pwsh
         run: ./copy/scripts/collect.ps1 -Spike ./spike/ztg-copy-spike.exe -Output ./copy/testdata/captures/${{ matrix.os }}

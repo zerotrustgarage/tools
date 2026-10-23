@@ -1,9 +1,10 @@
 # ZTG Copy: design and build plan
 
-Status (October 22, 2026): RC0 started. A synthetic Windows capture harness and CI are implemented; the
-cross-version captures and technical review remain open (see [rc0.md](rc0.md)). RC1 has not started. The
-research is in [research.md](research.md) (its gaps are cited here as G1 to G18) and the option reference in
-[flags.md](flags.md).
+Status (October 23, 2026): RC0 core evidence is reviewed on Server 2022/2025 English.
+The RC1 CLI designer and initial guarded local runner are implemented; acceptance remains
+in progress. See [rc0.md](rc0.md) for remaining release/locale validation and [rc1.md](rc1.md)
+for implemented behavior and remaining acceptance work. Research is in [research.md](research.md)
+(its gaps are cited here as G1 to G18) and the option reference in [flags.md](flags.md).
 
 ## 1. Purpose
 
