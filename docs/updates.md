@@ -12,11 +12,10 @@ implementation checks versions and opens official downloads for the user to inst
 | Scanner | **Check for updates** in the desktop toolbar; `ztg-scanner check-updates [--json]` | Implemented |
 | Readout | **Check for updates** in the status bar, in desktop and browser builds | Implemented |
 | TFTP | **Check for updates** in the desktop header; `ztg-tftp check-updates [--json]` | Implemented |
-| Copy | Shared checker accepts `copy`; application action required when RC1/desktop ships | Copy is currently an RC0 capture harness, not an end-user app |
+| Copy | **Check for updates** in the desktop toolbar; `ztg-copy check-updates [--json]` | Implemented |
 | Directory | `ztg-directory check-updates` from D1, **Check for updates** in the console from D2; tag prefix `directory-v` added to the shared checker with the first package (D7) | Planned (`directory/docs/design.md`) |
 
-The shared standalone checker also supports all four products, including Copy before its app
-exists. From `scripts/updates/`, with the pinned Go toolchain:
+The shared standalone checker also supports all four products, including Copy's desktop and CLI previews. From `scripts/updates/`, with the pinned Go toolchain:
 
 ```sh
 go run ./cmd/ztg-update -tool copy -current dev -json
@@ -68,7 +67,7 @@ exit 0, while network/response errors exit nonzero. No action is taken automatic
 ## Maintaining it
 
 The shared Go and browser implementations live in `scripts/updates/`. The Go code uses only the
-standard library. `sync.mjs` vendors identical source into the independent Scanner and TFTP Go
+standard library. `sync.mjs` vendors identical source into the independent Scanner, TFTP and Copy Go
 modules, and into Scanner's and TFTP's embedded frontends. Readout imports the browser source directly.
 This adds no module or shipping dependency. CI and release builds reject stale copies.
 

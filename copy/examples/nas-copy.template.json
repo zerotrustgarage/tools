@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "catalog_version": 1,
+  "id": "nas-copy",
+  "description": "Design a NAS copy with safe retry defaults. Network execution is not enabled in the initial runner.",
+  "tags": [
+    "nas"
+  ],
+  "fields": [
+    {
+      "name": "source",
+      "kind": "path",
+      "description": "Existing source directory"
+    },
+    {
+      "name": "client",
+      "kind": "text",
+      "description": "Client folder name"
+    }
+  ],
+  "job": {
+    "schema": 1,
+    "name": "NAS copy for {client}",
+    "source": "{source}",
+    "destination": "\\\\nas\\backup\\{client}\\{date}",
+    "options": [
+      "/E",
+      "/FFT",
+      "/R:2",
+      "/W:5",
+      "/XJ"
+    ]
+  }
+}

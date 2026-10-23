@@ -1,0 +1,189 @@
+name: Copy
+
+on:
+  pull_request:
+    paths: ['copy/**', '.github/workflows/copy.yml', 'scripts/updates/**', 'assets/icons/copy/**', 'scripts/ci/check-palette.mjs']
+  push:
+    branches: [main]
+    paths: ['copy/**', '.github/workflows/copy.yml', 'scripts/updates/**', 'assets/icons/copy/**', 'scripts/ci/check-palette.mjs']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: copy-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  spike:
+    name: CLI tests and Windows cross build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: copy
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.26.10'
+          cache: false
+      - name: Format, vet and race tests
+        run: |
+          test -z "$(gofmt -l .)" || (gofmt -d . && exit 1)
+          go vet ./...
+          GOOS=windows GOARCH=amd64 go vet ./...
+          go test -race ./...
+          go test ./internal/cmdline -run '^$' -fuzz '^FuzzRoundTrip$' -fuzztime 10s -parallel 2
+          go test ./internal/template -run '^$' -fuzz '^FuzzTemplateReader$' -fuzztime 10s -parallel 2
+          go test ./internal/parse -run '^$' -fuzz '^FuzzNativeSummary$' -fuzztime 10s -parallel 2
+          go test ./internal/spike -run '^$' -fuzz '^FuzzDecodeUnicode$' -fuzztime 10s -parallel 2
+      - name: Cross build unsigned CLI and Windows test binaries
+        run: |
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o dist/ztg-copy-spike.exe ./cmd/ztg-copy-spike
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o dist/ztg-copy.exe ./cmd/ztg-copy
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go test -c -o dist/cli-tests.exe ./cmd/ztg-copy
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go test -c -o dist/cmdline-tests.exe ./internal/cmdline
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go test -c -o dist/engine-tests.exe ./internal/engine
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go test -c -o dist/run-tests.exe ./internal/run
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: copy-cli-preview
+          path: copy/dist/ztg-copy.exe
+          retention-days: 7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: copy-windows-test-binaries
+          path: |
+            copy/dist/*.exe
+            !copy/dist/ztg-copy.exe
+          retention-days: 7
+
+  windows:
+    name: Windows CLI and RC0 captures (${{ matrix.os }})
+    needs: spike
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: copy-windows-test-binaries
+          path: spike
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: copy-cli-preview
+          path: spike
+      - name: Test native quoting and CLI designer
+        shell: pwsh
+        run: |
+          & ./spike/cli-tests.exe '-test.v' '-test.timeout=2m'
+          if ($LASTEXITCODE -ne 0) { throw 'CLI Windows tests failed' }
+          & ./spike/cmdline-tests.exe '-test.v' '-test.timeout=2m'
+          if ($LASTEXITCODE -ne 0) { throw 'Native Windows quoting tests failed' }
+          & ./spike/engine-tests.exe '-test.v' '-test.timeout=2m'
+          if ($LASTEXITCODE -ne 0) { throw 'Contained Robocopy tests failed' }
+          & ./spike/run-tests.exe '-test.v' '-test.timeout=2m'
+          if ($LASTEXITCODE -ne 0) { throw 'Preview/copy/convergence tests failed' }
+          & ./spike/ztg-copy.exe flags --search encryption --json
+          if ($LASTEXITCODE -ne 0) { throw 'CLI catalog failed' }
+      - name: Exercise CLI commands and inspect owner-only DACLs
+        shell: pwsh
+        run: ./copy/scripts/check-cli.ps1 -CLI ./spike/ztg-copy.exe
+      - name: Capture synthetic fixtures and environment facts
+        shell: pwsh
+        run: ./copy/scripts/collect.ps1 -Spike ./spike/ztg-copy-spike.exe -Output ./copy/testdata/captures/${{ matrix.os }}
+      - name: Temporary SMB credentials and contained network-only logon
+        shell: pwsh
+        run: ./copy/scripts/collect-network.ps1 -Output ./copy/testdata/captures/${{ matrix.os }}
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: copy-rc0-${{ matrix.os }}
+          path: copy/testdata/captures/${{ matrix.os }}/
+          if-no-files-found: error
+          retention-days: 14
+
+
+  desktop:
+    name: Desktop model, UI and Windows cross build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.26.10'
+          cache: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - name: Desktop Go checks and unsigned build
+        run: |
+          cd copy/app
+          go vet ./...
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go vet ./...
+          go test -race ./...
+          bash build-windows.sh 0.1.0-preview amd64 ../../out/copy-desktop
+          cd ../..
+          scripts/ci/check-pe.sh out/copy-desktop/ZTGCopy.exe gui amd64
+          cp copy/app/README.txt out/copy-desktop/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: copy-desktop-preview
+          path: out/copy-desktop/
+          retention-days: 7
+
+  desktop-windows:
+    name: Real Windows desktop copy and stop
+    needs: desktop
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: copy-desktop-preview
+          path: out/copy-package
+      - name: Test actual Wails interface and contained copying
+        shell: pwsh
+        run: |
+          ./copy/scripts/check-gui.ps1 -PackageDirectory ./out/copy-package
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: copy-native-desktop-screenshots
+          path: out/copy-native-ui/
+          if-no-files-found: ignore
+          retention-days: 7
+
+
+  desktop-ui:
+    name: Desktop UI, safe text and themes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - name: Test actual frontend with binding mock
+        run: |
+          npm install --global --ignore-scripts playwright@1.56.1
+          npx --yes playwright@1.56.1 install --with-deps chromium
+          NODE_PATH="$(npm root --global)" node copy/app/uitest/run.mjs out/copy-ui
+          node scripts/ci/check-palette.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: copy-desktop-ui-screenshots
+          path: out/copy-ui/
+          if-no-files-found: ignore
+          retention-days: 7

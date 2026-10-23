@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "passed": true,
+  "first_connection_code": 0,
+  "smb_read_matches": true,
+  "credential_conflict_code": 1219,
+  "netonly_copy": {
+    "in_job_before_resume": true,
+    "native_exit": 3,
+    "io_queryable": true,
+    "read_bytes": 31,
+    "write_bytes": 2701
+  },
+  "netonly_copy_matches": true,
+  "netonly_stop": {
+    "in_job_before_resume": true,
+    "stopped_by_job_close": true,
+    "native_exit": 0,
+    "io_queryable": true,
+    "read_bytes": 0,
+    "write_bytes": 2762
+  },
+  "cancel_a_code": 0,
+  "after_cancel_connection_code": 0,
+  "password_buffers_zeroed": true,
+  "connections_removed": true,
+  "cleanup_errors": [],
+  "smb_facts": {
+    "dialect": "3.1.1",
+    "signed": true,
+    "encrypted": false,
+    "state": "observed"
+  }
+}

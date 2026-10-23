@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "name": "Copy a local tree",
+  "source": "C:\\Data",
+  "destination": "D:\\Backup",
+  "files": [
+    "*.*"
+  ],
+  "options": [
+    "/E",
+    "/MT:8",
+    "/DCOPY:DAT",
+    "/R:2",
+    "/W:5",
+    "/XJ"
+  ]
+}

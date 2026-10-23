@@ -142,6 +142,16 @@ CRT and SDK and the test browser, used on the build machine while compiling and 
 ships. Caching only keeps those files on the runners between builds. The Readout MSI stays about
 5 MB and the Scanner executable about 13 MB.
 
+## 8. ZTG Copy
+
+The build plan is in [copy/docs/design.md](../copy/docs/design.md). Owner-selected defaults are
+recorded there. RC0 has passing local, SMB and contained-logon experiments on English Server
+2022 and 2025. Other releases, locales and optimized-copy progress remain validation work.
+The CLI and initial Windows desktop now provide a designer, templates, preview, guarded local
+copies, convergence and history. Full destructive guards, network/credentials UX, metrics,
+reports and signed packaging remain in their slices. Desktop execution reuses the current runner. See [the evidence review](../copy/docs/rc0.md),
+[RC1 acceptance work](../copy/docs/rc1.md) and [PR #6](https://github.com/zerotrustgarage/tools/pull/6).
+
 ## Sources
 
 Feature claims about other products come mostly from third-party directories and reviews, not
