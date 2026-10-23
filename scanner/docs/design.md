@@ -105,6 +105,17 @@ FTP) and SC.L2-3.13.8 (cleartext administration). It is not itself an assessment
 - CSV: one row per host; cells that begin with `=`, `+`, `-`, `@`, tab or carriage return are prefixed with `'` so
   device-supplied text cannot run as a spreadsheet formula.
 - JSON: the full record (summary, methods, warnings, every host with all probe detail).
+- HTML: a self-contained client inventory report, with the ZTG palette and Scanner logo, site label, scope,
+  observation counts, scan state, findings, notes and device evidence. It renders recorded observations only;
+  it performs no probes and loads no external resources. Device/user text is escaped by `html/template`, with
+  no scripts or active device links. Output is capped at 64 MiB. Desktop reports include every recorded host
+  regardless of grid filters, and file writes replace the destination atomically. An export captures its
+  inventory snapshot before the save dialog so later scans cannot change the selected report.
+
+The CLI's `report` command renders a saved Scanner JSON inventory offline using the same bounded reader as the
+desktop. Reports distinguish recorded observations from the requested address count, label canceled/unfinished
+scans, and keep historical MACs separate from current evidence. A report is not a compliance determination.
+The browser can print the file to PDF using the light palette; XLSX and RMM/PSA CSV layouts remain future work.
 
 ## 7. Desktop app (S2)
 

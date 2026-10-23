@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<title>{{if .Site}}{{.Site}} · {{end}}ZTG Scanner inventory</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg:#f5f7f9; --panel:#ffffff; --panel-2:#eef2f6; --line:#e0e6ed;
+  --text:#24354b; --muted:#526377; --accent:#176634; --high:#b42332; --medium:#90540b; --info:#245c9a;
+}
+@media screen and (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg:#020C1B; --panel:#0A192F; --panel-2:#020C1B; --line:rgba(255,255,255,.10);
+    --text:#cbd5e1; --muted:#94a3b8; --accent:#00FF41; --high:#f87171; --medium:#fbbf24; --info:#60a5fa;
+  }
+}
+* { box-sizing:border-box }
+body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif }
+main { max-width:1440px; margin:auto; padding:28px }
+header, section, .metric { background:var(--panel); border:1px solid var(--line); border-radius:10px }
+header { padding:24px; display:flex; align-items:center; gap:16px; margin-bottom:18px }
+.brand { width:52px; height:52px; flex:none }
+h1,h2,h3,p { margin-top:0 } h1 { margin-bottom:2px; font-size:1.65rem } h2 { font-size:1.2rem; margin-bottom:12px } h3 { font-size:1rem; margin-bottom:8px }
+.muted, small { color:var(--muted) } .meta { display:flex; flex-wrap:wrap; gap:8px 20px; margin-top:12px }
+.badge { border:1px solid var(--line); border-radius:99px; padding:3px 10px; font-weight:650 }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin:16px 0 }
+.metric { padding:14px } .metric strong { display:block; font-size:1.4rem }
+section { padding:20px; margin:16px 0 }
+.scroll { overflow-x:auto } table { width:100%; border-collapse:collapse; font-size:.92rem }
+th,td { text-align:left; vertical-align:top; padding:9px 10px; border-bottom:1px solid var(--line) }
+th { color:var(--muted); font-size:.8rem; text-transform:uppercase; letter-spacing:.04em }
+td { overflow-wrap:anywhere; white-space:pre-wrap } .ip { white-space:nowrap; font-family:ui-monospace,monospace }
+a { color:var(--info); text-decoration:none } a:hover { text-decoration:underline }
+.host { scroll-margin-top:12px; white-space:normal } .host + .host { margin-top:12px }
+.fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px }
+.field { background:var(--panel-2); border-radius:6px; padding:10px; overflow-wrap:anywhere; white-space:pre-wrap }
+.field b { display:block; color:var(--muted); font-size:.78rem; text-transform:uppercase; margin-bottom:3px }
+.finding-high { color:var(--high) } .finding-medium { color:var(--medium) } .finding-info { color:var(--info) }
+.callout { border-left:3px solid var(--accent); padding:8px 12px; background:var(--panel-2) }
+@media print {
+  :root { color-scheme:light; --bg:#ffffff; --panel:#ffffff; --panel-2:#eef2f6; --line:#e0e6ed; --text:#24354b; --muted:#526377; --accent:#176634; --high:#b42332; --medium:#90540b; --info:#245c9a; }
+  body { font-size:10pt } main { max-width:none; padding:0 } header,section,.metric { border-radius:0 }
+  header,.metric { break-inside:avoid } h2,h3 { break-after:avoid }
+  .scroll { overflow:visible } table { font-size:8pt } th,td { padding:5px } .host { break-inside:avoid }
+  a { color:inherit } a[href^="#"]::after { content:none }
+}
+</style>
+</head>
+<body><main>
+<header>
+<svg class="brand" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="ZTG Scanner"><title>ZTG Scanner: radar and ZTG cursor</title><g fill="none" stroke="#64748b" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="27" cy="29" r="22"/><circle cx="27" cy="29" r="13"/></g><path d="M27 29 43 13" fill="none" stroke="#00FF41" stroke-width="5" stroke-linecap="round"/><circle cx="27" cy="29" r="4" fill="#64748b"/><circle cx="17" cy="20" r="3.5" fill="#00FF41"/><path d="M55 38h3.5v18.25H55Z" fill="#00FF41"/></svg>
+<div><div class="muted">Zero Trust Garage</div><h1>Scanner inventory report</h1><div>{{if .Site}}{{.Site}}{{else}}Network inventory{{end}}</div><div class="meta"><span>Tool: {{.Tool}} {{.Version}}</span><span class="badge">{{.Status}}</span></div></div>
+</header>
+<div class="grid">
+<div class="metric"><small>Requested addresses</small><strong>{{.Summary.Total}}</strong></div>
+<div class="metric"><small>Recorded observations</small><strong>{{.Recorded}}</strong></div>
+<div class="metric"><small>Observed responsive</small><strong>{{.Up}}</strong></div>
+<div class="metric"><small>Observed unresponsive</small><strong>{{.Down}}</strong></div>
+<div class="metric"><small>High findings</small><strong>{{index .Findings "high"}}</strong></div>
+<div class="metric"><small>Medium / info findings</small><strong>{{index .Findings "medium"}} / {{index .Findings "info"}}</strong></div>
+</div>
+<section><h2>Scan record</h2><div class="meta"><span>Started (UTC): {{if .Summary.Started.IsZero}}Not recorded{{else}}{{.Summary.Started.UTC.Format "2006-01-02 15:04:05"}}{{end}}</span><span>Finished (UTC): {{if .Summary.Finished.IsZero}}Not recorded{{else}}{{.Summary.Finished.UTC.Format "2006-01-02 15:04:05"}}{{end}}</span></div>
+<h3 style="margin-top:16px">Requested targets</h3>{{if .Targets}}<ul>{{range .Targets}}<li>{{.}}</li>{{end}}</ul>{{else}}<p class="muted">No target specifications recorded.</p>{{end}}
+<h3>Methods</h3>{{if .Summary.Methods}}<ul>{{range .Summary.Methods}}<li>{{.}}</li>{{end}}</ul>{{else}}<p class="muted">No method evidence recorded.</p>{{end}}
+{{if .Summary.Warnings}}<h3>Warnings</h3><ul>{{range .Summary.Warnings}}<li>{{.}}</li>{{end}}</ul>{{end}}</section>
+<section><h2>Findings overview</h2>{{if .FindingCount}}<ul>{{range .Hosts}}{{$host := .}}{{range .Findings}}<li class="finding-{{.Severity}}"><a href="#{{$host.Anchor}}">{{$host.IP}}</a> · {{.Severity}} · {{.Code}}: {{.Message}}</li>{{end}}{{end}}</ul>{{else}}<p class="muted">No findings recorded.</p>{{end}}</section>
+<section><h2>Inventory</h2><div class="scroll"><table><thead><tr><th>IP</th><th>Name</th><th>Type</th><th>Status</th><th>MAC / vendor</th><th>Ports</th><th>Tags / notes</th></tr></thead><tbody>
+{{range .Hosts}}<tr><td class="ip"><a href="#{{.Anchor}}">{{.IP}}</a></td><td>{{.Name}}</td><td>{{.Type}}</td><td>{{.Status}}</td><td>{{.MAC}}{{if .MAC}} · {{end}}{{.Vendor}}{{if .LastKnownMAC}}<br><small>Historical MAC: {{.LastKnownMAC}}</small>{{end}}</td><td>{{.Ports}}</td><td>{{if .Tags}}{{range $i,$v:=.Tags}}{{if $i}}, {{end}}{{$v}}{{end}}{{end}}{{if .Notes}}<br>{{.Notes}}{{end}}</td></tr>{{end}}
+</tbody></table></div></section>
+<section><h2>Device details</h2>{{range .Hosts}}<article class="field host" id="{{.Anchor}}"><h3>{{.IP}} · {{.Name}}</h3>
+<div class="fields">
+<div class="field"><b>Classification reason</b>{{.TypeReason}}</div><div class="field"><b>Evidence</b>{{range .Evidence}}{{.}}<br>{{end}}</div>
+<div class="field"><b>DNS / NetBIOS / mDNS / UPnP</b>{{.Discovery}}{{if .NetBIOS}}<br>Workgroup: {{.NetBIOS.Workgroup}}{{end}}{{if .UPnP}}<br>UPnP name: {{.UPnP.FriendlyName}}{{end}}</div>
+<div class="field"><b>Model / serial / firmware / location</b>{{.Model}}{{if .SNMP}}<br>Serial: {{.SNMP.Serial}}<br>Firmware: {{.Firmware}}<br>Location: {{.SNMP.SysLocation}}{{end}}{{if .UPnP}}<br>UPnP model: {{.UPnP.ModelName}} {{.UPnP.ModelNumber}}{{end}}</div>
+<div class="field"><b>Services</b>{{range .Services}}{{.Port}}/{{.Name}}{{if .Product}} · {{.Product}}{{end}}{{if .HTTP}} · HTTP {{.HTTP.Status}} {{.HTTP.Server}} {{.HTTP.Title}}{{end}}{{if .TLS}} · TLS {{.TLS.Version}}, subject {{.TLS.Subject}}, issuer {{.TLS.Issuer}}, expires {{if .TLS.NotAfter.IsZero}}unknown{{else}}{{.TLS.NotAfter.UTC.Format "2006-01-02"}}{{end}}{{end}}<br>{{end}}</div>
+<div class="field"><b>Findings</b>{{range .Findings}}{{.Severity}} · {{.Code}}: {{.Message}}<br>{{else}}None recorded{{end}}</div>
+<div class="field"><b>Technician annotations</b>Tags: {{range $i,$v:=.Tags}}{{if $i}}, {{end}}{{$v}}{{end}}<br>Notes: {{.Notes}}{{if .Favorite}}<br>Favorite{{end}}</div>
+<div class="field"><b>Historical address evidence</b>Current MAC: {{.MAC}}<br>Last known MAC (historical): {{.LastKnownMAC}}</div>
+</div></article>{{end}}</section>
+<section><h2>How to read this report</h2><p class="callout">This report records observations from one scan and does not provide compliance assurance. An absent device is not proof it was removed; it may be outside the recorded observations or unavailable to the selected probes. A clean scan is not proof that no covered equipment exists.</p></section>
+<footer class="muted">Zero Trust Garage · ZTG Scanner · Local report</footer>
+</main></body></html>

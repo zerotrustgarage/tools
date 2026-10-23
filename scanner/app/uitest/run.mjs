@@ -342,10 +342,21 @@ try {
     await page.waitForSelector('#rows tr[data-ip="192.168.50.2"]');
 
     // Export.
+    await page.fill("#site", "Client North");
     await page.click("#export-btn");
     await page.click('button[data-export="csv"]');
     await page.waitForSelector("#toast:not([hidden])");
     assert.match(await page.textContent("#toast"), /Saved .*ztg-scan\.csv/);
+
+    // HTML is a complete printable report, independent of the down-host grid toggle.
+    await page.uncheck("#show-down");
+    await page.click("#export-btn");
+    await page.click('button[data-export="html"]');
+    await page.waitForFunction(() => window.__calls.filter((c) => c[0] === "Export").some((c) => c[1] === "html"));
+    const htmlExport = (await page.evaluate(() => window.__calls)).filter((c) => c[0] === "Export" && c[1] === "html").at(-1);
+    assert.equal(htmlExport[2], true, "HTML export always includes down hosts");
+    assert.ok((await page.evaluate(() => window.__calls)).some((c) => c[0] === "SetSite" && c[1] === "Client North"), "site label is passed before export");
+    await page.waitForFunction(() => document.getElementById("toast").textContent.includes("ztg-scan.html"));
 
     // Public range needs explicit confirmation; cancel sends nothing more.
     await page.fill("#targets", "8.8.8.8");
