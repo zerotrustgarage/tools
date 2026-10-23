@@ -90,6 +90,8 @@ try{
     assert.equal(await page.locator('#history-list img').count(),0);
     await page.locator('#history-list').getByRole('button',{name:'Details',exact:true}).click();
     await page.getByText('Copy errors',{exact:true}).waitFor();
+    await page.getByText('No completed native result',{exact:true}).waitFor();
+    assert.equal(await page.locator('#modal-body .record-phases tbody tr').filter({hasText:'convergence'}).locator('td').nth(1).textContent(),'—');
     assert.match(await page.textContent('#modal-body'),/Windows 32/);
     await page.locator('#modal-body details summary').click();
     assert.match(await page.textContent('#modal-body'),/日本語/);

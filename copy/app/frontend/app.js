@@ -371,8 +371,10 @@ function showRecordDetails(record) {
     head.append(labels); table.append(head);
     const rows = make('tbody');
     for (const phase of record.phases || []) {
-      const row = make('tr'), code = phase.process?.native_exit;
-      row.append(make('td',phase.name),make('td',code === undefined ? '—' : String(code)),make('td',phase.error || nativeExitText(code)));
+      const row = make('tr'), result = phase.process, code = result?.native_exit;
+      const hasResult = result && result.in_job_before_resume !== false && Number.isInteger(code);
+      const meaning = phase.error || (result?.canceled ? 'Operation stopped' : hasResult ? nativeExitText(code) : 'No completed native result');
+      row.append(make('td',phase.name),make('td',hasResult ? String(code) : '—'),make('td',meaning));
       rows.append(row);
     }
     table.append(rows); body.append(table);
