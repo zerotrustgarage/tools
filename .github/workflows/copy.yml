@@ -155,8 +155,6 @@ jobs:
       - name: Test actual Wails interface and contained copying
         shell: pwsh
         run: |
-          npm install --global --ignore-scripts playwright@1.56.1
-          if ($LASTEXITCODE -ne 0) { throw 'Playwright installation failed' }
           ./copy/scripts/check-gui.ps1 -PackageDirectory ./out/copy-package
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()

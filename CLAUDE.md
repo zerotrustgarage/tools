@@ -10,7 +10,7 @@ release workflow and `CLAUDE.md`. Read the tool's own file before changing it:
 - `directory/`: ZTG Directory, Active Directory and Microsoft 365 management installed per customer (plan,
   slice D0; no code yet). See `directory/CLAUDE.md`.
 
-- `copy/`: ZTG Copy, Robocopy job designer and evidence recorder (Go, initial guarded local CLI). See `copy/CLAUDE.md`.
+- `copy/`: ZTG Copy, Robocopy job designer and evidence recorder (Go, desktop preview and guarded local CLI). See `copy/CLAUDE.md`.
 
 ## Repository-wide rules
 
