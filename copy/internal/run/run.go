@@ -22,11 +22,11 @@ import (
 )
 
 type Phase struct {
-	Name      string         `json:"name"`
-	Process   engine.Result  `json:"process"`
-	Summary   *parse.Summary `json:"summary,omitempty"`
-	LogSHA256 string         `json:"log_sha256,omitempty"`
-	Error     string         `json:"error,omitempty"`
+	Name        string             `json:"name"`
+	Process     engine.Result      `json:"process"`
+	Summary     *parse.Summary     `json:"summary,omitempty"`
+	LogSHA256   string             `json:"log_sha256,omitempty"`
+	Error       string             `json:"error,omitempty"`
 	Diagnostics *parse.Diagnostics `json:"diagnostics,omitempty"`
 }
 
