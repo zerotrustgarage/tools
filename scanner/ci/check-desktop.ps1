@@ -59,12 +59,15 @@ foreach ($control in @($theme, $settings, $updates)) {
 }
 New-Item -ItemType Directory -Force -Path $Shots | Out-Null
 foreach ($choice in @(
-  @{ Name = 'dark'; Keys = '{HOME}{DOWN}{DOWN}{ENTER}'; R = 2; G = 12; B = 27 },
-  @{ Name = 'light'; Keys = '{HOME}{DOWN}{ENTER}'; R = 245; G = 247; B = 249 }
+  @{ Name = 'dark'; Keys = 'd'; R = 2; G = 12; B = 27 },
+  @{ Name = 'light'; Keys = 'l'; R = 245; G = 247; B = 249 }
 )) {
   $theme.SetFocus()
-  $theme.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern).Expand()
+  Start-Sleep -Milliseconds 100
+  # Native select type-ahead chooses the named option; Tab commits without popup timing races.
   [System.Windows.Forms.SendKeys]::SendWait($choice['Keys'])
+  Start-Sleep -Milliseconds 100
+  [System.Windows.Forms.SendKeys]::SendWait('{TAB}')
   $matched = $false
   for ($i = 0; $i -lt 50; $i++) {
     Start-Sleep -Milliseconds 100
@@ -74,8 +77,8 @@ foreach ($choice in @(
     try {
       $graphics.CopyFromScreen([int]$rect.Left, [int]$rect.Top, 0, 0, $bitmap.Size)
       $pixel = $bitmap.GetPixel([int]($bitmap.Width / 2), $bitmap.Height - 60)
+      $bitmap.Save((Join-Path $Shots "scanner-$Version-$($choice.Name).png"), [System.Drawing.Imaging.ImageFormat]::Png)
       if ($pixel.R -eq $choice.R -and $pixel.G -eq $choice.G -and $pixel.B -eq $choice.B) {
-        $bitmap.Save((Join-Path $Shots "scanner-$Version-$($choice.Name).png"), [System.Drawing.Imaging.ImageFormat]::Png)
         $matched = $true
         break
       }
@@ -84,6 +87,5 @@ foreach ($choice in @(
   if (-not $matched) { throw "Desktop did not visibly switch to $($choice.Name): observed $pixel" }
 }
 $theme.SetFocus()
-$theme.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern).Expand()
-[System.Windows.Forms.SendKeys]::SendWait('{HOME}{ENTER}')
+[System.Windows.Forms.SendKeys]::SendWait('s{TAB}')
 Write-Host "Desktop ${Version}: unified controls and actual dark/light pixels verified."
