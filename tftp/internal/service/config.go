@@ -4,6 +4,7 @@ package service
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/zerotrustgarage/tools/tftp/internal/importer"
 	"github.com/zerotrustgarage/tools/tftp/internal/server"
 	"github.com/zerotrustgarage/tools/tftp/internal/store"
@@ -60,6 +61,9 @@ func Load(name string) (Config, error) {
 	if d.Decode(new(any)) != io.EOF {
 		return c, errors.New("trailing config data")
 	}
+	if e = rejectDuplicateKeys(b); e != nil {
+		return c, e
+	}
 	base := filepath.Dir(name)
 	for _, p := range []*string{&c.Root, &c.Upload, &c.AuditDir, &c.Manifest, &c.Scanner, &c.SyslogCA} {
 		if *p != "" && !filepath.IsAbs(*p) {
@@ -78,9 +82,84 @@ func Load(name string) (Config, error) {
 	_, e = c.Server()
 	return c, e
 }
+
+// validateForwarding rejects incomplete forwarding settings before they can
+// be mistaken for a successfully configured sink.
+func (c Config) validateForwarding() error {
+	if c.SyslogCA != "" && c.SyslogTLS == "" {
+		return errors.New("syslog_ca requires syslog_tls")
+	}
+	return nil
+}
+
+// encoding/json accepts duplicate object keys and silently keeps the last
+// value. Reject them so an administrator and the service cannot interpret a
+// security setting differently.
+func rejectDuplicateKeys(data []byte) error {
+	d := json.NewDecoder(strings.NewReader(string(data)))
+	var value func() error
+	value = func() error {
+		tok, err := d.Token()
+		if err != nil {
+			return err
+		}
+		delim, ok := tok.(json.Delim)
+		if !ok {
+			return nil
+		}
+		switch delim {
+		case '{':
+			seen := make([]string, 0)
+			for d.More() {
+				keyToken, err := d.Token()
+				if err != nil {
+					return err
+				}
+				key, ok := keyToken.(string)
+				if !ok {
+					return errors.New("invalid service config object key")
+				}
+				duplicate := false
+				for _, prior := range seen {
+					if strings.EqualFold(prior, key) {
+						duplicate = true
+						break
+					}
+				}
+				if duplicate {
+					return fmt.Errorf("duplicate service config key %q", key)
+				}
+				seen = append(seen, key)
+				if err := value(); err != nil {
+					return err
+				}
+			}
+			_, err = d.Token()
+			return err
+		case '[':
+			for d.More() {
+				if err := value(); err != nil {
+					return err
+				}
+			}
+			_, err = d.Token()
+			return err
+		default:
+			return errors.New("invalid service config JSON")
+		}
+	}
+	if err := value(); err != nil {
+		return fmt.Errorf("invalid service config JSON: %w", err)
+	}
+	return nil
+}
+
 func (c Config) Server() (server.Config, error) {
 	if c.UploadMax < 0 {
 		return server.Config{}, errors.New("upload_max must not be negative")
+	}
+	if e := c.validateForwarding(); e != nil {
+		return server.Config{}, e
 	}
 	duration, e := time.ParseDuration(c.Duration)
 	if e != nil || duration <= 0 {
