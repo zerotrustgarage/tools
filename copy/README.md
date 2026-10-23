@@ -72,8 +72,8 @@ Long identity paths are kept separate from the original invocation paths.
 A job is a versioned JSON document, as in [examples/copy-tree.job.json](examples/copy-tree.job.json).
 Unknown switches remain in imported jobs and appear as errors when validated. Unknown JSON
 fields, including password fields, are rejected. No command invokes a shell, expands environment
-variables or accepts a password. Printed commands use direct Windows process quoting; they
-are not shell scripts.
+variables or accepts a password. CLI command output uses direct Windows process quoting; it is not a shell script. The desktop
+Copy button renders a PowerShell command with each argument quoted separately.
 
 Records are retained until manually deleted under
 `%LOCALAPPDATA%\ZTG\Copy\runs\<date>\<id>\`.

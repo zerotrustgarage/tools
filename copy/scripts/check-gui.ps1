@@ -49,7 +49,13 @@ function Click-Button([string]$prefix) {
     do {
         $condition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::Button)
         foreach ($element in $window.FindAll([Windows.Automation.TreeScope]::Descendants, $condition)) {
-            if ($element.Current.Name.StartsWith($prefix) -and $element.Current.IsEnabled -and -not $element.Current.IsOffscreen) {
+            if (([string]$element.Current.Name).StartsWith($prefix) -and $element.Current.IsEnabled) {
+                if ($element.Current.IsOffscreen) {
+                    $scroll = $null
+                    if ($element.TryGetCurrentPattern([Windows.Automation.ScrollItemPattern]::Pattern, [ref]$scroll)) { $scroll.ScrollIntoView() }
+                }
+                if ($element.Current.IsOffscreen) { continue }
+                Write-Output "Native click: $prefix"
                 $pattern = $element.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern)
                 $pattern.Invoke()
                 return
