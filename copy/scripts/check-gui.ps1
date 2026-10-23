@@ -128,7 +128,7 @@ try {
     Save-DesktopScreenshot 'copy-native-complete.png'
     # Import a throttled job through the real command dialog so Stop is tested
     # while the contained engine is still copying, rather than after a fast copy.
-    [IO.File]::WriteAllBytes((Join-Path $source 'slow.bin'), [byte[]]::new(8MB))
+    [IO.File]::WriteAllBytes((Join-Path $source 'slow.bin'), [byte[]]::new(32MB))
     Click-Button 'Back to designer'
     Click-Button 'Explain a command'
     Set-Edit 'Robocopy command' ('robocopy "' + $source + '" "' + $destination + '" /E /R:2 /W:5 /XJ /IORATE:1048576 /NOOFFLOAD /NOCLONE')
@@ -145,7 +145,8 @@ try {
     $deadline = [DateTime]::UtcNow.AddSeconds(10)
     do {
         $condition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Copy in progress')
-        $dialog = [Windows.Automation.AutomationElement]::RootElement.FindFirst([Windows.Automation.TreeScope]::Children, $condition)
+        $dialog = $window.FindFirst([Windows.Automation.TreeScope]::Descendants, $condition)
+        if (-not $dialog) { $dialog = [Windows.Automation.AutomationElement]::RootElement.FindFirst([Windows.Automation.TreeScope]::Children, $condition) }
         if ($dialog) { break }
         Start-Sleep -Milliseconds 100
     } while ([DateTime]::UtcNow -lt $deadline)
