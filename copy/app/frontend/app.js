@@ -340,7 +340,7 @@ function renderDiagnostics(phases, parent) {
       const card = make('article',undefined,'diagnostic-card');
       const heading = make('div',undefined,'diagnostic-heading');
       heading.append(make('strong',group.cause),make('span','Windows '+group.code,'badge warn'));
-      card.append(heading,make('p',phase.name+' · '+number(group.count)+' log entries, including retries','field-note'),make('p',group.suggestion,'diagnostic-advice'));
+      card.append(heading,make('p',phase.name+' · '+number(group.count)+(group.count === 1 ? ' log entry' : ' log entries')+', including retries','field-note'),make('p',group.suggestion,'diagnostic-advice'));
       if (group.samples?.length) {
         const samples = make('details');
         samples.append(make('summary','First log entries'),make('pre',group.samples.join('\n'),'diagnostic-samples'));
@@ -373,7 +373,9 @@ function showRecordDetails(record) {
     for (const phase of record.phases || []) {
       const row = make('tr'), result = phase.process, code = result?.native_exit;
       const hasResult = result && result.in_job_before_resume !== false && Number.isInteger(code);
-      const meaning = phase.error || (result?.canceled ? 'Operation stopped' : hasResult ? nativeExitText(code) : 'No completed native result');
+      let meaning = hasResult ? (phase.name === 'help' ? 'Help output' : nativeExitText(code)) : 'No completed native result';
+      if (result?.canceled) meaning = 'Operation stopped';
+      if (phase.error) meaning = phase.error;
       row.append(make('td',phase.name),make('td',hasResult ? String(code) : '—'),make('td',meaning));
       rows.append(row);
     }

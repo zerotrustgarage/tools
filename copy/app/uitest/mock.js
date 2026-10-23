@@ -76,7 +76,7 @@
     AcceptTemplate:async(t,accepted)=>{calls.push(['AcceptTemplate',accepted]);if(!accepted)throw Error('acceptance required');templates.push(copy(t));},
     ExportTemplate:async id=>{calls.push(['ExportTemplate',id]);return 'D:\\'+id+'.json';},
     History:async()=>copy(history),
-    HistoryRecord:async id=>{calls.push(['HistoryRecord',id]);return {schema:1,mode:'run',state:'failed',normalized_exit:2,job:{...base,source:'C:\\History',destination:'D:\\Archive'},started:'2026-10-22T12:00:00Z',finished:'2026-10-22T12:01:00Z',phases:[{name:'copy',process:{native_exit:8,in_job_before_resume:true},diagnostics:copy(diagnostics)},{name:'convergence',process:{native_exit:0,in_job_before_resume:false}}]};},
+    HistoryRecord:async id=>{calls.push(['HistoryRecord',id]);return {schema:1,mode:'run',state:'failed',normalized_exit:2,job:{...base,source:'C:\\History',destination:'D:\\Archive'},started:'2026-10-22T12:00:00Z',finished:'2026-10-22T12:01:00Z',phases:[{name:'help',process:{native_exit:16,in_job_before_resume:true}},{name:'copy',process:{native_exit:8,in_job_before_resume:true},diagnostics:copy(diagnostics)},{name:'convergence',process:{native_exit:0,in_job_before_resume:false}}]};},
     HistoryJob:async id=>{calls.push(['HistoryJob',id]);return describe({...base,source:'C:\\History',destination:'D:\\Archive'});},
     RevealRecord:async id=>calls.push(['RevealRecord',id])
   }}};
