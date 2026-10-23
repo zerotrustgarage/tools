@@ -1,8 +1,39 @@
 # ZTG Copy
 
-A Windows Robocopy job designer, runner and evidence recorder. The initial CLI implements
+A Windows Robocopy job designer, runner and evidence recorder. The desktop app and CLI implement
 ordinary local copies, a searchable 97-option reference, command import/explanation and
 per-user templates. Development follows [docs/design.md](docs/design.md); RC1 is in progress.
+
+## Windows desktop app
+
+Extract the desktop preview ZIP and open **ZTGCopy.exe**. The Windows WebView2 runtime must
+be installed. The package also includes the CLI and checksums.
+
+- Design: browse for existing local folders, choose presets, edit catalog-backed options, import
+  and explain a command, and copy a safely quoted PowerShell command.
+- Preview: review file/byte totals and extras, then confirm Start copy. Editing a job invalidates
+  its preview approval. The runner also performs a fresh preview before copying.
+- Activity: phase status, elapsed time, completed phase totals, Stop and explicit convergence
+  results. Incomplete verification is shown when an operation stops.
+- Templates: save fixed jobs or ask for endpoints each time; review imported templates before
+  accepting them; resolve fields into the designer. Templates never bypass preview or guards.
+- History: load prior jobs and open their local run records.
+- Persistent System/Light/Dark themes, native window controls and an explicit Check for updates.
+
+The GUI uses the same guarded local runner and restrictions as the CLI. It runs as the current
+user and does not enable network, destructive or privileged modes. It does not show an unverified
+percentage, speed or ETA.
+
+Build from source on Linux or Windows with Go 1.26.10 (the shell script requires bash):
+
+```bash
+cd copy/app
+bash build-windows.sh 0.1.0-preview amd64 dist
+```
+
+The Windows app uses the same pinned Wails v2.16.0 dependency set as Scanner and TFTP. There
+are no frontend framework dependencies. The portable preview is unsigned; MSI/release signing
+remains a later slice.
 
 ## Build and use the CLI
 
@@ -102,12 +133,13 @@ go test -race ./...
 go vet ./...
 GOOS=windows GOARCH=amd64 go vet ./...
 GOOS=windows GOARCH=amd64 go build ./cmd/ztg-copy
+cd app && go test -race ./... && go vet ./...
 ```
 
 The Windows API dependency is the same pinned x/sys version used by Scanner; the update
 checker is vendored from `scripts/updates/` and checked by the shared sync tool.
 
-The desktop app, complete destructive guards, alternate credential UX, network copying,
+Complete destructive guards, alternate credential UX, network copying,
 hash verification, reports, reliable ETA, installers and signing are still in the roadmap.
 Other Windows releases, localized logs and optimized/offloaded copy behavior remain release
 validation gates. See [docs/rc0.md](docs/rc0.md) for the scoped feasibility review.

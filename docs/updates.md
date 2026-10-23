@@ -12,10 +12,10 @@ implementation checks versions and opens official downloads for the user to inst
 | Scanner | **Check for updates** in the desktop toolbar; `ztg-scanner check-updates [--json]` | Implemented |
 | Readout | **Check for updates** in the status bar, in desktop and browser builds | Implemented |
 | TFTP | **Check for updates** in the desktop header; `ztg-tftp check-updates [--json]` | Implemented |
-| Copy | `ztg-copy check-updates [--json]` | Implemented in the initial CLI; desktop action required when its app ships |
+| Copy | **Check for updates** in the desktop toolbar; `ztg-copy check-updates [--json]` | Implemented |
 | Directory | `ztg-directory check-updates` from D1, **Check for updates** in the console from D2; tag prefix `directory-v` added to the shared checker with the first package (D7) | Planned (`directory/docs/design.md`) |
 
-The shared standalone checker also supports all four products, including Copy's CLI preview. From `scripts/updates/`, with the pinned Go toolchain:
+The shared standalone checker also supports all four products, including Copy's desktop and CLI previews. From `scripts/updates/`, with the pinned Go toolchain:
 
 ```sh
 go run ./cmd/ztg-update -tool copy -current dev -json

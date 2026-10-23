@@ -37,25 +37,25 @@ type Platform interface {
 type executeFunc func(context.Context, job.Job, string, string, bool, io.Writer) (copyrun.Record, error)
 
 type App struct {
-	mu          sync.Mutex
-	ctx         context.Context
-	platform    Platform
-	execute     executeFunc
-	records     string
-	templates   string
-	state       State
-	cancel      context.CancelFunc
-	done        chan struct{}
-	approved    string
-	sequence    uint64
+	mu        sync.Mutex
+	ctx       context.Context
+	platform  Platform
+	execute   executeFunc
+	records   string
+	templates string
+	state     State
+	cancel    context.CancelFunc
+	done      chan struct{}
+	approved  string
+	sequence  uint64
 }
 
 type View struct {
-	Job        job.Job     `json:"job"`
-	Command    string      `json:"command"`
-	Issues     []job.Issue `json:"issues"`
-	CanRun     bool        `json:"can_run"`
-	Restriction string    `json:"restriction,omitempty"`
+	Job         job.Job     `json:"job"`
+	Command     string      `json:"command"`
+	Issues      []job.Issue `json:"issues"`
+	CanRun      bool        `json:"can_run"`
+	Restriction string      `json:"restriction,omitempty"`
 }
 
 type State struct {
@@ -76,11 +76,11 @@ type CatalogEntry struct {
 }
 
 type Bootstrap struct {
-	Version    string           `json:"version"`
-	Catalog    []CatalogEntry  `json:"catalog"`
-	Records    string           `json:"records"`
-	Templates  string           `json:"templates"`
-	DefaultJob job.Job          `json:"default_job"`
+	Version    string         `json:"version"`
+	Catalog    []CatalogEntry `json:"catalog"`
+	Records    string         `json:"records"`
+	Templates  string         `json:"templates"`
+	DefaultJob job.Job        `json:"default_job"`
 }
 
 func NewApp() *App {

@@ -48,8 +48,10 @@ are treated as completed bytes.
 
 ## Later slices
 
-Destructive operations, alternate credentials, network execution, the desktop interface,
-hash/security verification, HTML/CSV reports and signed packaging remain unimplemented.
+The owner requested the GUI next. The initial Windows interface now wraps the guarded local
+runner, with design, preview, confirmation, activity, templates, history, themes and updates.
+Destructive operations, alternate credentials, network execution, hash/security verification,
+HTML/CSV reports and signed packaging remain unimplemented.
 The initial runner refuses those execution modes. The reference and template designer can
 still explain or retain their switches for review.
 

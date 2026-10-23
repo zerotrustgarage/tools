@@ -55,9 +55,9 @@ func main() {
 		Title: "ZTG Copy", Width: 1360, Height: 880, MinWidth: 1050, MinHeight: 680,
 		Frameless: true, CSSDragProperty: "--wails-draggable", CSSDragValue: "drag",
 		BackgroundColour: &options.RGBA{R: 2, G: 12, B: 27, A: 255},
-		AssetServer: &assetserver.Options{Assets: frontend},
-		OnStartup: func(ctx context.Context) { app.setPlatform(ctx, wailsPlatform{ctx}) },
-		OnShutdown: func(context.Context) { app.Shutdown() },
+		AssetServer:      &assetserver.Options{Assets: frontend},
+		OnStartup:        func(ctx context.Context) { app.setPlatform(ctx, wailsPlatform{ctx}) },
+		OnShutdown:       func(context.Context) { app.Shutdown() },
 		OnBeforeClose: func(ctx context.Context) bool {
 			if !app.Status().Running {
 				return false
@@ -73,7 +73,7 @@ func main() {
 			app.Stop()
 			return false
 		},
-		Bind: []interface{}{app},
+		Bind:    []interface{}{app},
 		Windows: &windows.Options{Theme: windows.SystemDefault, DisableFramelessWindowDecorations: false},
 	})
 	if err != nil {

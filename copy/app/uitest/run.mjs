@@ -19,6 +19,8 @@ const server=createServer(async(req,res)=>{
   catch{res.writeHead(404).end();}
 }).listen(0,'127.0.0.1');
 await new Promise(resolve=>server.once('listening',resolve));
+const watchdog=setTimeout(()=>{console.error('Desktop UI test exceeded its total time budget');process.exit(1);},180000);
+watchdog.unref();
 const browser=await chromium.launch(process.env.CHROMIUM?{executablePath:process.env.CHROMIUM}:undefined);
 async function screenshot(page,name){
   const data=await page.screenshot({path:join(screenshots,name),fullPage:true});
@@ -28,14 +30,17 @@ async function screenshot(page,name){
 try{
   for(const scheme of ['dark','light']){
     const page=await browser.newPage({viewport:{width:1440,height:1050},colorScheme:scheme});
+    page.setDefaultTimeout(12000);
+    page.setDefaultNavigationTimeout(20000);
+    console.log('UI_STAGE '+scheme+' startup');
     const errors=[];page.on('pageerror',error=>errors.push(String(error)));
     let requests=0;
     await page.route('https://api.github.com/**',route=>{requests++;return route.fulfill({json:[{tag_name:'copy-v0.2.0',published_at:'2026-10-22T00:00:00Z',assets:[{name:'SHA256SUMS.txt',state:'uploaded',size:20},{name:'ZTG-Copy-0.2.0-x64.msi',state:'uploaded',size:20}]}]});});
-    await page.addInitScript(data=>{window.__catalog=data;},catalogue);
-    await page.addInitScript({path:join(here,'mock.js')});
+    await page.addInitScript({content:'window.__catalog='+JSON.stringify(catalogue)+';\n'+await readFile(join(here,'mock.js'),'utf8')});
     await page.goto('http://127.0.0.1:'+server.address().port);
     await page.waitForFunction(()=>document.getElementById('version').textContent==='0.1.0-preview');
     assert.equal(requests,0,'no background update checks');
+    console.log('UI_STAGE '+scheme+' designer');
     await page.click('[data-browse="source"]');await page.click('[data-browse="destination"]');
     await page.waitForFunction(()=>!document.getElementById('preview').disabled);
     await page.fill('#job-name','Quarterly file archive');
@@ -45,17 +50,21 @@ try{
     await page.locator('.option-chip').filter({hasText:'/MT:8'}).click();
     await page.fill('#option-value','16');await page.click('#modal-submit');
     await page.waitForFunction(()=>document.getElementById('selected-options').textContent.includes('/MT:16'));
+    console.log('UI_STAGE '+scheme+' preview');
     await page.click('#preview');
     await page.waitForSelector('#preview-actions:not([hidden])');
     assert.equal(await page.textContent('#files-total'),'12');
+    console.log('UI_STAGE '+scheme+' copy');
     await page.click('#start-copy');await page.click('#modal-submit');
     await page.waitForFunction(()=>document.getElementById('phase').textContent==='Copy complete');
     assert.equal(await page.textContent('#outcome'),'Passed');
+    assert.equal(await page.textContent('#verification-badge'),'Passed');
     const starts=await page.evaluate(()=>window.__calls.filter(c=>c[0]==='Start'));
     assert.equal(starts.length,2);assert.equal(starts[0][2],false);assert.equal(starts[1][2],true);
     if(scheme==='dark')await screenshot(page,'copy-activity-dark.png');
     await page.click('#open-latest');
     await page.click('#back-design');
+    console.log('UI_STAGE '+scheme+' templates');
     await page.click('#save-template');await page.fill('#template-name','quarterly-copy');await page.fill('#template-description','<img src=x onerror="window.__pwned=true">');await page.click('#modal-submit');
     await page.click('[data-view="templates"]');
     const card=page.locator('.template-card').filter({hasText:'quarterly-copy'});
@@ -63,6 +72,7 @@ try{
     await page.fill('#template-field-source','C:\\Finance');await page.fill('#template-field-destination','D:\\Finance');await page.click('#modal-submit');
     await page.waitForFunction(()=>document.getElementById('source').value==='C:\\Finance');
     assert.equal(await page.locator('#preview-actions').isVisible(),false,'template does not reuse preview approval');
+    console.log('UI_STAGE '+scheme+' command-import');
     await page.click('#import-command');await page.fill('#import-command-text','robocopy C:\\Data D:\\Archive /E /FUTURE:9');await page.click('#modal-submit');
     await page.waitForFunction(()=>document.getElementById('selected-options').textContent.includes('/FUTURE:9'));
     assert.equal(await page.locator('#preview').isDisabled(),true);
@@ -73,6 +83,7 @@ try{
     await page.click('#import-template');await page.click('#modal-submit');
     await page.waitForFunction(()=>window.__calls.some(c=>c[0]==='AcceptTemplate'&&c[1]===true));
     assert.equal(await page.locator('#templates-list img').count(),0);
+    console.log('UI_STAGE '+scheme+' history');
     await page.click('[data-view="history"]');
     await page.waitForSelector('#history-list tr');
     assert.equal(await page.locator('#history-list img').count(),0);
@@ -81,10 +92,12 @@ try{
     await page.click('#preview');await page.waitForSelector('#stop:not([disabled])');await page.click('#stop');
     await page.waitForFunction(()=>document.getElementById('phase').textContent==='Operation stopped');
     assert.equal(await page.locator('#preview-actions').isVisible(),false);
+    console.log('UI_STAGE '+scheme+' themes');
     await page.selectOption('#theme','light');await page.reload();await page.waitForFunction(()=>document.getElementById('version').textContent==='0.1.0-preview');
     assert.equal(await page.getAttribute('html','data-theme'),'light');
     await page.selectOption('#theme','dark');assert.equal(await page.getAttribute('html','data-theme'),'dark');
     assert.equal(await page.evaluate(()=>window.__pwned),undefined);
+    console.log('UI_STAGE '+scheme+' updates');
     await page.click('#check-updates');
     await page.waitForFunction(()=>document.getElementById('ztg-update-dialog')?.textContent.includes('Update available: 0.2.0'));
     await page.getByRole('button',{name:'View release and downloads'}).click();

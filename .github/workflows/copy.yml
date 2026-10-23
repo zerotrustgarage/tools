@@ -122,14 +122,6 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
-      - name: Recover Go formatting while cloud executor is unavailable
-        run: |
-          python3 - <<'PY'
-          import base64, pathlib, subprocess
-          for name in subprocess.check_output(['gofmt', '-l', 'copy'], text=True).splitlines():
-              subprocess.check_call(['gofmt', '-w', name])
-              print('COPY_GUI_FORMAT ' + name + ' ' + base64.b64encode(pathlib.Path(name).read_bytes()).decode())
-          PY
       - name: Desktop Go checks and unsigned build
         run: |
           cd copy/app
@@ -141,23 +133,10 @@ jobs:
           scripts/ci/check-pe.sh out/copy-desktop/ZTGCopy.exe gui amd64
           cp copy/app/README.txt out/copy-desktop/
           (cd out/copy-desktop && zip -j ../ZTG-Copy-preview-windows-x64.zip ZTGCopy.exe ztg-copy.exe SHA256SUMS.txt README.txt)
-      - name: Desktop UI in Chromium
-        run: |
-          npm install --global --ignore-scripts playwright@1.56.1
-          npx --yes playwright@1.56.1 install --with-deps chromium
-          NODE_PATH="$(npm root --global)" node copy/app/uitest/run.mjs out/copy-ui
-          node scripts/ci/check-palette.mjs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: copy-desktop-preview
           path: out/ZTG-Copy-preview-windows-x64.zip
-          retention-days: 7
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
-        with:
-          name: copy-desktop-ui-screenshots
-          path: out/copy-ui/
-          if-no-files-found: ignore
           retention-days: 7
 
   desktop-windows:
@@ -185,5 +164,29 @@ jobs:
         with:
           name: copy-native-desktop-screenshots
           path: out/copy-native-ui/
+          if-no-files-found: ignore
+          retention-days: 7
+
+
+  desktop-ui:
+    name: Desktop UI, safe text and themes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - name: Test actual frontend with binding mock
+        run: |
+          npm install --global --ignore-scripts playwright@1.56.1
+          npx --yes playwright@1.56.1 install --with-deps chromium
+          NODE_PATH="$(npm root --global)" node copy/app/uitest/run.mjs out/copy-ui
+          node scripts/ci/check-palette.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: copy-desktop-ui-screenshots
+          path: out/copy-ui/
           if-no-files-found: ignore
           retention-days: 7

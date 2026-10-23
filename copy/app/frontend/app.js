@@ -131,6 +131,7 @@ function renderReview() {
   $('review-badge').className = 'badge' + (empty ? '' : review.can_run ? ' ok' : ' warn');
   $('command').textContent = review.command || 'Choose folders to see the command.';
   $('preview').disabled = !review.can_run || Boolean(state?.running);
+  $('copy-command').disabled = !review.can_run;
   renderChips();
 }
 function groups() {
@@ -345,8 +346,28 @@ function renderState(next) {
   $('extras-total').textContent = summary ? number(summary.files.extras) : '—';
   $('outcome').textContent = next.record ? (next.record.normalized_exit === 0 ? 'Passed' : next.record.normalized_exit === 1 ? 'Review' : next.phase === 'canceled' ? 'Stopped' : 'Failed') : '—';
   $('progress-note').textContent = next.running ? 'Phase status is live. File and byte counts update after each phase; a file announcement does not establish completion.' : next.record?.mode === 'plan' ? 'These are preview totals. Extra destination files are listed and will be kept by an ordinary copy.' : 'The final record includes native logs and the convergence result.';
-  $('operation-error').hidden = !next.error && next.phase !== 'canceled';
-  $('operation-error').textContent = next.phase === 'canceled' ? 'The operation was stopped. Some files may have copied; review the native log before trying again.' : next.error || '';
+  const verification = phases.find(p => p.name === 'convergence' && p.summary);
+  $('verification').hidden = next.mode !== 'run' || !next.id;
+  if (verification) {
+    const counts = verification.summary;
+    const remaining = counts.files.copied + counts.directories.copied;
+    const mismatched = counts.files.mismatch + counts.directories.mismatch;
+    const failed = counts.files.failed + counts.directories.failed;
+    const extras = counts.files.extras + counts.directories.extras;
+    const passed = remaining === 0 && mismatched === 0 && failed === 0 && extras === 0;
+    $('verification-title').textContent = 'Convergence check';
+    $('verification-badge').textContent = passed ? 'Passed' : 'Review';
+    $('verification-badge').className = 'badge ' + (passed ? 'ok' : 'warn');
+    $('verification-detail').textContent = passed ? 'No remaining copies, mismatches, failures or extra items were found.' : number(remaining) + ' items remain to copy · ' + number(mismatched) + ' mismatched · ' + number(failed) + ' failed · ' + number(extras) + ' extra destination items kept.';
+  } else {
+    $('verification-title').textContent = next.running ? 'Convergence check follows the copy' : 'Verification not completed';
+    $('verification-badge').textContent = next.running ? 'Pending' : 'Incomplete';
+    $('verification-badge').className = 'badge' + (next.running ? '' : ' warn');
+    $('verification-detail').textContent = next.running ? 'The destination will be checked after Robocopy finishes.' : 'Review the run record before relying on this copy.';
+  }
+  const engineFailure = ['failed','invalid','preview-failed'].includes(next.phase);
+  $('operation-error').hidden = !next.error && next.phase !== 'canceled' && !engineFailure;
+  $('operation-error').textContent = next.phase === 'canceled' ? 'The operation was stopped. Some files may have copied; review the native log before trying again.' : next.error || (engineFailure ? 'Robocopy did not approve this operation. Open the run records to review its native log.' : '');
   const currentPhase = next.phase?.includes('convergence') || next.phase === 'Checking convergence' ? 3 : next.phase === 'Copying' ? 2 : next.phase === 'Previewing' || next.phase === 'planned' ? 1 : next.record?.mode === 'run' && !next.running ? 3 : 0;
   for (const [index, node] of [...$('steps').children].entries()) {
     node.classList.toggle('active', index === currentPhase);

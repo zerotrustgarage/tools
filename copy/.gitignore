@@ -1,2 +1,5 @@
 /dist/
 /testdata/captures/
+
+/app/dist/
+/app/rsrc_windows_*.syso
