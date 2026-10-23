@@ -7,6 +7,7 @@ import (
 	"log"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"unsafe"
 
@@ -30,7 +31,17 @@ func (p wailsPlatform) OpenFile(title string) (string, error) {
 	return runtime.OpenFileDialog(p.ctx, runtime.OpenDialogOptions{Title: title, Filters: []runtime.FileFilter{{DisplayName: "Copy JSON", Pattern: "*.json"}}})
 }
 func (p wailsPlatform) SaveFile(name string) (string, error) {
-	return runtime.SaveFileDialog(p.ctx, runtime.SaveDialogOptions{Title: "Export to a new JSON file", DefaultFilename: name, Filters: []runtime.FileFilter{{DisplayName: "Copy JSON", Pattern: "*.json"}}})
+	filter := runtime.FileFilter{DisplayName: "Copy JSON", Pattern: "*.json"}
+	if strings.HasSuffix(name, ".ps1") {
+		filter = runtime.FileFilter{DisplayName: "PowerShell script", Pattern: "*.ps1"}
+	}
+	return runtime.SaveFileDialog(p.ctx, runtime.SaveDialogOptions{Title: "Export to a new file", DefaultFilename: name, Filters: []runtime.FileFilter{filter}})
+}
+func (p wailsPlatform) TransferFile(kind string) (string, error) {
+	if kind == "source" {
+		return runtime.OpenFileDialog(p.ctx, runtime.OpenDialogOptions{Title: "Choose a BITS source file"})
+	}
+	return runtime.SaveFileDialog(p.ctx, runtime.SaveDialogOptions{Title: "Choose the BITS destination filename"})
 }
 func (p wailsPlatform) RevealDirectory(dir string) error {
 	windowsDir, err := winapi.GetWindowsDirectory()

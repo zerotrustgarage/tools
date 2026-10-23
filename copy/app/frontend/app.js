@@ -1,4 +1,5 @@
 import {showUpdateDialog} from './updates.js';
+import {initBits} from './bits.js';
 
 const $ = id => document.getElementById(id);
 const make = (tag, text, cls) => {
@@ -479,6 +480,7 @@ async function init() {
   $('records-path').textContent = boot.records || 'Choose a local records directory';
   installJob(boot.default_job);
   renderCatalog();
+  await initBits({api,make,modal,field,toast,attempt});
   await loadTemplates();
   await poll();
 }

@@ -35,6 +35,43 @@ The Windows app uses the same pinned Wails v2.16.0 dependency set as Scanner and
 are no frontend framework dependencies. The portable preview is unsigned; MSI/release signing
 remains a later slice.
 
+## BITS command designer
+
+Open **BITS commands** in the sidebar to build a Windows PowerShell
+`Start-BitsTransfer` command. Download, background-download and upload presets
+use a searchable parameter catalog with inline help, editable options and validation.
+
+Supply corresponding source and destination filenames, one pair per line. Downloads
+can contain up to 200 pairs; uploads use one pair. The designer handles priority,
+async/suspended jobs, retries, network cost policy, proxies and authentication.
+It quotes every data value as a PowerShell literal. Credential choices generate
+`(Get-Credential)` prompts when the command runs, without collecting a password.
+
+Copy the command, export a PowerShell script, or save/import a versioned BITS job JSON.
+Scripts use a UTF-8 BOM so Windows PowerShell 5.1 preserves Unicode.
+Unknown imported parameters stay visible and block command output until resolved.
+Custom headers, certificate-validation overrides and notification programs are
+reference entries and are not enabled.
+
+BITS commands are designed here and run in Windows PowerShell. The app does not
+start or monitor BITS jobs. Async jobs require completion after the BITS state
+reaches Transferred. BITS options do not enter the Robocopy runner.
+
+```powershell
+./dist/ztg-copy.exe bits flags --search proxy
+./dist/ztg-copy.exe bits command ./examples/bits-download.job.json
+./dist/ztg-copy.exe bits validate ./examples/bits-download.job.json
+./dist/ztg-copy.exe bits export --output transfer.ps1 ./examples/bits-download.job.json
+```
+
+BITS retry intervals have a 60-second minimum, distinct from Robocopy retries.
+A retry timeout of zero disables retries. Proxy lists/bypass lists require an Override
+proxy policy. A standard web upload endpoint is not necessarily a BITS upload server.
+The designer checks syntax, not server reachability or installed-machine support.
+CI checks generated commands against the inbox cmdlet with WhatIf on Server 2022/2025.
+
+Parameter reference: [Microsoft Start-BitsTransfer documentation](https://learn.microsoft.com/en-us/powershell/module/bitstransfer/start-bitstransfer).
+
 ## Build and use the CLI
 
 With Go 1.26.10 on Windows:

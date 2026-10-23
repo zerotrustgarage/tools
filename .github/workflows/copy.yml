@@ -91,6 +91,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Preview/copy/convergence tests failed' }
           & ./spike/ztg-copy.exe flags --search encryption --json
           if ($LASTEXITCODE -ne 0) { throw 'CLI catalog failed' }
+      - name: Validate BITS commands with Windows PowerShell and installed cmdlet
+        shell: powershell
+        run: ./copy/scripts/check-bits.ps1 -CLI ./spike/ztg-copy.exe
       - name: Exercise CLI commands and inspect owner-only DACLs
         shell: pwsh
         run: ./copy/scripts/check-cli.ps1 -CLI ./spike/ztg-copy.exe
@@ -177,7 +180,8 @@ jobs:
       - name: Test actual frontend with binding mock
         run: |
           npm install --global --ignore-scripts playwright@1.56.1
-          npx --yes playwright@1.56.1 install --with-deps chromium
+          # GitHub's Ubuntu image includes the runtime libraries; avoid unrelated APT/font upgrades.
+          npx --yes playwright@1.56.1 install chromium
           NODE_PATH="$(npm root --global)" node copy/app/uitest/run.mjs out/copy-ui
           node scripts/ci/check-palette.mjs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

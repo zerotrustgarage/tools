@@ -25,6 +25,23 @@
   };
   window.go={main:{App:{
     Bootstrap:async()=>({version:'0.1.0-preview',catalog:window.__catalog,records:'C:\\Users\\Technician\\AppData\\Local\\ZTG\\Copy\\runs',templates:'C:\\Users\\Technician\\AppData\\Roaming\\ZTG\\Copy\\templates',default_job:base}),
+    BitsCatalog:async()=>window.__bitsCatalog,
+    DefaultBitsJob:async()=>({schema:1,engine:'bits',transfers:[],options:[{name:'TransferType',values:['Download']},{name:'Priority',values:['Foreground']}]}),
+    DescribeBits:async j=>{
+      const issues=[];
+      if(!j.transfers.length||j.transfers.some(file=>!file.source||!file.destination))issues.push({severity:'error',argument:'files',message:'Provide matching source and destination files'});
+      for(const option of j.options){
+        if(!window.__bitsCatalog.find(entry=>entry.name.toLowerCase()===option.name.toLowerCase()&&entry.available))issues.push({severity:'error',argument:option.name,message:'Unknown or reference-only parameter; retained for review'});
+        if(option.name==='RetryInterval'&&Number(option.values[0])<60)issues.push({severity:'error',argument:'RetryInterval',message:'The minimum is 60 seconds'});
+      }
+      const quote=value=>"'"+String(value).replaceAll("'","''")+"'";
+      const command='BitsTransfer\\Start-BitsTransfer -Source '+j.transfers.map(file=>quote(file.source)).join(', ')+' -Destination '+j.transfers.map(file=>quote(file.destination)).join(', ')+' '+j.options.map(option=>'-'+option.name+(option.name==='Credential'||option.name==='ProxyCredential'?' (Get-Credential)':option.values?.length?' '+option.values.map(quote).join(', '):'')).join(' ')+' -ErrorAction Stop';
+      return {job:copy(j),valid:issues.length===0,issues,command:issues.length?'':command};
+    },
+    PickBitsFile:async kind=>kind==='source'?'C:\\Local\\source.bin':'C:\\Downloads\\file.bin',
+    ImportBitsJob:async()=>{calls.push(['ImportBitsJob']);return {job:window.__bitsImport||{schema:1,engine:'bits',transfers:[{source:'https://example.net/file.bin',destination:'C:\\Downloads\\file.bin'}],options:[]}};},
+    ExportBitsJob:async j=>{calls.push(['ExportBitsJob',copy(j)]);return 'C:\\bits-transfer.json';},
+    ExportBitsScript:async j=>{calls.push(['ExportBitsScript',copy(j)]);return 'C:\\bits-transfer.ps1';},
     Describe:async j=>describe(j),
     PickDirectory:async kind=>kind==='source'?'C:\\Company Data':'D:\\Archive',
     ChooseRecordsDirectory:async()=>{calls.push(['ChooseRecordsDirectory']);return 'D:\\Copy records';},

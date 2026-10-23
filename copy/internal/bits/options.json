@@ -1,0 +1,330 @@
+[
+  {
+    "name": "TransferType",
+    "kind": "enum",
+    "values": [
+      "Download",
+      "Upload",
+      "UploadReply"
+    ],
+    "group": "Direction",
+    "help": "Choose download or a single-file upload. UploadReply also receives a server reply.",
+    "default_value": "Download",
+    "available": true
+  },
+  {
+    "name": "Priority",
+    "kind": "enum",
+    "values": [
+      "Foreground",
+      "High",
+      "Normal",
+      "Low"
+    ],
+    "group": "Scheduling",
+    "help": "Foreground competes for bandwidth. High, Normal and Low use available background bandwidth.",
+    "default_value": "Foreground",
+    "available": true
+  },
+  {
+    "name": "Asynchronous",
+    "kind": "switch",
+    "values": [],
+    "group": "Scheduling",
+    "help": "Return a BITS job immediately. Finish it with Complete-BitsTransfer only after its state is Transferred.",
+    "default_value": "",
+    "available": true
+  },
+  {
+    "name": "Suspended",
+    "kind": "switch",
+    "values": [],
+    "group": "Scheduling",
+    "help": "Create a paused job. Resume it from PowerShell when ready.",
+    "default_value": "",
+    "available": true
+  },
+  {
+    "name": "DisplayName",
+    "kind": "text",
+    "values": [],
+    "group": "Identity",
+    "help": "Give the job a recognizable name.",
+    "default_value": "",
+    "available": true
+  },
+  {
+    "name": "Description",
+    "kind": "text",
+    "values": [],
+    "group": "Identity",
+    "help": "Describe the transfer, up to 1,024 characters.",
+    "default_value": "",
+    "available": true
+  },
+  {
+    "name": "RetryInterval",
+    "kind": "integer",
+    "values": [],
+    "group": "Retries",
+    "help": "Seconds between attempts after a temporary error. The minimum is 60 seconds.",
+    "default_value": "600",
+    "available": true
+  },
+  {
+    "name": "RetryTimeout",
+    "kind": "integer",
+    "values": [],
+    "group": "Retries",
+    "help": "Seconds allowed after the first temporary error. Zero disables retries.",
+    "default_value": "1209600",
+    "available": true
+  },
+  {
+    "name": "MaxDownloadTime",
+    "kind": "integer",
+    "values": [],
+    "group": "Retries",
+    "help": "Maximum transfer duration in seconds.",
+    "default_value": "7776000",
+    "available": true
+  },
+  {
+    "name": "TransferPolicy",
+    "kind": "enum",
+    "values": [
+      "Unrestricted",
+      "PolicyUnrestricted",
+      "Standard",
+      "NoSurcharge",
+      "NotRoaming",
+      "Always"
+    ],
+    "group": "Scheduling",
+    "help": "Choose the network cost policy. Always can use metered or roaming connections.",
+    "default_value": "",
+    "available": true
+  },
+  {
+    "name": "ProxyUsage",
+    "kind": "enum",
+    "values": [
+      "SystemDefault",
+      "NoProxy",
+      "AutoDetect",
+      "Override"
+    ],
+    "group": "Proxy",
+    "help": "Use system proxy settings, bypass the proxy, detect it, or supply an override.",
+    "default_value": "SystemDefault",
+    "available": true
+  },
+  {
+    "name": "ProxyList",
+    "kind": "list",
+    "values": [],
+    "group": "Proxy",
+    "help": "One proxy URI or host:port per line. Requires ProxyUsage Override.",
+    "default_value": "",
+    "available": true
+  },
+  {
+    "name": "ProxyBypass",
+    "kind": "list",
+    "values": [],
+    "group": "Proxy",
+    "help": "One host pattern per line to connect directly. Requires ProxyUsage Override.",
+    "default_value": "",
+    "available": true
+  },
+  {
+    "name": "Authentication",
+    "kind": "enum",
+    "values": [
+      "Negotiate",
+      "Ntlm",
+      "Digest",
+      "Basic"
+    ],
+    "group": "Authentication",
+    "help": "Choose server authentication. Basic should be used only with HTTPS.",
+    "default_value": "Negotiate",
+    "available": true
+  },
+  {
+    "name": "Credential",
+    "kind": "prompt",
+    "values": [],
+    "group": "Authentication",
+    "help": "Prompt for server credentials in PowerShell when the command runs. No password is saved.",
+    "default_value": "",
+    "available": true
+  },
+  {
+    "name": "ProxyAuthentication",
+    "kind": "enum",
+    "values": [
+      "Negotiate",
+      "Ntlm",
+      "Digest",
+      "Basic"
+    ],
+    "group": "Authentication",
+    "help": "Choose proxy authentication. Prefer Negotiate or Ntlm on managed networks.",
+    "default_value": "Negotiate",
+    "available": true
+  },
+  {
+    "name": "ProxyCredential",
+    "kind": "prompt",
+    "values": [],
+    "group": "Authentication",
+    "help": "Prompt for proxy credentials in PowerShell when the command runs. No password is saved.",
+    "default_value": "",
+    "available": true
+  },
+  {
+    "name": "Dynamic",
+    "kind": "switch",
+    "values": [],
+    "group": "Transfer",
+    "help": "Allow a download whose server content changes. Check the server's BITS support.",
+    "default_value": "",
+    "available": true
+  },
+  {
+    "name": "WhatIf",
+    "kind": "switch",
+    "values": [],
+    "group": "Review",
+    "help": "Ask PowerShell to describe the operation without creating a transfer.",
+    "default_value": "",
+    "available": true
+  },
+  {
+    "name": "Confirm",
+    "kind": "switch",
+    "values": [],
+    "group": "Review",
+    "help": "Ask PowerShell for confirmation before creating the transfer.",
+    "default_value": "",
+    "available": true
+  },
+  {
+    "name": "Source",
+    "kind": "reference",
+    "values": [],
+    "group": "Reference",
+    "help": "Edit the source file list above; each source is paired with a destination.",
+    "default_value": "",
+    "available": false
+  },
+  {
+    "name": "Destination",
+    "kind": "reference",
+    "values": [],
+    "group": "Reference",
+    "help": "Edit the destination file list above; supply a complete filename for each source.",
+    "default_value": "",
+    "available": false
+  },
+  {
+    "name": "ACLFlags",
+    "kind": "reference",
+    "values": [],
+    "group": "Reference",
+    "help": "Security descriptor copying is not enabled in this command designer.",
+    "default_value": "",
+    "available": false
+  },
+  {
+    "name": "SecurityFlags",
+    "kind": "reference",
+    "values": [],
+    "group": "Reference",
+    "help": "Certificate validation and redirect overrides are not enabled.",
+    "default_value": "",
+    "available": false
+  },
+  {
+    "name": "UseStoredCredential",
+    "kind": "reference",
+    "values": [],
+    "group": "Reference",
+    "help": "Stored credentials are not offered. Use the PowerShell credential prompt option.",
+    "default_value": "",
+    "available": false
+  },
+  {
+    "name": "HttpMethod",
+    "kind": "reference",
+    "values": [],
+    "group": "Reference",
+    "help": "Custom HTTP methods force foreground priority and are not enabled in this designer.",
+    "default_value": "",
+    "available": false
+  },
+  {
+    "name": "CustomHeaders",
+    "kind": "reference",
+    "values": [],
+    "group": "Reference",
+    "help": "Custom headers may contain credentials and are not collected or stored.",
+    "default_value": "",
+    "available": false
+  },
+  {
+    "name": "CustomHeadersWriteOnly",
+    "kind": "reference",
+    "values": [],
+    "group": "Reference",
+    "help": "Requires custom headers, which are not enabled in this designer.",
+    "default_value": "",
+    "available": false
+  },
+  {
+    "name": "NotifyCmdLine",
+    "kind": "reference",
+    "values": [],
+    "group": "Reference",
+    "help": "Post-transfer program execution is not enabled.",
+    "default_value": "",
+    "available": false
+  },
+  {
+    "name": "NotifyFlags",
+    "kind": "reference",
+    "values": [],
+    "group": "Reference",
+    "help": "Job notification configuration is not enabled.",
+    "default_value": "",
+    "available": false
+  },
+  {
+    "name": "CertStoreLocation",
+    "kind": "reference",
+    "values": [],
+    "group": "Reference",
+    "help": "Client certificate selection is not enabled.",
+    "default_value": "",
+    "available": false
+  },
+  {
+    "name": "CertStoreName",
+    "kind": "reference",
+    "values": [],
+    "group": "Reference",
+    "help": "Client certificate selection is not enabled.",
+    "default_value": "",
+    "available": false
+  },
+  {
+    "name": "CertHash",
+    "kind": "reference",
+    "values": [],
+    "group": "Reference",
+    "help": "Client certificate selection is not enabled.",
+    "default_value": "",
+    "available": false
+  }
+]

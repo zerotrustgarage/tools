@@ -37,7 +37,7 @@ func main() {
 
 func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-		fmt.Fprintln(out, "ZTG Copy\n\nCommands:\n  flags [--search TEXT] [--json]\n  explain [--json] 'robocopy SOURCE DESTINATION [options]'\n  import [--output FILE] 'robocopy SOURCE DESTINATION [options]'\n  validate JOB.json\n  plan [--report DIRECTORY] JOB.json\n  run [--report DIRECTORY] [--native-exit] JOB.json\n  template list|show|save|command|run|export|import\n  version\n  check-updates [--json]\n\nInitial copy runner: existing local fixed-drive folders, DAT only, no reparse points or destructive options. Desktop and full roadmap features are in development.\nCommands never invoke a shell. Printed commands use direct Windows process quoting.")
+		fmt.Fprintln(out, "ZTG Copy\n\nCommands:\n  flags [--search TEXT] [--json]\n  explain [--json] 'robocopy SOURCE DESTINATION [options]'\n  import [--output FILE] 'robocopy SOURCE DESTINATION [options]'\n  validate JOB.json\n  plan [--report DIRECTORY] JOB.json\n  run [--report DIRECTORY] [--native-exit] JOB.json\n  template list|show|save|command|run|export|import\n  bits flags|command|validate|export\n  version\n  check-updates [--json]\n\nInitial copy runner: existing local fixed-drive folders, DAT only, no reparse points or destructive options. Desktop and full roadmap features are in development.\nCommands never invoke a shell. Printed commands use direct Windows process quoting.")
 		return nil
 	}
 	switch args[0] {
@@ -67,6 +67,8 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 		return validate(j)
 	case "plan", "run":
 		return executeJob(ctx, args[0], args[1:], out, errOut)
+	case "bits":
+		return bitsCommand(args[1:], out, errOut)
 	case "template":
 		return templates(ctx, args[1:], out, errOut)
 	default:

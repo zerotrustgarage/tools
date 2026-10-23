@@ -27,6 +27,11 @@ func WriteNew(name string, value any) (err error) {
 	if err != nil {
 		return err
 	}
+	return WriteNewBytes(name, append(data, '\n'))
+}
+
+// WriteNewBytes writes an owner-only file without replacing an existing path.
+func WriteNewBytes(name string, data []byte) (err error) {
 	f, err := os.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
@@ -41,7 +46,7 @@ func WriteNew(name string, value any) (err error) {
 	if err = protect(name, false); err != nil {
 		return err
 	}
-	if _, err = f.Write(append(data, '\n')); err != nil {
+	if _, err = f.Write(data); err != nil {
 		return err
 	}
 	if err = f.Sync(); err != nil {
