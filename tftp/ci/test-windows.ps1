@@ -185,6 +185,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Portable firewall cleanup failed' }
 if (Test-Path $installDir) { throw 'TFTP is already installed on this test runner' }
 $installed = $false
 $currentMsi = $Msi
+$cleanupFailed = $false
 try {
   Run-Msi $Msi '/i'
   $installed = $true

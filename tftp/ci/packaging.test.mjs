@@ -57,7 +57,8 @@ test('packages preserve the binaries, ZIP is reproducible and MSI is signable', 
       assert.ok(rows.get(name) > rows.get('InstallInitialize'), `${name} must follow InstallInitialize`);
     }
     assert.ok(rows.get('FirewallRestore') < rows.get('FirewallRemove'));
-    // wixl output order varied between builds of identical input (run 39961622459).
+    // wixl output order varied between builds of identical input (run 39961622459);
+    // the post-pin table must be identical on every rebuild.
     // Rebuild repeatedly and require an identical sequence table every time.
     const baseline = sequence.trim().split(/\r?\n/).slice(3).sort().join('\n');
     for (let i = 0; i < 12; i++) {

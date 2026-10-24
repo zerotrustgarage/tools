@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 
 # wixl resolves Before=/After= relative to other custom actions in an order that
-# varies between builds of identical input (hash iteration order). One build of
+# varies between builds of identical input (likely hash iteration order; unproven, see doc). One build of
 # the 0.3.1 fixture placed FirewallRestore and FirewallRemove at sequence 1 and 2,
 # before CostInitialize, so removal ran them with no directory manager (error
 # 2732, result 1603). Every firewall action is therefore pinned to an absolute

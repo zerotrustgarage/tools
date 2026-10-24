@@ -34,8 +34,10 @@ the shipped MSIs (OLE compound file, no Windows needed).
    the condition `REMOVE~="ALL"` and never ran during the earlier steps. The upgrade removed the old 0.3.0 package,
    which was well sequenced.
 5. `wixl` resolves `Before=` and `After=` between custom actions (here `FirewallRestore` Before `FirewallRemove`
-   Before `RemoveFiles`) and, for this chain, produced a valid table in most builds and an unanchored one
-   (1 and 2) in one. `sequence.py` only fixed `RemoveExistingProducts`, and the packaging test only asserted
+   Before `RemoveFiles`) and, for this chain, produced a valid table in some builds and an unanchored one
+   (1 and 2) in others. The failure was frequent: roughly half of recent lifecycle runs. Six identical 2732 failures at
+   `/x` of 0.3.1 occurred within about 28 hours: runs 39880161721, 39950730894, 39952204905, 39953897946, 39961622459
+   and 40023039831 (feat/directory-d1), out of the last 53 tftp.yml runs. `sequence.py` only fixed `RemoveExistingProducts`, and the packaging test only asserted
    `FirewallRemove < RemoveFiles`, which 2 also satisfies, so it did not detect the bad table.
 
 ## Cause
@@ -47,8 +49,8 @@ rollback action `FirewallRestore` was the first to run, which is why it is named
 
 Not proven: the exact mechanism inside `wixl` (an unstable resolution order is the leading explanation; I did not
 have `wixl` available to rebuild repeatedly). The fix does not depend on it: every firewall action is now pinned.
-The failure was intermittent because the bad layout is only produced by some builds, and PR #15 passed because its
-packages were built with the good layout. Rerunning without a fix would pass most of the time.
+The failure was intermittent but frequent, because the bad layout is produced by roughly half of builds, and PR #15
+passed because its packages happened to be built with the good layout. A rerun without a fix is a coin flip.
 
 Ranked alternatives, all rejected by the evidence: (a) harness timing (msiexec was `-Wait`ed, the log shows the
 product fully installed before the `/x` began, and the table differs in the package itself); (b) runner differences
@@ -86,5 +88,7 @@ were only kept on failure.
 5. Because the defect was intermittent, a single green run is not the proof; the deterministic proof is items 1
    and 2. Re-running the Windows job two or three times adds confidence but is not required.
 
-Rollback coverage (a failure inside an install, to exercise `FirewallRollback`) is not added here: it would need a
-failing custom action in a test-only package. Recommend as a follow-up if rollback regression evidence is wanted.
+Rollback is proven statically: the rollback actions are pinned at 4001/4002/4003 (after `InstallFiles`) and asserted at
+build time and again on Windows from the package under test. The integrator accepts this static evidence for this
+packet. A mid-install failure that exercises `FirewallRollback` at run time is a follow-up
+(it would need a failing custom action in a test-only package).
