@@ -298,6 +298,53 @@ body.resizing .pane, body.resizing .sidebar { pointer-events: none; }
 .sidebar-count { padding: 6px 12px; font-size: 11px; color: var(--dim); border-top: 1px solid var(--line); }
 .icon-button:disabled { opacity: 0.35; cursor: default; background: transparent; border-color: transparent; }
 
+/* Outline and folder search panels: a column beside the panes; over them on a narrow window. */
+.tool-panel {
+  flex: 0 0 260px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+}
+.tool-panel[hidden] { display: none; }
+.tool-body { flex: 1; overflow: auto; padding: 0 6px 8px; font-size: 13px; }
+.tool-empty { margin: 8px 10px; color: var(--dim); font-size: 13px; }
+.outline-list { list-style: none; margin: 0; padding: 0; }
+.outline-item {
+  display: block;
+  width: 100%;
+  padding: 3px 6px 3px calc(8px + var(--depth, 0) * 14px);
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.outline-item span { display: block; overflow: hidden; text-overflow: ellipsis; }
+.outline-item.level-1 { color: var(--bright); font-weight: 600; }
+.outline-item.active { background: color-mix(in srgb, var(--acc) 16%, transparent); color: var(--bright); border-color: transparent; }
+.outline-item:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.search-bar { display: flex; align-items: center; gap: 8px; padding: 0 10px 6px; min-height: 24px; }
+.search-bar .text-button { height: 24px; padding: 0 8px; font-size: 12px; }
+.search-status { flex: 1; font-size: 12px; color: var(--dim); }
+.search-file { margin-bottom: 8px; }
+.search-file-name {
+  margin: 6px 4px 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--bright);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-file-name span { font-weight: 400; color: var(--dim); }
+.search-list { list-style: none; margin: 0; padding: 0; }
+.search-hit { display: flex; gap: 8px; align-items: baseline; width: 100%; padding: 3px 6px; text-align: left; }
+.search-hit:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.search-line { flex: none; min-width: 3ch; text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; }
+.search-snippet { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-snippet mark { background: color-mix(in srgb, var(--warn) 35%, transparent); color: inherit; border-radius: 2px; }
+
 /* CodeMirror chrome (gutter, active line, selection, panels) is styled by the editor theme in
    src/ui/editor.ts: CodeMirror's own base theme outranks plain selectors here. Only the
    syntax token classes, which no base theme styles, live in this file. */
@@ -336,6 +383,7 @@ body.resizing .pane, body.resizing .sidebar { pointer-events: none; }
 
 @media (max-width: 720px) {
   .has-folder .sidebar { display: none; }
+  .tool-panel { position: absolute; inset: 0; z-index: 5; flex: none; border-right: 0; }
   .app[data-mode='split'] .panes { flex-direction: column; }
   .app[data-mode='split'] .editor-pane { flex: 1 1 0; border-bottom: 1px solid var(--line); }
   .splitter { display: none; }
@@ -345,7 +393,7 @@ body.resizing .pane, body.resizing .sidebar { pointer-events: none; }
 @media print {
   body { overflow: visible; background: #fff; }
   .app, .workspace, .pane { display: block !important; height: auto; overflow: visible; }
-  .app .titlebar, .app .top-bar, .app .format-bar, .app .banner, .app .status-bar, .workspace .editor-pane, .workspace .sidebar, .workspace .splitter, .workspace .drop-overlay { display: none !important; }
+  .app .titlebar, .app .top-bar, .app .format-bar, .app .banner, .app .status-bar, .workspace .editor-pane, .workspace .sidebar, .workspace .tool-panel, .workspace .splitter, .workspace .drop-overlay { display: none !important; }
   .panes { display: block !important; }
   .preview-pane .markdown-body { padding: 0; max-width: none; }
 }
