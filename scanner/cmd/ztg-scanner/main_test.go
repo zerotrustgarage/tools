@@ -2,10 +2,15 @@ package main
 
 import (
 	"bytes"
+	"net/netip"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/zerotrustgarage/tools/scanner/internal/scan"
 )
 
 const savedScan = `{"tool":"ztg-scanner","version":"1.0","site":"Old Site","hosts":[{"ip":"192.0.2.1","status":"up","name":"printer"},{"ip":"192.0.2.2","status":"down","name":"offline"}]}`
@@ -113,5 +118,74 @@ func assertContents(t *testing.T, path, want string) {
 	}
 	if string(b) != want {
 		t.Fatalf("%s = %q, want %q", path, b, want)
+	}
+}
+
+func TestGentleModeRejectsMalformedSettings(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--mode", "stealth", "10.0.0.1"}, "unknown scan mode"},
+		{[]string{"--mode", "gentle", "--concurrency", "64", "10.0.0.1"}, "at most 4 hosts in parallel"},
+		{[]string{"--mode", "gentle", "--ports", "1-100", "10.0.0.1"}, "at most 16 ports"},
+		{[]string{"--mode", "gentle", "--ports", "x", "10.0.0.1"}, "bad port"},
+		{[]string{"--mode", "gentle", "--snmp-user", "noc", "10.0.0.1"}, "does not use SNMP"},
+		{[]string{"--mode", "gentle", "--timeout", "-1s", "10.0.0.1"}, "must not be negative"},
+	} {
+		err := cmdScan(tc.args)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%v: error %v, want %q", tc.args, err, tc.want)
+		}
+	}
+}
+
+func TestGentlePlanFromFlagsMatchesTheSharedDefinition(t *testing.T) {
+	targets := []netip.Addr{netip.MustParseAddr("10.0.0.1")}
+	req, err := planRequest(planFlags{mode: scan.ModeGentle, concurrency: 128, timeout: 800 * time.Millisecond}, targets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := scan.BuildPlan(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Flag defaults (128 hosts, 800ms) were not set by the user, so gentle's
+	// own settings apply. The app test asserts this identical Plan.
+	want := scan.Plan{
+		Mode: scan.ModeGentle, Targets: targets, Ports: []int{22, 80, 443, 445, 515, 631, 8080, 9100},
+		Probes: scan.Probes{Ports: true, ReverseDNS: true}, Concurrency: 4, PortConcurrency: 2, PingAttempts: 1,
+		ConnectTimeout: 1500 * time.Millisecond, ProbeInterval: 100 * time.Millisecond,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("plan %+v\nwant %+v", got, want)
+	}
+}
+
+func TestDefaultPlanFromFlagsIsUnchanged(t *testing.T) {
+	targets := []netip.Addr{netip.MustParseAddr("10.0.0.1")}
+	req, err := planRequest(planFlags{mode: scan.ModeDefault, concurrency: 128, timeout: 800 * time.Millisecond}, targets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := scan.BuildPlan(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := scan.Config{Targets: targets, Probes: scan.DefaultProbes, Concurrency: 128, ConnectTimeout: 800 * time.Millisecond}
+	if got := p.Config(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("default config %+v, want %+v", got, want)
+	}
+}
+
+func TestScanHelpDescribesGentleTradeoff(t *testing.T) {
+	h := gentleHelp()
+	for _, want := range []string{"--mode gentle", scan.GentleSummary(), scan.GentleTradeoff, "does not remove it"} {
+		if !strings.Contains(h, want) {
+			t.Errorf("help missing %q", want)
+		}
+	}
+	if strings.Contains(strings.ToLower(h), "harmless") || strings.Contains(h, "\u2014") {
+		t.Error("help overclaims or uses an em dash")
 	}
 }

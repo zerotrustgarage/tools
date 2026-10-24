@@ -929,12 +929,16 @@ import { showUpdateDialog } from "./updates.js";
 
   function request(allowPublic) {
     const s = state.settings;
+    const gentle = s.mode === "gentle";
+    // Gentle mode fixes the engine settings; the UI sends zeros so the plan
+    // comes from the shared definition in the engine, not from this form.
     return {
+      mode: gentle ? "gentle" : "default",
       targets: $("targets").value,
-      ports: s.ports,
+      ports: gentle ? "" : s.ports,
       probes: s.probes,
-      concurrency: Number(s.concurrency) || 0,
-      timeout_ms: Number(s.timeout_ms) || 0,
+      concurrency: gentle ? 0 : Number(s.concurrency) || 0,
+      timeout_ms: gentle ? 0 : Number(s.timeout_ms) || 0,
       allow_public: !!allowPublic,
       snmp: s.probes.snmp
         ? {
@@ -1016,6 +1020,7 @@ import { showUpdateDialog } from "./updates.js";
     const saved = store.get("settings", null);
     state.settings = saved && saved.probes ? saved : { ports: d.ports, probes: { ...d.probes }, concurrency: d.concurrency, timeout_ms: d.timeout_ms };
     state.settings.probes.snmp = false; // opt-in for each session
+    state.settings.mode = state.settings.mode === "gentle" ? "gentle" : "default";
     const fill = (sel, opts, cur) => {
       sel.replaceChildren(...opts.map((o) => el("option", { value: o, text: o })));
       sel.value = opts.includes(cur) ? cur : opts[0];
@@ -1034,16 +1039,38 @@ import { showUpdateDialog } from "./updates.js";
     $("concurrency").value = s.concurrency;
     $("timeout").value = s.timeout_ms;
     $("snmp-fields").classList.toggle("on", !!s.probes.snmp);
+    paintMode();
+  }
+
+  // paintMode shows the gentle settings and tradeoff from the engine's own
+  // definition and locks the fields that gentle mode fixes.
+  function paintMode() {
+    const s = state.settings;
+    const gentle = s.mode === "gentle";
+    $("mode-default").checked = !gentle;
+    $("mode-gentle").checked = gentle;
+    const g = state.defaults.gentle;
+    $("gentle-info").hidden = !gentle || !g;
+    if (gentle && g) {
+      $("gentle-summary").textContent = "Settings: " + g.concurrency + " hosts at a time, " + g.port_concurrency +
+        " connections per host, at most " + g.probes_per_second + " probe starts per second in total, " +
+        g.timeout_ms + " ms connect timeout, TCP ports " + g.ports.join(", ") +
+        ". Service banners, NetBIOS, mDNS, UPnP and SNMP are skipped.";
+      $("gentle-tradeoff").textContent = g.tradeoff;
+    }
+    for (const id of ["probe-fields", "snmp-fields", "engine-fields"]) $(id).disabled = gentle;
   }
 
   function readSettings() {
     const s = state.settings;
+    s.mode = $("mode-gentle").checked ? "gentle" : "default";
     for (const cb of document.querySelectorAll("[data-probe]")) s.probes[cb.dataset.probe] = cb.checked;
     s.ports = $("ports").value.trim();
     s.concurrency = Number($("concurrency").value) || state.defaults.concurrency;
     s.timeout_ms = Number($("timeout").value) || state.defaults.timeout_ms;
     s.snmp = { username: $("snmp-user").value.trim(), auth_protocol: $("snmp-auth").value, priv_protocol: $("snmp-priv").value };
     $("snmp-fields").classList.toggle("on", !!s.probes.snmp);
+    paintMode();
     // Saved: the username and protocols. Never saved: the passphrases, and
     // whether SNMP is on (it is opt-in each session).
     store.set("settings", { ...s, probes: { ...s.probes, snmp: false } });

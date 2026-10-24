@@ -48,6 +48,7 @@ Scan flags (`ztg-scanner scan -h`):
 | `--no-banners`       | off             | Open ports without service identification                      |
 | `--no-names`         | off             | Skip reverse DNS, NetBIOS and mDNS                             |
 | `--no-ssdp`          | off             | Skip the UPnP multicast search                                 |
+| `--mode M`           | default         | `default` or `gentle` (lower rate, fewer probes; see below)    |
 | `--concurrency N`    | 128             | Hosts scanned in parallel                                      |
 | `--timeout D`        | 800ms           | TCP connect timeout                                            |
 | `--max-hosts N`      | 65536           | Refuse larger target lists                                     |
@@ -58,6 +59,30 @@ Scan flags (`ztg-scanner scan -h`):
 
 SNMPv3 passphrases are prompted for with echo off, or read from `ZTG_SNMP_AUTH_PASS` and `ZTG_SNMP_PRIV_PASS` for
 unattended runs. They are never accepted as flags and never written to output.
+
+### Gentle mode
+
+`--mode gentle` is a conservative profile for fragile OT, medical or old printer networks. You choose it; the
+scanner never switches to it by itself. It is defined once in `internal/scan` and the Desktop app's **Scan mode**
+setting uses the same definition, so both build the identical plan:
+
+| Setting                 | Default                | Gentle                                                         |
+| ----------------------- | ---------------------- | -------------------------------------------------------------- |
+| Hosts in parallel       | 128                    | 4                                                              |
+| Connections per host    | 16                     | 2                                                              |
+| Probe start rate        | unlimited              | 10 per second in total (one every 100 ms)                      |
+| Echo requests per host  | 2                      | 1                                                              |
+| Connect timeout         | 800 ms                 | 1500 ms                                                        |
+| TCP ports               | 40 common ports        | 22, 80, 443, 445, 515, 631, 8080, 9100                         |
+| Other probes            | banners, NetBIOS, mDNS, SSDP | none; reverse DNS and ICMP/ARP liveness only. SNMP is refused |
+
+`--concurrency`, `--timeout` and `--ports` may only ask for less (at most 4 hosts and 16 ports); larger values are
+rejected with an error rather than silently clamped. Cancel (Ctrl-C, or Stop in the app) works at any point,
+including while a scan is waiting for its next probe slot.
+
+The tradeoff: gentle scans are slower and identify less (no service banners, names from NetBIOS, mDNS or UPnP, or
+SNMP inventory). Gentle mode reduces the load a scan creates; it does not make a scan harmless to every device.
+Get approval for fragile networks and watch them while you scan.
 
 ## What it learns
 
@@ -72,7 +97,8 @@ or root / `CAP_NET_RAW`; without it, liveness falls back to ARP and TCP and the 
 ## Desktop app
 
 `app/` is the Windows desktop app: the same engine with a live results grid, filters, a detail pane for every device,
-SNMPv3 settings and CSV or JSON export. Build it from any platform:
+SNMPv3 settings, a Gentle scan mode (the settings and tradeoff are shown in the settings panel) and CSV or JSON
+export. Build it from any platform:
 
 ```
 cd app

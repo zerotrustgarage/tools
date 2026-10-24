@@ -62,6 +62,13 @@ type Config struct {
 	// SNMP holds SNMPv3 credentials when Probes.SNMP is set. They live only
 	// as long as the scan and never appear in results.
 	SNMP *probe.SNMPCredentials
+	// PingAttempts is echo requests per host, default 2.
+	PingAttempts int
+	// Pacer, when set, gates the start of every probe (echo, ARP, TCP
+	// connect, name query, banner grab). Nil means unpaced, the default.
+	Pacer Pacer
+	// Mode labels the scan in its summary; set only for non-default modes.
+	Mode string
 	// Now is injectable for tests.
 	Now func() time.Time
 }
@@ -109,6 +116,8 @@ type Summary struct {
 	Methods  []string  `json:"methods"`
 	Warnings []string  `json:"warnings,omitempty"`
 	Canceled bool      `json:"canceled,omitempty"`
+	// Mode is set only for a non-default mode, so default output is unchanged.
+	Mode string `json:"mode,omitempty"`
 }
 
 // Observer receives results as they arrive. Calls are serialized.
@@ -139,7 +148,7 @@ type engine struct {
 // scan finishes or ctx is canceled.
 func Run(ctx context.Context, cfg Config, obs Observer) Summary {
 	cfg = withDefaults(cfg)
-	sum := Summary{Started: cfg.Now(), Total: len(cfg.Targets)}
+	sum := Summary{Started: cfg.Now(), Total: len(cfg.Targets), Mode: cfg.Mode}
 	e := &engine{cfg: cfg, obs: obs, ssdpDone: make(chan struct{})}
 
 	if p, err := probe.NewPinger(); err == nil {
@@ -237,6 +246,9 @@ func withDefaults(c Config) Config {
 	if c.ProbeTimeout <= 0 {
 		c.ProbeTimeout = 2 * time.Second
 	}
+	if c.PingAttempts <= 0 {
+		c.PingAttempts = 2
+	}
 	if c.Ports == nil {
 		c.Ports = DefaultPorts
 	}
@@ -323,7 +335,10 @@ func (e *engine) scanHost(ctx context.Context, addr netip.Addr) Host {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for attempt := 0; attempt < 2 && ctx.Err() == nil; attempt++ {
+			for attempt := 0; attempt < e.cfg.PingAttempts && ctx.Err() == nil; attempt++ {
+				if !e.pace(ctx) {
+					return
+				}
 				if r, err := e.pinger.Ping(ctx, addr, e.cfg.PingTimeout); err == nil {
 					echo = &r
 					return
@@ -336,6 +351,9 @@ func (e *engine) scanHost(ctx context.Context, addr netip.Addr) Host {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if !e.pace(ctx) {
+				return
+			}
 			if m, ok := e.arp.Resolve(ctx, addr, 1500*time.Millisecond); ok {
 				arpMAC = m
 			}
@@ -360,7 +378,7 @@ func (e *engine) scanHost(ctx context.Context, addr netip.Addr) Host {
 		if !alive {
 			ports = intersect(discoveryPorts, e.cfg.Ports)
 		}
-		res := probe.ScanPorts(ctx, addr, ports, e.cfg.ConnectTimeout, e.cfg.PortConcurrency)
+		res := e.scanPorts(ctx, addr, ports)
 		open = res.Open
 		if len(res.Open) > 0 {
 			h.Evidence = append(h.Evidence, "tcp-open")
@@ -370,7 +388,7 @@ func (e *engine) scanHost(ctx context.Context, addr netip.Addr) Host {
 		if !alive && (len(res.Open) > 0 || res.Refused) {
 			alive = true
 			rest := subtract(e.cfg.Ports, ports)
-			more := probe.ScanPorts(ctx, addr, rest, e.cfg.ConnectTimeout, e.cfg.PortConcurrency)
+			more := e.scanPorts(ctx, addr, rest)
 			open = mergeSorted(open, more.Open)
 		}
 	}
@@ -387,6 +405,9 @@ func (e *engine) scanHost(ctx context.Context, addr netip.Addr) Host {
 	}
 	if e.cfg.Probes.ReverseDNS {
 		run(func() {
+			if !e.pace(ctx) {
+				return
+			}
 			c, cancel := context.WithTimeout(ctx, e.cfg.ProbeTimeout)
 			defer cancel()
 			if names, err := e.cfg.Resolver.LookupAddr(c, addr.String()); err == nil && len(names) > 0 {
@@ -398,6 +419,9 @@ func (e *engine) scanHost(ctx context.Context, addr netip.Addr) Host {
 	}
 	if e.cfg.Probes.NetBIOS {
 		run(func() {
+			if !e.pace(ctx) {
+				return
+			}
 			if nb, err := probe.NetBIOSStatus(ctx, addr, e.cfg.ProbeTimeout); err == nil {
 				mu.Lock()
 				h.NetBIOS = nb
@@ -407,6 +431,9 @@ func (e *engine) scanHost(ctx context.Context, addr netip.Addr) Host {
 	}
 	if e.cfg.Probes.MDNS {
 		run(func() {
+			if !e.pace(ctx) {
+				return
+			}
 			if md, err := probe.MDNSQuery(ctx, addr, e.cfg.ProbeTimeout); err == nil {
 				mu.Lock()
 				h.MDNS = md
@@ -416,6 +443,9 @@ func (e *engine) scanHost(ctx context.Context, addr netip.Addr) Host {
 	}
 	if e.cfg.Probes.SNMP {
 		run(func() {
+			if !e.pace(ctx) {
+				return
+			}
 			if info, err := probe.SNMPQuery(ctx, addr, *e.cfg.SNMP, e.cfg.ProbeTimeout); err == nil {
 				mu.Lock()
 				h.SNMP = info
@@ -429,7 +459,13 @@ func (e *engine) scanHost(ctx context.Context, addr netip.Addr) Host {
 			services[i] = probe.Service{Port: port, Name: nameOf(port)}
 			continue
 		}
-		run(func() { services[i] = probe.Grab(ctx, addr, port, e.cfg.ProbeTimeout) })
+		run(func() {
+			if !e.pace(ctx) {
+				services[i] = probe.Service{Port: port, Name: nameOf(port)}
+				return
+			}
+			services[i] = probe.Grab(ctx, addr, port, e.cfg.ProbeTimeout)
+		})
 	}
 	if e.cfg.Probes.SSDP {
 		run(func() {
@@ -468,6 +504,59 @@ func (e *engine) scanHost(ctx context.Context, addr netip.Addr) Host {
 	h.Name = bestName(&h)
 	e.classify(&h)
 	return h
+}
+
+// pace waits for the pacer's next slot; it is a no-op without one. It
+// returns false when the scan was canceled while waiting.
+func (e *engine) pace(ctx context.Context) bool {
+	if e.cfg.Pacer == nil {
+		return true
+	}
+	return e.cfg.Pacer.Wait(ctx) == nil
+}
+
+// scanPorts is probe.ScanPorts for an unpaced scan. With a pacer, each
+// connect waits for its slot, still bounded by PortConcurrency.
+func (e *engine) scanPorts(ctx context.Context, addr netip.Addr, ports []int) probe.PortResult {
+	if e.cfg.Pacer == nil {
+		return probe.ScanPorts(ctx, addr, ports, e.cfg.ConnectTimeout, e.cfg.PortConcurrency)
+	}
+	return scanPortsPaced(ctx, ports, e.cfg.PortConcurrency, e.cfg.Pacer, func(port int) probe.PortResult {
+		return probe.ScanPorts(ctx, addr, []int{port}, e.cfg.ConnectTimeout, 1)
+	})
+}
+
+func scanPortsPaced(ctx context.Context, ports []int, parallel int, pacer Pacer, one func(port int) probe.PortResult) probe.PortResult {
+	var (
+		mu  sync.Mutex
+		res probe.PortResult
+		wg  sync.WaitGroup
+		sem = make(chan struct{}, parallel)
+	)
+	for _, port := range ports {
+		select {
+		case <-ctx.Done():
+		case sem <- struct{}{}:
+		}
+		if ctx.Err() != nil {
+			break
+		}
+		wg.Add(1)
+		go func(port int) {
+			defer func() { <-sem; wg.Done() }()
+			if pacer.Wait(ctx) != nil {
+				return
+			}
+			r := one(port)
+			mu.Lock()
+			defer mu.Unlock()
+			res.Open = append(res.Open, r.Open...)
+			res.Refused = res.Refused || r.Refused
+		}(port)
+	}
+	wg.Wait()
+	sort.Ints(res.Open)
+	return res
 }
 
 func bestName(h *Host) string {

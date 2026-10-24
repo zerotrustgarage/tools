@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -111,6 +112,7 @@ func cmdScan(args []string) error {
 		timeout     = fs.Duration("timeout", 800*time.Millisecond, "TCP connect timeout")
 		maxHosts    = fs.Int("max-hosts", targets.DefaultMaxHosts, "refuse target lists larger than this")
 		allowPublic = fs.Bool("allow-public", false, "permit public addresses; you must be authorized to scan them")
+		mode        = fs.String("mode", scan.ModeDefault, "scan mode: default, or gentle (lower rate, fewer probes; see below)")
 		quiet       = fs.Bool("q", false, "no progress output")
 		snmpUser    = fs.String("snmp-user", "", "enable SNMPv3 (authPriv, read-only) with this username; passphrases are prompted for or read from "+envAuth+" and "+envPriv)
 		snmpAuth    = fs.String("snmp-auth", "SHA-256", "SNMPv3 authentication: "+strings.Join(probe.AuthProtocols, ", "))
@@ -119,11 +121,15 @@ func cmdScan(args []string) error {
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), "Usage: ztg-scanner scan [flags] <target>...")
 		fs.PrintDefaults()
+		fmt.Fprint(fs.Output(), gentleHelp())
 	}
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
+		return err
+	}
+	if err := scan.ValidMode(*mode); err != nil {
 		return err
 	}
 	formats := 0
@@ -159,36 +165,35 @@ func cmdScan(args []string) error {
 		fmt.Fprintln(os.Stderr, "warning: --allow-public set; scan only networks you are authorized to test.")
 	}
 
-	cfg := scan.Config{
-		Targets:        addrs,
-		Probes:         scan.DefaultProbes,
-		Concurrency:    *concurrency,
-		ConnectTimeout: *timeout,
-	}
-	if *portsFlag != "" {
-		if cfg.Ports, err = scan.ParsePorts(*portsFlag); err != nil {
-			return err
-		}
-	}
-	if *noPorts {
-		cfg.Probes.Ports, cfg.Probes.Banners = false, false
-	}
-	if *noBanners {
-		cfg.Probes.Banners = false
-	}
-	if *noNames {
-		cfg.Probes.ReverseDNS, cfg.Probes.NetBIOS, cfg.Probes.MDNS = false, false, false
-	}
-	if *noSSDP {
-		cfg.Probes.SSDP = false
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	req, err := planRequest(planFlags{
+		mode: *mode, concurrency: *concurrency, concurrencySet: set["concurrency"],
+		timeout: *timeout, timeoutSet: set["timeout"], ports: *portsFlag,
+		noPorts: *noPorts, noBanners: *noBanners, noNames: *noNames, noSSDP: *noSSDP,
+	}, addrs)
+	if err != nil {
+		return err
 	}
 	if *snmpUser != "" {
+		if *mode == scan.ModeGentle {
+			return errors.New("gentle mode does not use SNMP; choose the default mode to query devices with SNMPv3")
+		}
 		cred, err := snmpCredentials(*snmpUser, *snmpAuth, *snmpPriv)
 		if err != nil {
 			return err
 		}
-		cfg.Probes.SNMP = true
-		cfg.SNMP = &cred
+		req.Probes.SNMP = true
+		req.SNMP = &cred
+	}
+	plan, err := scan.BuildPlan(req)
+	if err != nil {
+		return err
+	}
+	cfg := plan.Config()
+	if plan.Mode == scan.ModeGentle && !*quiet {
+		fmt.Fprintln(os.Stderr, "Gentle mode: "+scan.GentleSummary())
+		fmt.Fprintln(os.Stderr, scan.GentleTradeoff)
 	}
 
 	col := &collector{progress: !*quiet, start: time.Now()}
@@ -228,6 +233,61 @@ func cmdScan(args []string) error {
 		return report.WriteFile(*outFile, write)
 	}
 	return write(os.Stdout)
+}
+
+// planFlags are the scan flags that shape the plan.
+type planFlags struct {
+	mode                                string
+	concurrency                         int
+	concurrencySet                      bool
+	timeout                             time.Duration
+	timeoutSet                          bool
+	ports                               string
+	noPorts, noBanners, noNames, noSSDP bool
+}
+
+// planRequest turns flags into the shared scan.PlanRequest. In gentle mode
+// only values the user actually set are passed on, so the mode's own
+// settings apply otherwise and a request for more than gentle allows is
+// rejected by scan.BuildPlan.
+func planRequest(f planFlags, addrs []netip.Addr) (scan.PlanRequest, error) {
+	req := scan.PlanRequest{Mode: f.mode, Targets: addrs, Probes: scan.DefaultProbes}
+	if f.mode == scan.ModeGentle {
+		if f.concurrencySet {
+			req.Concurrency = f.concurrency
+		}
+		if f.timeoutSet {
+			req.ConnectTimeout = f.timeout
+		}
+	} else {
+		req.Concurrency, req.ConnectTimeout = f.concurrency, f.timeout
+	}
+	if f.ports != "" {
+		var err error
+		if req.Ports, err = scan.ParsePorts(f.ports); err != nil {
+			return req, err
+		}
+	}
+	if f.noPorts {
+		req.Probes.Ports, req.Probes.Banners = false, false
+	}
+	if f.noBanners {
+		req.Probes.Banners = false
+	}
+	if f.noNames {
+		req.Probes.ReverseDNS, req.Probes.NetBIOS, req.Probes.MDNS = false, false, false
+	}
+	if f.noSSDP {
+		req.Probes.SSDP = false
+	}
+	return req, nil
+}
+
+func gentleHelp() string {
+	return "\nGentle mode (--mode gentle) is for fragile networks such as OT, medical or old printer segments.\n" +
+		"  Settings: " + scan.GentleSummary() + "\n" +
+		"  " + scan.GentleTradeoff + "\n" +
+		"  --concurrency, --timeout and --ports may only ask for less than gentle mode allows (a larger value is rejected).\n"
 }
 
 func cmdReport(args []string, stdout io.Writer) error {

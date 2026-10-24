@@ -7,8 +7,10 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -222,5 +224,96 @@ func TestExportTable(t *testing.T) {
 	}
 	if _, err := os.Stat(bad); err == nil {
 		t.Fatal("a file was created for an invalid export")
+	}
+}
+
+func TestGentleRequestBuildsTheSharedPlan(t *testing.T) {
+	targets := []netip.Addr{netip.MustParseAddr("10.0.0.1")}
+	// The UI sends zero engine values and all default probes in gentle mode.
+	got, err := planFromRequest(ScanRequest{Mode: scan.ModeGentle, Probes: scan.DefaultProbes}, targets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Identical to the Plan asserted in the CLI test.
+	want := scan.Plan{
+		Mode: scan.ModeGentle, Targets: targets, Ports: []int{22, 80, 443, 445, 515, 631, 8080, 9100},
+		Probes: scan.Probes{Ports: true, ReverseDNS: true}, Concurrency: 4, PortConcurrency: 2, PingAttempts: 1,
+		ConnectTimeout: 1500 * time.Millisecond, ProbeInterval: 100 * time.Millisecond,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("plan %+v\nwant %+v", got, want)
+	}
+	// Direct comparison with what the CLI path asks BuildPlan for.
+	cli, _ := scan.BuildPlan(scan.PlanRequest{Mode: scan.ModeGentle, Targets: targets, Probes: scan.DefaultProbes})
+	if !reflect.DeepEqual(got, cli) {
+		t.Fatalf("desktop and CLI plans differ:\n%+v\n%+v", got, cli)
+	}
+}
+
+func TestDefaultRequestPlanIsUnchanged(t *testing.T) {
+	targets := []netip.Addr{netip.MustParseAddr("10.0.0.1")}
+	for _, mode := range []string{"", scan.ModeDefault} {
+		p, err := planFromRequest(ScanRequest{Mode: mode, Probes: scan.DefaultProbes, Concurrency: 0, TimeoutMs: 99999}, targets)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The clamping this app always did: 0 hosts means 128, timeout caps at 10s.
+		want := scan.Config{Targets: targets, Probes: scan.DefaultProbes, Concurrency: 128, ConnectTimeout: 10 * time.Second}
+		if got := p.Config(); !reflect.DeepEqual(got, want) {
+			t.Fatalf("mode %q: %+v, want %+v", mode, got, want)
+		}
+	}
+}
+
+func TestGentleRequestRejectsMalformedSettings(t *testing.T) {
+	targets := []netip.Addr{netip.MustParseAddr("10.0.0.1")}
+	for name, tc := range map[string]struct {
+		req  ScanRequest
+		want string
+	}{
+		"unknown mode": {ScanRequest{Mode: "quiet"}, "unknown scan mode"},
+		"hosts":        {ScanRequest{Mode: scan.ModeGentle, Concurrency: 128}, "at most 4 hosts"},
+		"negative":     {ScanRequest{Mode: scan.ModeGentle, TimeoutMs: -5}, "must not be negative"},
+		"ports":        {ScanRequest{Mode: scan.ModeGentle, Ports: "1-100"}, "at most 16 ports"},
+		"bad ports":    {ScanRequest{Mode: scan.ModeGentle, Ports: "http"}, "bad port"},
+		"snmp":         {ScanRequest{Mode: scan.ModeGentle, Probes: scan.Probes{SNMP: true}}, "does not use SNMP"},
+	} {
+		if _, err := planFromRequest(tc.req, targets); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: error %v, want %q", name, err, tc.want)
+		}
+	}
+	a, f := NewApp(), newFake("")
+	a.setPlatform(context.Background(), f)
+	if _, err := a.StartScan(ScanRequest{Mode: "stealth", Targets: "127.0.0.1"}); err == nil {
+		t.Fatal("StartScan accepted an unknown mode")
+	}
+}
+
+func TestDefaultsExposeGentleSettingsAndTradeoff(t *testing.T) {
+	g := NewApp().Defaults().Gentle
+	if g.Mode != scan.ModeGentle || g.Concurrency != 4 || g.ProbesPerSecond != 10 || len(g.Ports) != 8 || g.Probes.Banners || g.Probes.SSDP {
+		t.Fatalf("gentle info %+v", g)
+	}
+	if g.Tradeoff != scan.GentleTradeoff || !strings.Contains(g.Tradeoff, "does not remove it") {
+		t.Fatalf("tradeoff %q", g.Tradeoff)
+	}
+}
+
+func TestGentleScanCanBeStopped(t *testing.T) {
+	a, f := NewApp(), newFake("")
+	a.setPlatform(context.Background(), f)
+	// Unrouted documentation space: nothing answers, so the gentle pacing keeps
+	// the scan busy until it is stopped.
+	if _, err := a.StartScan(ScanRequest{Mode: scan.ModeGentle, Targets: "198.51.100.0/28", AllowPublic: true, Probes: scan.DefaultProbes}); err != nil {
+		t.Fatal(err)
+	}
+	a.StopScan()
+	select {
+	case s := <-f.done:
+		if !s.Canceled || s.Mode != scan.ModeGentle {
+			t.Fatalf("summary %+v", s)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("stop did not end the gentle scan")
 	}
 }

@@ -137,6 +137,9 @@ type Defaults struct {
 	MaxHosts    int         `json:"max_hosts"`
 	SNMPAuth    []string    `json:"snmp_auth_protocols"`
 	SNMPPriv    []string    `json:"snmp_priv_protocols"`
+	// Gentle is the gentle mode's settings and tradeoff, from the same
+	// definition the CLI uses.
+	Gentle scan.ModeInfo `json:"gentle"`
 }
 
 // Defaults returns the engine defaults.
@@ -153,11 +156,15 @@ func (a *App) Defaults() Defaults {
 		MaxHosts:    targets.DefaultMaxHosts,
 		SNMPAuth:    probe.AuthProtocols,
 		SNMPPriv:    probe.PrivProtocols,
+		Gentle:      scan.GentleInfo(),
 	}
 }
 
 // ScanRequest is what the UI sends to start a scan.
 type ScanRequest struct {
+	// Mode is "default" (or empty) or "gentle". In gentle mode the engine
+	// settings are fixed; the UI sends zero values for the fields below.
+	Mode        string      `json:"mode"`
 	Targets     string      `json:"targets"`
 	Ports       string      `json:"ports"`
 	Probes      scan.Probes `json:"probes"`
@@ -208,33 +215,11 @@ func (a *App) StartScan(req ScanRequest) (int, error) {
 	if len(addrs) == 0 {
 		return 0, errors.New("the target list is empty")
 	}
-	cfg := scan.Config{
-		Targets:        addrs,
-		Probes:         req.Probes,
-		Concurrency:    clamp(req.Concurrency, 1, 512, 128),
-		ConnectTimeout: time.Duration(clamp(req.TimeoutMs, 100, 10000, 800)) * time.Millisecond,
+	plan, err := planFromRequest(req, addrs)
+	if err != nil {
+		return 0, err
 	}
-	if req.Probes.SNMP {
-		if req.SNMP == nil {
-			return 0, errors.New("SNMPv3 is enabled but no credentials were entered")
-		}
-		cred := probe.SNMPCredentials{
-			Username:       strings.TrimSpace(req.SNMP.Username),
-			AuthProtocol:   req.SNMP.AuthProtocol,
-			AuthPassphrase: req.SNMP.AuthPassphrase,
-			PrivProtocol:   req.SNMP.PrivProtocol,
-			PrivPassphrase: req.SNMP.PrivPassphrase,
-		}
-		if err := cred.Validate(); err != nil {
-			return 0, err
-		}
-		cfg.SNMP = &cred
-	}
-	if strings.TrimSpace(req.Ports) != "" {
-		if cfg.Ports, err = scan.ParsePorts(req.Ports); err != nil {
-			return 0, err
-		}
-	}
+	cfg := plan.Config()
 
 	ctx, cancel := context.WithCancel(a.ctx)
 	a.mu.Lock()
@@ -270,6 +255,47 @@ func (a *App) StartScan(req ScanRequest) (int, error) {
 		a.emit(EventDone, sum)
 	}()
 	return len(addrs), nil
+}
+
+// planFromRequest builds the plan through scan.BuildPlan, the same function
+// the CLI uses, so both front ends resolve gentle mode identically. Default
+// mode keeps this app's own clamping and is otherwise unchanged.
+func planFromRequest(req ScanRequest, addrs []netip.Addr) (scan.Plan, error) {
+	pr := scan.PlanRequest{Mode: req.Mode, Targets: addrs, Probes: req.Probes}
+	if err := scan.ValidMode(req.Mode); err != nil {
+		return scan.Plan{}, err
+	}
+	if req.Mode == scan.ModeGentle {
+		pr.Concurrency = req.Concurrency
+		pr.ConnectTimeout = time.Duration(req.TimeoutMs) * time.Millisecond
+	} else {
+		pr.Concurrency = clamp(req.Concurrency, 1, 512, 128)
+		pr.ConnectTimeout = time.Duration(clamp(req.TimeoutMs, 100, 10000, 800)) * time.Millisecond
+	}
+	// Gentle mode refuses SNMP in scan.BuildPlan, before credentials matter.
+	if req.Probes.SNMP && req.Mode != scan.ModeGentle {
+		if req.SNMP == nil {
+			return scan.Plan{}, errors.New("SNMPv3 is enabled but no credentials were entered")
+		}
+		cred := probe.SNMPCredentials{
+			Username:       strings.TrimSpace(req.SNMP.Username),
+			AuthProtocol:   req.SNMP.AuthProtocol,
+			AuthPassphrase: req.SNMP.AuthPassphrase,
+			PrivProtocol:   req.SNMP.PrivProtocol,
+			PrivPassphrase: req.SNMP.PrivPassphrase,
+		}
+		if err := cred.Validate(); err != nil {
+			return scan.Plan{}, err
+		}
+		pr.SNMP = &cred
+	}
+	if strings.TrimSpace(req.Ports) != "" {
+		var err error
+		if pr.Ports, err = scan.ParsePorts(req.Ports); err != nil {
+			return scan.Plan{}, err
+		}
+	}
+	return scan.BuildPlan(pr)
 }
 
 // StopScan cancels the running scan; results so far are kept.
