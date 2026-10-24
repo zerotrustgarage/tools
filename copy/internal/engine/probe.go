@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 )
@@ -129,7 +130,7 @@ func unavailable(err error) string {
 func InspectWith(path string, s Sys) Metadata {
 	var m Metadata
 
-	m.FileVersion.Source = "PE version resource (GetFileVersionInfo, VS_FIXEDFILEINFO FileVersion)"
+	m.FileVersion.Source = "raw RT_VERSION resource read from the file (LoadLibraryEx as data file, FindResource, VS_FIXEDFILEINFO FileVersion); not GetFileVersionInfo, which reports a shimmed 6.2"
 	if v, err := s.FileVersion(path); err != nil {
 		m.FileVersion.Unavailable = unavailable(err)
 	} else if v == "" {
@@ -203,9 +204,11 @@ func signature(path string, s Sys) SignatureFact {
 		return f
 	}
 	switch {
-	case !cat.Found:
+	case !cat.Found && status == trustNoSignature:
 		f.Decision = SignatureUnsigned
 		f.Detail = fmt.Sprintf("no embedded signature (0x%08X) and no catalog contains the file hash", status)
+	case !cat.Found:
+		f.Detail = fmt.Sprintf("unsupported subject format (WinVerifyTrust 0x%08X) and no catalog contains the file hash", status)
 	case cat.Status == 0:
 		f.Decision = SignatureCatalog
 		f.Detail = cat.Catalog
@@ -213,4 +216,19 @@ func signature(path string, s Sys) SignatureFact {
 		f.Detail = fmt.Sprintf("catalog %s found but WinVerifyTrust returned 0x%08X", cat.Catalog, cat.Status)
 	}
 	return f
+}
+
+// parseFixedFileInfo finds VS_FIXEDFILEINFO in a raw RT_VERSION resource and
+// returns its dotted FileVersion. The structure follows the VS_VERSIONINFO
+// header and the "VS_VERSION_INFO" key, 4-byte aligned.
+func parseFixedFileInfo(data []byte) (string, error) {
+	for i := 0; i+52 <= len(data) && i < 256; i += 4 {
+		if binary.LittleEndian.Uint32(data[i:]) != 0xFEEF04BD {
+			continue
+		}
+		ms := binary.LittleEndian.Uint32(data[i+8:])
+		ls := binary.LittleEndian.Uint32(data[i+12:])
+		return fmt.Sprintf("%d.%d.%d.%d", ms>>16, ms&0xFFFF, ls>>16, ls&0xFFFF), nil
+	}
+	return "", errors.New("version resource has no VS_FIXEDFILEINFO signature")
 }

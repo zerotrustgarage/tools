@@ -3,8 +3,11 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
+	"golang.org/x/sys/windows"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -56,7 +59,11 @@ func TestInspectRealRobocopyAndProcess(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := Inspect(e.Path)
-	t.Logf("probe: %+v", m)
+	t.Logf("probe: version=%+v elevation=%+v elevated=%v privileges=%+v signature=%+v", m.FileVersion, m.Elevation, m.Elevation.Elevated != nil && *m.Elevation.Elevated, m.Privileges, m.Signature)
+	osv := windows.RtlGetVersion()
+	if want := fmt.Sprintf("%d.%d.", osv.MajorVersion, osv.MinorVersion); !strings.HasPrefix(m.FileVersion.Value, want) {
+		t.Fatalf("file version %q does not start with the OS version %s (compatibility-shimmed read?)", m.FileVersion.Value, want)
+	}
 	if m.FileVersion.Value == "" || m.FileVersion.Unavailable != "" {
 		t.Fatalf("version: %+v", m.FileVersion)
 	}

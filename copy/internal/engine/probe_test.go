@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/binary"
 	"errors"
 	"strings"
 	"testing"
@@ -74,7 +75,8 @@ func TestSignatureDecisions(t *testing.T) {
 		{"embedded", fakeSys{embedded: 0}, SignatureEmbedded, false, "", false},
 		{"catalog", fakeSys{embedded: trustNoSignature, cat: CatalogResult{Found: true, Catalog: "x.cat"}}, SignatureCatalog, true, "x.cat", false},
 		{"unsigned", fakeSys{embedded: trustNoSignature}, SignatureUnsigned, true, "no catalog", false},
-		{"provider unknown", fakeSys{embedded: trustProviderUnknown}, SignatureUnsigned, true, "", false},
+		{"provider unknown", fakeSys{embedded: trustProviderUnknown}, SignatureUnknown, true, "unsupported subject format", false},
+		{"subject form unknown", fakeSys{embedded: trustSubjectFormUnk}, SignatureUnknown, true, "unsupported subject format", false},
 		{"bad embedded", fakeSys{embedded: 0x80096010}, SignatureUnknown, false, "0x80096010", false},
 		{"catalog fails", fakeSys{embedded: trustNoSignature, cat: CatalogResult{Found: true, Catalog: "x.cat", Status: 0x80096010}}, SignatureUnknown, true, "x.cat", false},
 		{"embedded api error", fakeSys{embeddedEr: errors.New("boom")}, SignatureUnknown, false, "", true},
@@ -126,4 +128,23 @@ func (unsupportedPlatform) Privileges() (map[string]bool, error) { return nil, E
 func (unsupportedPlatform) EmbeddedTrust(string) (uint32, error) { return 0, ErrUnsupported }
 func (unsupportedPlatform) CatalogTrust(string) (CatalogResult, error) {
 	return CatalogResult{}, ErrUnsupported
+}
+
+func TestParseFixedFileInfo(t *testing.T) {
+	// VS_VERSIONINFO header (6 bytes) + "VS_VERSION_INFO\0" in UTF-16 (32), padded to 40, then the fixed info.
+	data := make([]byte, 40+52)
+	binary.LittleEndian.PutUint16(data[0:], uint16(len(data)))
+	binary.LittleEndian.PutUint32(data[40:], 0xFEEF04BD)
+	binary.LittleEndian.PutUint32(data[48:], 10<<16|0)
+	binary.LittleEndian.PutUint32(data[52:], 26100<<16|7309)
+	got, err := parseFixedFileInfo(data)
+	if err != nil || got != "10.0.26100.7309" {
+		t.Fatalf("%q, %v", got, err)
+	}
+	if _, err := parseFixedFileInfo(make([]byte, 100)); err == nil {
+		t.Fatal("accepted data without the signature")
+	}
+	if _, err := parseFixedFileInfo(nil); err == nil {
+		t.Fatal("accepted empty data")
+	}
 }

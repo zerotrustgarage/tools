@@ -25,27 +25,28 @@ type winSys struct{}
 
 func newSys() Sys { return winSys{} }
 
+// FileVersion reads RT_VERSION straight from the file. GetFileVersionInfo
+// returns a compatibility-shimmed 6.2 for processes without a supportedOS
+// manifest, so the raw resource is parsed instead.
 func (winSys) FileVersion(path string) (string, error) {
-	size, err := windows.GetFileVersionInfoSize(path, nil)
+	mod, err := windows.LoadLibraryEx(path, 0, windows.LOAD_LIBRARY_AS_DATAFILE|windows.LOAD_LIBRARY_AS_IMAGE_RESOURCE)
 	if err != nil {
-		if errors.Is(err, windows.ERROR_RESOURCE_DATA_NOT_FOUND) || errors.Is(err, windows.ERROR_RESOURCE_TYPE_NOT_FOUND) {
+		return "", fmt.Errorf("LoadLibraryEx: %w", err)
+	}
+	defer windows.FreeLibrary(mod)
+	res, err := windows.FindResource(mod, windows.ResourceID(1), windows.RT_VERSION)
+	if err != nil {
+		if errors.Is(err, windows.ERROR_RESOURCE_DATA_NOT_FOUND) || errors.Is(err, windows.ERROR_RESOURCE_TYPE_NOT_FOUND) || errors.Is(err, windows.ERROR_RESOURCE_NAME_NOT_FOUND) {
 			return "", nil
 		}
-		return "", fmt.Errorf("GetFileVersionInfoSize: %w", err)
+		return "", fmt.Errorf("FindResource: %w", err)
 	}
-	buf := make([]byte, size)
-	if err := windows.GetFileVersionInfo(path, 0, size, unsafe.Pointer(&buf[0])); err != nil {
-		return "", fmt.Errorf("GetFileVersionInfo: %w", err)
+	data, err := windows.LoadResourceData(mod, res)
+	if err != nil {
+		return "", fmt.Errorf("LoadResource: %w", err)
 	}
-	var info *windows.VS_FIXEDFILEINFO
-	var n uint32
-	if err := windows.VerQueryValue(unsafe.Pointer(&buf[0]), `\`, unsafe.Pointer(&info), &n); err != nil {
-		return "", fmt.Errorf("VerQueryValue: %w", err)
-	}
-	if info == nil || n < uint32(unsafe.Sizeof(*info)) || info.Signature != 0xFEEF04BD {
-		return "", errors.New("VerQueryValue returned no fixed file info")
-	}
-	return fmt.Sprintf("%d.%d.%d.%d", info.FileVersionMS>>16, info.FileVersionMS&0xFFFF, info.FileVersionLS>>16, info.FileVersionLS&0xFFFF), nil
+	// The slice points into the mapped module; parse it before FreeLibrary.
+	return parseFixedFileInfo(data)
 }
 
 func tokenInfo(class uint32, size int) ([]byte, error) {
@@ -153,9 +154,23 @@ type wintrustCatalogInfo struct {
 	CatAdmin       windows.Handle
 }
 
+// CatalogTrust looks the file hash up with SHA256 and then SHA1, because
+// catalogs may be indexed by either algorithm.
 func (winSys) CatalogTrust(path string) (CatalogResult, error) {
+	var last CatalogResult
+	for _, algorithm := range []string{"SHA256", "SHA1"} {
+		res, err := catalogLookup(path, algorithm)
+		if err != nil || res.Found {
+			return res, err
+		}
+		last = res
+	}
+	return last, nil
+}
+
+func catalogLookup(path, algorithm string) (CatalogResult, error) {
 	var res CatalogResult
-	sha256 := windows.StringToUTF16Ptr("SHA256")
+	sha256 := windows.StringToUTF16Ptr(algorithm)
 	var admin windows.Handle
 	if r, _, err := procCatAdminAcquireContext2.Call(uintptr(unsafe.Pointer(&admin)), 0, uintptr(unsafe.Pointer(sha256)), 0, 0); r == 0 {
 		return res, fmt.Errorf("CryptCATAdminAcquireContext2: %w", err)

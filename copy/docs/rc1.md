@@ -29,8 +29,8 @@ production support claim.
   Windows codes, with bounded excerpts and suggestions. Counts include retries and do not change
   summary/exit-based outcomes. Activity and saved-run details show the grouped errors.
 - Probe metadata in the run record (`probe`): robocopy.exe file version from its PE version
-  resource, process token elevation type, SeBackup/SeRestore/SeSecurity state (absent, present but
-  disabled, enabled) and a signature decision (embedded, catalog, unsigned or unknown, from
+  resource (read directly, not through the shimmed GetFileVersionInfo), process token
+  elevation type, SeBackup/SeRestore/SeSecurity state (absent, present but disabled, enabled) and a signature decision (embedded, catalog, unsigned or unknown, from
   WinVerifyTrust and the catalog database, with no network or revocation lookup). Each field names
   its source or says why it is unavailable. Older records without `probe` still load. The signature
   decision says how the file is signed, not that the signer is trusted. Windows behavior is covered
