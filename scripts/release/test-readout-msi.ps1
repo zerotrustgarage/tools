@@ -163,7 +163,7 @@ try {
   # keep the old file (see docs/release-readiness-readout.md).
   $fileVersion = (Get-Item -LiteralPath $exe).VersionInfo.FileVersion
   if (-not $fileVersion -or -not $fileVersion.StartsWith($ExeVersion)) { throw "installed exe FileVersion is '$fileVersion', expected it to start with '$ExeVersion'" }
-  Ok "installed executable FileVersion $fileVersion
+  Ok "installed executable FileVersion $fileVersion"
   Assert-Launches 'current'
   if ($PriorMsi) {
     Run-Msi $PriorMsi '/i' 1603 # downgrade refused by MajorUpgrade
