@@ -17,10 +17,37 @@ $shortcut = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\ZT
 $files = @('ZTGTFTP.exe', 'ztg-tftp.exe', 'README.txt', 'THIRD-PARTY-NOTICES.txt', 'tftp.cdx.json')
 $unpack = Join-Path $env:RUNNER_TEMP 'tftp-portable'
 
+$script:msiStep = 0
 function Run-Msi([string] $file, [string] $operation, [int] $expected = 0) {
-  $log = Join-Path $env:RUNNER_TEMP "tftp-msi-$([guid]::NewGuid()).log"
+  $script:msiStep++
+  $name = '{0:00}-{1}-{2}' -f $script:msiStep, $operation.TrimStart('/'), [IO.Path]::GetFileNameWithoutExtension($file)
+  $log = Join-Path $env:RUNNER_TEMP "tftp-msi-$name.log"
   $p = Start-Process msiexec.exe -ArgumentList @($operation, "`"$file`"", '/qn', '/norestart', '/l*v', "`"$log`"") -Wait -PassThru
-  if ($p.ExitCode -ne $expected) { Select-String -Path $log -Pattern 'Return value 3|Error 17|CustomAction|returned actual error' -Context 8,8 | Out-String | Write-Host; Get-Content $log -Tail 60; throw "msiexec $operation exited $($p.ExitCode), expected $expected" }
+  Write-Host "msiexec $operation $file -> $($p.ExitCode) (log $log)"
+  if ($p.ExitCode -ne $expected) { Select-String -Path $log -Pattern 'Return value 3|Error 17|CustomAction|returned actual error|Note: 1: 2732' -Context 8,8 | Out-String | Write-Host; Get-Content $log -Tail 60; throw "msiexec $operation exited $($p.ExitCode), expected $expected" }
+}
+# Print and verify InstallExecuteSequence straight from the package under test, so
+# a mis-sequenced build fails before any install and the table is in the job log.
+function Assert-MsiSequence([string] $file) {
+  $installer = New-Object -ComObject WindowsInstaller.Installer
+  $db = $installer.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $installer, @($file, 0))
+  $view = $db.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $db, @('SELECT `Action`, `Sequence` FROM `InstallExecuteSequence`'))
+  $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null) | Out-Null
+  $seq = @{}
+  while ($true) {
+    $rec = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
+    if ($null -eq $rec) { break }
+    $seq[$rec.GetType().InvokeMember('StringData', 'GetProperty', $null, $rec, @(1))] = [int]$rec.GetType().InvokeMember('StringData', 'GetProperty', $null, $rec, @(2))
+  }
+  $view.GetType().InvokeMember('Close', 'InvokeMethod', $null, $view, $null) | Out-Null
+  Write-Host "InstallExecuteSequence of ${file}:"
+  $seq.GetEnumerator() | Where-Object { $_.Value -gt 0 } | Sort-Object Value | ForEach-Object { Write-Host ('  {0,6} {1}' -f $_.Value, $_.Key) }
+  foreach ($a in 'FirewallRestore', 'FirewallRemove', 'FirewallRollback', 'FirewallRepairRollback', 'FirewallInstall') {
+    if (-not $seq.ContainsKey($a)) { throw "$file has no $a in InstallExecuteSequence" }
+    if ($seq[$a] -le $seq['CostFinalize'] -or $seq[$a] -le $seq['InstallInitialize']) { throw "$file schedules $a at $($seq[$a]), before costing (Windows Installer error 2732)" }
+  }
+  if (-not ($seq['FirewallRestore'] -lt $seq['FirewallRemove'] -and $seq['FirewallRemove'] -lt $seq['RemoveFiles'])) { throw "$file schedules firewall removal outside InstallInitialize..RemoveFiles" }
+  if (-not ($seq['InstallFiles'] -lt $seq['FirewallInstall'] -and $seq['FirewallInstall'] -lt $seq['InstallFinalize'])) { throw "$file schedules FirewallInstall outside InstallFiles..InstallFinalize" }
 }
 function Assert-Signed([string] $file) {
   if (-not $RequireSignatures) { return }
@@ -145,6 +172,8 @@ if (-not (Get-ItemProperty $runtime -ErrorAction SilentlyContinue).pv) {
 }
 
 Assert-Signed $Msi
+Assert-MsiSequence $Msi
+if ($UpgradeMsi) { Assert-MsiSequence $UpgradeMsi }
 Expand-Archive -Path $Portable -DestinationPath $unpack -Force
 Assert-Payload $unpack $Version
 # Exercise the exact elevated helper directly so netsh diagnostics remain visible.
@@ -156,6 +185,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Portable firewall cleanup failed' }
 if (Test-Path $installDir) { throw 'TFTP is already installed on this test runner' }
 $installed = $false
 $currentMsi = $Msi
+$cleanupFailed = $false
 try {
   Run-Msi $Msi '/i'
   $installed = $true
@@ -179,9 +209,14 @@ try {
     Run-Msi $Msi '/i' 1603 # downgrade is refused
   }
 } finally {
-  if ($installed) { Run-Msi $currentMsi '/x' }
+  # A failure here must not replace the lifecycle error that brought us here.
+  if ($installed) {
+    try { Run-Msi $currentMsi '/x' }
+    catch { Write-Warning "cleanup uninstall failed: $($_.Exception.Message)"; $cleanupFailed = $true }
+  }
   Remove-Item $unpack -Recurse -Force
 }
+if ($cleanupFailed) { throw 'Final uninstall failed (see warning and uploaded msiexec logs)' }
 foreach ($file in $files) {
   if (Test-Path (Join-Path $installDir $file)) { throw "Uninstall left $file behind" }
 }
