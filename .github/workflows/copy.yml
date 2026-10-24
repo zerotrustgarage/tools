@@ -34,13 +34,16 @@ jobs:
           go vet ./...
           GOOS=windows GOARCH=amd64 go vet ./...
           go test -race ./...
+      - name: Bounded fuzzing
+        timeout-minutes: 6
+        run: |
           # Iteration counts, not wall time: a -fuzztime deadline can end in "context deadline exceeded".
-          # Counts are the lowest execs seen in recent green runs, rounded down; timeout-minutes bounds the job.
-          go test ./internal/cmdline -run '^$' -fuzz '^FuzzRoundTrip$' -fuzztime 350000x -parallel 2
-          go test ./internal/template -run '^$' -fuzz '^FuzzTemplateReader$' -fuzztime 170000x -parallel 2
-          go test ./internal/parse -run '^$' -fuzz '^FuzzNativeSummary$' -fuzztime 290000x -parallel 2
-          go test ./internal/parse -run '^$' -fuzz '^FuzzNativeDiagnostics$' -fuzztime 190000x -parallel 2
-          go test ./internal/spike -run '^$' -fuzz '^FuzzDecodeUnicode$' -fuzztime 530000x -parallel 2
+          # Counts are the median final execs of 3 recent green runs, rounded down (runs 40038268965 40024460965 40023738848); timeout-minutes bounds wall time.
+          go test ./internal/cmdline -run '^$' -fuzz '^FuzzRoundTrip$' -fuzztime 410000x -parallel 2
+          go test ./internal/template -run '^$' -fuzz '^FuzzTemplateReader$' -fuzztime 190000x -parallel 2
+          go test ./internal/parse -run '^$' -fuzz '^FuzzNativeSummary$' -fuzztime 350000x -parallel 2
+          go test ./internal/parse -run '^$' -fuzz '^FuzzNativeDiagnostics$' -fuzztime 290000x -parallel 2
+          go test ./internal/spike -run '^$' -fuzz '^FuzzDecodeUnicode$' -fuzztime 540000x -parallel 2
       - name: Cross build unsigned CLI and Windows test binaries
         run: |
           GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o dist/ztg-copy-spike.exe ./cmd/ztg-copy-spike
