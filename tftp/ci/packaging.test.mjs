@@ -51,6 +51,21 @@ test('packages preserve the binaries, ZIP is reproducible and MSI is signable', 
     assert.ok(rows.get('RemoveExistingProducts') < rows.get('InstallFiles'), 'remove old firewall rules before installing new ones');
     assert.ok(rows.get('FirewallInstall') > rows.get('InstallFiles'));
     assert.ok(rows.get('FirewallRemove') < rows.get('RemoveFiles'));
+    // Custom actions that reference INSTALLDIR must follow costing (error 2732 otherwise).
+    for (const name of ['FirewallRestore', 'FirewallRemove', 'FirewallRollback', 'FirewallRepairRollback', 'FirewallInstall']) {
+      assert.ok(rows.get(name) > rows.get('CostFinalize'), `${name} must follow CostFinalize`);
+      assert.ok(rows.get(name) > rows.get('InstallInitialize'), `${name} must follow InstallInitialize`);
+    }
+    assert.ok(rows.get('FirewallRestore') < rows.get('FirewallRemove'));
+    // wixl output order varied between builds of identical input (run 39961622459).
+    // Rebuild repeatedly and require an identical sequence table every time.
+    const baseline = sequence.trim().split(/\r?\n/).slice(3).sort().join('\n');
+    for (let i = 0; i < 12; i++) {
+      const again = join(dir, `again-${i}.msi`);
+      run(msiScript, [resolve(payload), i % 2 ? '0.3.1' : '0.4.0', again]);
+      const table = run('msiinfo', ['export', again, 'InstallExecuteSequence']).trim().split(/\r?\n/).slice(3).sort().join('\n');
+      assert.equal(table, baseline, `InstallExecuteSequence differs on rebuild ${i}`);
+    }
     const registry = run('msiinfo', ['export', msi, 'Registry']);
     assert.doesNotMatch(registry, /RunOnce|CurrentVersion\\Run\b/);
     assert.notEqual(spawnSync(msiScript, [resolve(payload), '256.0.0', msi]).status, 0);
