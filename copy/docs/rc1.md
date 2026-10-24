@@ -28,6 +28,13 @@ production support claim.
 - Error-by-cause details from streaming native Unicode logs, grouped by agreeing decimal/hex
   Windows codes, with bounded excerpts and suggestions. Counts include retries and do not change
   summary/exit-based outcomes. Activity and saved-run details show the grouped errors.
+- Probe metadata in the run record (`probe`): robocopy.exe file version from its PE version
+  resource, process token elevation type, SeBackup/SeRestore/SeSecurity state (absent, present but
+  disabled, enabled) and a signature decision (embedded, catalog, unsigned or unknown, from
+  WinVerifyTrust and the catalog database, with no network or revocation lookup). Each field names
+  its source or says why it is unavailable. Older records without `probe` still load. The signature
+  decision says how the file is signed, not that the signer is trusted. Windows behavior is covered
+  by tests in the Copy Windows job; the unit tests use fakes.
 - A saved-run inspector with per-phase native exit bitmap meanings, including older records.
 - Explicit update checks using the shared release contract, without background requests.
 
@@ -42,8 +49,6 @@ are treated as completed bytes.
 - Accurate activity/rate/stall metrics and replayable clock interfaces. Progress is currently phase
   status and final totals, with no percentage or ETA claim. The roadmap's minute-long ETA accuracy
   criterion has not been met.
-- Full production probe metadata, including engine file version, elevation/privileges and a
-  catalog-aware signature decision.
 - Broader option/type/preset validation and RCJ import/export from the design.
 - More Windows releases/locales and optimized-copy fixtures as tracked in rc0.md.
 - Broader diagnostic format/locale coverage and the remaining run-record metadata required by

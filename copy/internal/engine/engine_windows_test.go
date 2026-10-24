@@ -49,3 +49,52 @@ func TestContainedRobocopyAndCancellation(t *testing.T) {
 		t.Fatalf("stop: %+v, %v", r, err)
 	}
 }
+
+func TestInspectRealRobocopyAndProcess(t *testing.T) {
+	e, err := Discover()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := Inspect(e.Path)
+	t.Logf("probe: %+v", m)
+	if m.FileVersion.Value == "" || m.FileVersion.Unavailable != "" {
+		t.Fatalf("version: %+v", m.FileVersion)
+	}
+	if m.Elevation.Unavailable != "" || m.Elevation.Elevated == nil || m.Elevation.Type == ElevationUnknown {
+		t.Fatalf("elevation: %+v", m.Elevation)
+	}
+	if m.Privileges.Unavailable != "" || len(m.Privileges.Items) != len(RobocopyPrivileges) {
+		t.Fatalf("privileges: %+v", m.Privileges)
+	}
+	for _, p := range m.Privileges.Items {
+		if p.State != PrivilegeAbsent && p.State != PrivilegeDisabled && p.State != PrivilegeEnabled {
+			t.Fatalf("privilege: %+v", p)
+		}
+	}
+	if m.Elevation.Type == ElevationFull || *m.Elevation.Elevated {
+		// An elevated admin token holds backup and restore privileges.
+		for _, p := range m.Privileges.Items {
+			if p.Name != "SeSecurityPrivilege" && p.State == PrivilegeAbsent {
+				t.Fatalf("elevated token lacks %s", p.Name)
+			}
+		}
+	}
+	// Inbox Robocopy is Microsoft signed either inside the file or through a catalog.
+	if m.Signature.Unavailable != "" || (m.Signature.Decision != SignatureEmbedded && m.Signature.Decision != SignatureCatalog) {
+		t.Fatalf("robocopy signature: %+v", m.Signature)
+	}
+}
+
+func TestInspectUnsignedFileIsUnsigned(t *testing.T) {
+	exe, err := os.Executable() // the Go test binary is never signed or cataloged
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := Inspect(exe)
+	if m.Signature.Decision != SignatureUnsigned || m.Signature.Unavailable != "" {
+		t.Fatalf("test binary signature: %+v", m.Signature)
+	}
+	if m.FileVersion.Value != "" && m.FileVersion.Unavailable != "" {
+		t.Fatalf("version: %+v", m.FileVersion)
+	}
+}

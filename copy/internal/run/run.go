@@ -31,22 +31,24 @@ type Phase struct {
 }
 
 type Record struct {
-	Schema         int           `json:"schema"`
-	Version        string        `json:"version"`
-	Mode           string        `json:"mode"`
-	Directory      string        `json:"directory"`
-	Started        time.Time     `json:"started"`
-	Finished       time.Time     `json:"finished"`
-	Host           string        `json:"host"`
-	Technician     string        `json:"technician"`
-	TechnicianID   string        `json:"technician_id"`
-	Job            job.Job       `json:"job"`
-	Engine         engine.Engine `json:"engine"`
-	Guards         guard.Facts   `json:"guards"`
-	Phases         []Phase       `json:"phases"`
-	State          string        `json:"state"`
-	NormalizedExit int           `json:"normalized_exit"`
-	Error          string        `json:"error,omitempty"`
+	Schema       int           `json:"schema"`
+	Version      string        `json:"version"`
+	Mode         string        `json:"mode"`
+	Directory    string        `json:"directory"`
+	Started      time.Time     `json:"started"`
+	Finished     time.Time     `json:"finished"`
+	Host         string        `json:"host"`
+	Technician   string        `json:"technician"`
+	TechnicianID string        `json:"technician_id"`
+	Job          job.Job       `json:"job"`
+	Engine       engine.Engine `json:"engine"`
+	// Probe is absent from records written before it existed.
+	Probe          *engine.Metadata `json:"probe,omitempty"`
+	Guards         guard.Facts      `json:"guards"`
+	Phases         []Phase          `json:"phases"`
+	State          string           `json:"state"`
+	NormalizedExit int              `json:"normalized_exit"`
+	Error          string           `json:"error,omitempty"`
 }
 
 func DefaultRecords() (string, error) {
@@ -111,6 +113,9 @@ func Execute(ctx context.Context, j job.Job, root, version string, copyData bool
 	if err != nil {
 		return record, err
 	}
+	// Probe failures are recorded per field and never stop a run.
+	metadata := engine.Inspect(record.Engine.Path)
+	record.Probe = &metadata
 	fmt.Fprintln(progress, "Record:", record.Directory)
 	events, err := os.OpenFile(filepath.Join(record.Directory, "events.jsonl"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
