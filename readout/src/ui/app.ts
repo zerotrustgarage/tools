@@ -12,7 +12,7 @@ import { ExternalChangeWatcher, type WatchHost } from '../core/reload';
 import { defaultDocument, documentFor, resolveInFolder, resolveWikiLink, splitHref } from '../core/paths';
 import { postprocess } from '../core/postprocess';
 import { renderMarkdown } from '../core/render';
-import type { SearchMatch } from '../core/search';
+import { DEFAULT_BOUNDS, type SearchMatch } from '../core/search';
 import type { Arrival, FileRef, Listing, OpenedFile, PendingSession, Platform } from '../platform/types';
 import { el, icon } from './dom';
 import { createEditor, documentText, scrollToLine, type JumpOptions } from './editor';
@@ -864,15 +864,15 @@ export class App {
    * The open file is searched as it is in the editor, unsaved edits included, so a hit's line is
    * the line the jump lands on.
    */
-  private searchScope(): { files: readonly string[]; read: (path: string) => Promise<Uint8Array | string | null> } | null {
+  private searchScope(): { files: readonly string[]; read: (path: string, maxBytes?: number) => Promise<Uint8Array | string | null> } | null {
     const listing = this.listing;
     if (!listing) return null;
     return {
       files: listing.files,
-      read: async (path) => {
+      read: async (path, maxBytes = DEFAULT_BOUNDS.maxFileBytes) => {
         // A refresh swaps the listing object but keeps the folder, so path alone decides.
         if (path === this.doc.ref?.folderPath) return documentText(this.view.state);
-        return (await this.platform.readFolderFile(listing, path)).bytes;
+        return (await this.platform.readFolderFile(listing, path, { maxBytes })).bytes;
       },
     };
   }

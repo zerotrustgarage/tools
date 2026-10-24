@@ -77,9 +77,10 @@ returns along the links you followed.
   (a NUL byte or invalid UTF-8), files over the size limit and unreadable files are skipped and
   counted in the line under the field, which also says when a limit cut the search short. Typing
   a new query, pressing Stop, or opening or closing a folder cancels the running search; a folder
-  change also clears the query and results. The size limit is checked after a file is read (the
-  desktop reader itself refuses anything over 64 MiB); the app has no cheaper way to ask a file's
-  size.
+  change also clears the query and results. In the browser build the size limit is checked
+  against the file's size before it is read, so an oversized file is never loaded. The desktop
+  build cannot ask a file's size first: the limit is checked after the read, and the desktop
+  reader itself refuses anything over 64 MiB.
   - Desktop and Chromium browsers (File System Access API): each file is read from disk when
     searched, so results reflect the current files.
   - Browser fallback for Firefox and Safari (folder upload): the search covers the snapshot taken
