@@ -127,6 +127,7 @@ func TestMalformedSettingsFailClearly(t *testing.T) {
 		{"negative hosts", PlanRequest{Mode: ModeGentle, Concurrency: -1}, "must not be negative"},
 		{"negative timeout", PlanRequest{Mode: ModeGentle, ConnectTimeout: -time.Second}, "must not be negative"},
 		{"too many ports", PlanRequest{Mode: ModeGentle, Ports: long}, "at most 16 ports"},
+		{"port outside gentle list", PlanRequest{Mode: ModeGentle, Ports: []int{80, 23}}, "port 23 is not one of them"},
 		{"empty ports", PlanRequest{Mode: ModeGentle, Ports: []int{}}, "no ports"},
 		{"snmp flag", PlanRequest{Mode: ModeGentle, Probes: Probes{SNMP: true}}, "does not use SNMP"},
 		{"snmp creds", PlanRequest{Mode: ModeGentle, SNMP: &probe.SNMPCredentials{}}, "does not use SNMP"},
@@ -329,12 +330,12 @@ func TestRunGentleOnLoopbackPacesAndSkipsBanners(t *testing.T) {
 	_, ps, _ := net.SplitHostPort(web.Listener.Addr().String())
 	port, _ := strconv.Atoi(ps)
 
-	p, err := BuildPlan(PlanRequest{Mode: ModeGentle, Targets: []netip.Addr{netip.MustParseAddr("127.0.0.1")}, Ports: []int{port, 1},
-		Probes: Probes{Ports: true, Banners: true, NetBIOS: true, MDNS: true, SSDP: true}})
+	p, err := BuildPlan(PlanRequest{Mode: ModeGentle, Targets: []netip.Addr{netip.MustParseAddr("127.0.0.1")}, Probes: Probes{Ports: true, Banners: true, NetBIOS: true, MDNS: true, SSDP: true}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	cfg := p.Config()
+	cfg.Ports = []int{port, 1} // loopback test ports; BuildPlan only accepts the gentle list
 	pc := &countPacer{}
 	cfg.Pacer = pc // fake pacer: no real sleeping
 	rec := &recorder{}

@@ -129,6 +129,7 @@ func TestGentleModeRejectsMalformedSettings(t *testing.T) {
 		{[]string{"--mode", "stealth", "10.0.0.1"}, "unknown scan mode"},
 		{[]string{"--mode", "gentle", "--concurrency", "64", "10.0.0.1"}, "at most 4 hosts in parallel"},
 		{[]string{"--mode", "gentle", "--ports", "1-100", "10.0.0.1"}, "at most 16 ports"},
+		{[]string{"--mode", "gentle", "--ports", "22,23", "10.0.0.1"}, "port 23 is not one of them"},
 		{[]string{"--mode", "gentle", "--ports", "x", "10.0.0.1"}, "bad port"},
 		{[]string{"--mode", "gentle", "--snmp-user", "noc", "10.0.0.1"}, "does not use SNMP"},
 		{[]string{"--mode", "gentle", "--timeout", "-1s", "10.0.0.1"}, "must not be negative"},

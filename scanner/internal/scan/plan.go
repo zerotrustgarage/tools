@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -143,9 +142,12 @@ func ValidMode(m string) error {
 
 // BuildPlan resolves a request. In default mode the request passes through
 // untouched, so the default plan is exactly what it was before modes
-// existed. In gentle mode the engine settings are fixed; a request may
-// only ask for less (fewer hosts in parallel, fewer ports, fewer probes),
-// and a request for more is rejected rather than silently clamped.
+// existed. In gentle mode the engine settings are fixed. A request may ask
+// for fewer hosts in parallel, a subset of GentlePorts, fewer probes, and
+// any positive connect timeout; anything beyond that is rejected rather than
+// silently clamped. The timeout is free because it does not raise the rate
+// or concurrency: a longer one waits longer for slow devices, a shorter one
+// gives up sooner.
 func BuildPlan(r PlanRequest) (Plan, error) {
 	if err := ValidMode(r.Mode); err != nil {
 		return Plan{}, err
@@ -191,6 +193,15 @@ func BuildPlan(r PlanRequest) (Plan, error) {
 		}
 		if len(r.Ports) > GentleMaxPorts {
 			return Plan{}, fmt.Errorf("gentle mode probes at most %d ports; %d were requested", GentleMaxPorts, len(r.Ports))
+		}
+		allowed := map[int]bool{}
+		for _, g := range GentlePorts {
+			allowed[g] = true
+		}
+		for _, port := range r.Ports {
+			if !allowed[port] {
+				return Plan{}, fmt.Errorf("gentle mode probes only ports %s; port %d is not one of them", portList(GentlePorts), port)
+			}
 		}
 		p.Ports = r.Ports
 	}
@@ -251,13 +262,17 @@ func GentleInfo() ModeInfo {
 
 // GentleSummary is the one-paragraph list of the gentle settings.
 func GentleSummary() string {
-	ports := make([]string, len(GentlePorts))
-	for i, n := range GentlePorts {
-		ports[i] = fmt.Sprint(n)
-	}
-	sort.Strings(ports)
+	ports := portList(GentlePorts)
 	return fmt.Sprintf("%d hosts at a time, %d connections per host, at most %d probe starts per second in total, "+
 		"%d ping per host, %s connect timeout, TCP ports %s. Skips service banners, NetBIOS, mDNS, UPnP and SNMP.",
 		GentleConcurrency, GentlePortConcurrency, int(time.Second/GentleProbeInterval), GentlePingAttempts,
-		GentleConnectTimeout, strings.Join(ports, ","))
+		GentleConnectTimeout, ports)
+}
+
+func portList(ports []int) string {
+	s := make([]string, len(ports))
+	for i, n := range ports {
+		s[i] = fmt.Sprint(n)
+	}
+	return strings.Join(s, ",")
 }

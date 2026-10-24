@@ -302,9 +302,9 @@ func TestDefaultsExposeGentleSettingsAndTradeoff(t *testing.T) {
 func TestGentleScanCanBeStopped(t *testing.T) {
 	a, f := NewApp(), newFake("")
 	a.setPlatform(context.Background(), f)
-	// Unrouted documentation space: nothing answers, so the gentle pacing keeps
-	// the scan busy until it is stopped.
-	if _, err := a.StartScan(ScanRequest{Mode: scan.ModeGentle, Targets: "198.51.100.0/28", AllowPublic: true, Probes: scan.DefaultProbes}); err != nil {
+	// Loopback only. 127.0.0.0/24 is 254 hosts at 10 probe starts per second,
+	// so the paced scan is still running when it is stopped.
+	if _, err := a.StartScan(ScanRequest{Mode: scan.ModeGentle, Targets: "127.0.0.0/24", Probes: scan.DefaultProbes}); err != nil {
 		t.Fatal(err)
 	}
 	a.StopScan()

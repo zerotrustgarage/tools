@@ -76,8 +76,9 @@ setting uses the same definition, so both build the identical plan:
 | TCP ports               | 40 common ports        | 22, 80, 443, 445, 515, 631, 8080, 9100                         |
 | Other probes            | banners, NetBIOS, mDNS, SSDP | none; reverse DNS and ICMP/ARP liveness only. SNMP is refused |
 
-`--concurrency`, `--timeout` and `--ports` may only ask for less (at most 4 hosts and 16 ports); larger values are
-rejected with an error rather than silently clamped. Cancel (Ctrl-C, or Stop in the app) works at any point,
+`--concurrency` may only ask for fewer hosts (at most 4) and `--ports` only for a subset of the eight gentle ports;
+anything else is rejected with an error rather than silently clamped. `--timeout` is free (any positive value),
+because it changes neither the rate nor the concurrency. Cancel (Ctrl-C, or Stop in the app) works at any point,
 including while a scan is waiting for its next probe slot.
 
 The tradeoff: gentle scans are slower and identify less (no service banners, names from NetBIOS, mDNS or UPnP, or

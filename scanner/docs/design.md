@@ -196,8 +196,8 @@ connections per host, one echo request per host, a 1500 ms connect timeout, TCP 
 pacer gates every probe start: echo, ARP, TCP connect, reverse DNS and, if ever enabled, banner grabs. It uses an
 injectable clock, so tests assert the schedule without real time. Probes in gentle mode are ICMP, ARP, TCP connect
 and reverse DNS only; banner grabs, NetBIOS, mDNS, SSDP and SNMP are off and a request to enable them is ignored
-(SNMP is rejected with an error). A request can ask for less than gentle allows, never more, and malformed values
-fail with a message instead of being clamped. Cancellation interrupts a pending pacer wait. A gentle scan records
+(SNMP is rejected with an error). A request can ask for fewer hosts, a subset of the gentle ports, fewer probes or any positive connect timeout,
+never more, and malformed values fail with a message instead of being clamped. Cancellation interrupts a pending pacer wait. A gentle scan records
 `"mode": "gentle"` in the summary; default scans omit the field.
 
 Gentle mode lowers load and skips the more intrusive probes; it is slower and identifies less. It does not make a

@@ -46,7 +46,9 @@
   };
   window.go = { main: { App: {
     Version: async () => "0.2.0-test",
-    Defaults: async () => ({ ports: "22,80,443", probes: { ports: true, banners: true, reverse_dns: true, netbios: true, mdns: true, ssdp: true }, concurrency: 128, timeout_ms: 800, max_hosts: 65536, snmp_auth_protocols: ["SHA", "SHA-256", "SHA-512"], snmp_priv_protocols: ["AES", "AES-256"] }),
+    Defaults: async () => ({ ports: "22,80,443", probes: { ports: true, banners: true, reverse_dns: true, netbios: true, mdns: true, ssdp: true }, concurrency: 128, timeout_ms: 800, max_hosts: 65536, snmp_auth_protocols: ["SHA", "SHA-256", "SHA-512"], snmp_priv_protocols: ["AES", "AES-256"],
+      // Mirrors scan.GentleInfo() in internal/scan/plan.go.
+      gentle: { mode: "gentle", label: "Gentle", concurrency: 4, port_concurrency: 2, probes_per_second: 10, timeout_ms: 1500, ports: [22, 80, 443, 445, 515, 631, 8080, 9100], probes: { ports: true, banners: false, reverse_dns: true, netbios: false, mdns: false, ssdp: false, snmp: false }, tradeoff: "Gentle mode lowers the load a scan puts on a network and skips the more intrusive probes. It is slower and identifies less: no service banners, NetBIOS, mDNS, UPnP or SNMP, and only a few ports. It reduces risk but does not remove it: any scan can upset a very fragile device, so get approval and watch the network." } }),
     Suggestions: async () => [{ interface: "Ethernet", address: "192.168.50.10", range: "192.168.50.0/24" }],
     Results: async (all) => snapshot(all),
     ValidateTargets: async (input) => {

@@ -287,7 +287,7 @@ func gentleHelp() string {
 	return "\nGentle mode (--mode gentle) is for fragile networks such as OT, medical or old printer segments.\n" +
 		"  Settings: " + scan.GentleSummary() + "\n" +
 		"  " + scan.GentleTradeoff + "\n" +
-		"  --concurrency, --timeout and --ports may only ask for less than gentle mode allows (a larger value is rejected).\n"
+		"  --concurrency may only be lowered (max 4) and --ports must be a subset of the gentle ports; other values are rejected. --timeout is free.\n"
 }
 
 func cmdReport(args []string, stdout io.Writer) error {

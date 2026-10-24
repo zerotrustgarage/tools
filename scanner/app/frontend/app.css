@@ -254,6 +254,7 @@ td.mono, .mono { font-family: var(--mono); font-size: 12px; }
   background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; box-shadow: 0 12px 32px rgba(0,0,0,.3);
 }
 .drawer h2 { margin: 0 0 12px; font-size: 15px; }
+.drawer fieldset.plain { border: 0; padding: 0; margin: 0; min-width: 0; display: block; }
 .drawer fieldset { border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 12px; display: grid; gap: 6px; }
 .drawer label { display: grid; gap: 4px; margin-bottom: 10px; }
 .drawer label.check { display: flex; margin: 0; }

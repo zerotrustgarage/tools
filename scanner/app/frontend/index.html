@@ -129,13 +129,13 @@
         <p class="muted small">Model, serial, firmware and location from switches, firewalls, printers and NAS units. Passphrases stay in memory for this session and are never saved or exported. SNMP v1/v2c, MD5 and DES are not supported.</p>
       </div>
     </fieldset>
-    <div id="engine-fields">
+    <fieldset id="engine-fields" class="plain">
     <label>TCP ports <textarea id="ports" rows="3" spellcheck="false"></textarea></label>
     <div class="row">
       <label>Hosts in parallel <input id="concurrency" type="number" min="1" max="512"></label>
       <label>Connect timeout (ms) <input id="timeout" type="number" min="100" max="10000" step="100"></label>
     </div>
-    </div>
+    </fieldset>
     <p class="muted small">Defaults identify devices without logging in to anything. Only private networks are scanned unless you confirm you are authorized to scan a public range.</p>
     <div class="row end"><button type="button" id="settings-reset" class="ghost">Restore defaults</button><button type="button" id="settings-close" class="primary">Done</button></div>
   </aside>
