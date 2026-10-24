@@ -107,7 +107,6 @@ export class SearchPanel {
         if (controller.signal.aborted) return;
         this.matches += file.matches.length;
         this.results.append(this.group(file));
-        this.status.textContent = `Searching... ${this.matches} match${this.matches === 1 ? '' : 'es'}`;
       },
     });
     // A newer search, a folder change or Stop got here first: it owns the display now.

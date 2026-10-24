@@ -225,7 +225,8 @@ async function started() {
   const { platform, reads } = appPlatform();
   const host = document.createElement('div');
   document.body.replaceChildren(host);
-  await new App(platform).start(host);
+  const app = new App(platform);
+  await app.start(host);
   const view = () => EditorView.findFromDOM(host.querySelector('.cm-editor') as HTMLElement)!;
   const search = async (query: string) => {
     host.querySelector<HTMLButtonElement>('button[title^="Search the open folder"]')!.click();
@@ -234,7 +235,7 @@ async function started() {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     await tick(20);
   };
-  return { host, view, reads, search };
+  return { app, host, view, reads, search };
 }
 const docTitle = (host: HTMLElement) => host.querySelector('.doc-title')!.textContent;
 
@@ -277,6 +278,17 @@ describe('search in the app', () => {
     expect(docTitle(host)).toBe('README.md');
     const s = view().state;
     expect(s.sliceDoc(s.selection.main.from, s.selection.main.to)).toBe('needle');
+  });
+
+  it('still searches the open file from the buffer after the listing object is replaced by a refresh', async () => {
+    const { app, host, view, reads, search } = await started();
+    view().dispatch({ changes: { from: view().state.doc.length, insert: 'buffer needle\n' } });
+    // READOUT-02's refresh swaps in a new listing object that keeps the same folder.
+    const internals = app as unknown as { listing: Listing };
+    internals.listing = { ...internals.listing, files: [...internals.listing.files] };
+    await search('needle');
+    expect(reads).not.toContain('README.md');
+    expect([...host.querySelectorAll('.search-file-name')].map((h) => h.firstChild!.textContent)).toContain('README.md');
   });
 
   it('is cleared and disabled when the folder is closed', async () => {

@@ -52,6 +52,19 @@ describe('outline extraction', () => {
     expect(flat(text)).toEqual(['1:4:Real', '2:17:After']);
   });
 
+  it('ignores headings inside HTML blocks, which end at a blank line', () => {
+    expect(flat('<div>\n# inside html\n</div>\n\n# After\n')).toEqual(['1:4:After']);
+    expect(flat('<details>\n<summary>x</summary>\n## hidden\n\n## Shown')).toEqual(['2:4:Shown']);
+    expect(flat('<pre>\ncode\n\n# still pre\n</pre>\n# Out')).toEqual(['1:5:Out']);
+    expect(flat('<custom-tag>\n# hidden\n\n# Shown')).toEqual(['1:3:Shown']);
+    // Inline HTML at the start of a paragraph is not a block.
+    expect(flat('<b>Bold</b> title\n=====')).toEqual(['1:0:Bold title']);
+  });
+
+  it('skips an empty ATX heading such as "## ##"', () => {
+    expect(flat('## ##\n# \n#\n### Real ###')).toEqual(['3:3:Real']);
+  });
+
   it('treats an unclosed front matter fence as a rule, not metadata', () => {
     expect(flat('---\n# Heading')).toEqual(['1:1:Heading']);
   });

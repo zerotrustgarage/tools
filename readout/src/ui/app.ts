@@ -870,7 +870,8 @@ export class App {
     return {
       files: listing.files,
       read: async (path) => {
-        if (this.listing === listing && path === this.doc.ref?.folderPath) return documentText(this.view.state);
+        // A refresh swaps the listing object but keeps the folder, so path alone decides.
+        if (path === this.doc.ref?.folderPath) return documentText(this.view.state);
         return (await this.platform.readFolderFile(listing, path)).bytes;
       },
     };

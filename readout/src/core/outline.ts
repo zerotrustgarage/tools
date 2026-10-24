@@ -16,7 +16,12 @@ export interface OutlineHeading {
 const ATX = /^ {0,3}(#{1,6})(?:[ \t]+(.*))?$/;
 const SETEXT = /^ {0,3}(=+|-+)[ \t]*$/;
 const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
-const NOT_PARAGRAPH = /^ {0,3}(?:[-*+][ \t]|\d{1,9}[.)][ \t]|>|<|\|)|^ {4,}|^\s*$/;
+const NOT_PARAGRAPH = /^ {0,3}(?:[-*+][ \t]|\d{1,9}[.)][ \t]|>|\|)|^ {4,}|^\s*$/;
+const HTML_BLOCK_NAMES =
+  'address|article|aside|blockquote|body|center|details|dd|div|dl|dt|fieldset|figcaption|figure|footer|form|h[1-6]|header|hr|html|iframe|legend|li|main|menu|nav|ol|optgroup|option|p|section|summary|table|tbody|td|tfoot|th|thead|title|tr|ul';
+const HTML_BLOCK = new RegExp(`^ {0,3}</?(?:${HTML_BLOCK_NAMES})(?:[ \\t]|/?>|$)`, 'i');
+const HTML_RAW = /^ {0,3}<(pre|script|style|textarea)(?:[ \t>]|$)/i;
+const HTML_TAG_ALONE = /^ {0,3}(?:<[A-Za-z][A-Za-z0-9-]*(?:\s[^>]*)?\/?>|<\/[A-Za-z][A-Za-z0-9-]*\s*>)[ \t]*$/;
 const THEMATIC = /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$/;
 
 /** Inline Markdown reduced to the words a reader sees. */
@@ -54,6 +59,9 @@ export function extractOutline(text: string): OutlineHeading[] {
 
   let fence: { char: string; size: number } | null = null;
   let comment = false;
+  // An HTML block hides everything in it from the parser: it ends at a blank line, or for
+  // pre, script, style and textarea at the closing tag.
+  let html: 'blank' | RegExp | null = null;
   let paragraph: number[] = [];
 
   const push = (level: number, raw: string, line: number) => {
@@ -74,6 +82,10 @@ export function extractOutline(text: string): OutlineHeading[] {
       continue;
     }
 
+    if (html) {
+      if (html === 'blank' ? line.trim() === '' : html.test(line)) html = null;
+      continue;
+    }
     const open = FENCE.exec(line);
     if (open && !(open[1]![0] === '`' && open[2]!.includes('`'))) {
       fence = { char: open[1]![0]!, size: open[1]!.length };
@@ -86,9 +98,24 @@ export function extractOutline(text: string): OutlineHeading[] {
       continue;
     }
 
+    const raw = HTML_RAW.exec(line);
+    if (raw) {
+      const close = new RegExp(`</${raw[1]}>`, 'i');
+      if (!close.test(line)) html = close;
+      paragraph = [];
+      continue;
+    }
+    // A bare tag line cannot interrupt a paragraph; the named block tags can.
+    if (HTML_BLOCK.test(line) || (paragraph.length === 0 && HTML_TAG_ALONE.test(line))) {
+      html = 'blank';
+      paragraph = [];
+      continue;
+    }
+
     const atx = ATX.exec(line);
     if (atx) {
-      push(atx[1]!.length, atx[2] ?? '', i);
+      // "## ##" is an empty heading: the second run is a closing sequence.
+      push(atx[1]!.length, (atx[2] ?? '').replace(/^#+[ \t]*$/, ''), i);
       paragraph = [];
       continue;
     }
