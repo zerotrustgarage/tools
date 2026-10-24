@@ -142,16 +142,18 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       # Upgrade lifecycle fixtures. No Readout MSI has been released, so the prior build is
-      # synthetic: the same exe with a marker appended (a different hash, still a valid PE
-      # image) packaged as 0.0.1, upgraded to the real exe packaged as 0.0.2.
+      # synthetic: an UNVERSIONED stand-in file packaged as 0.0.1, upgraded to the real
+      # (versioned) exe packaged as 0.0.2. A copy of the real exe with bytes appended would
+      # carry the same PE file version, and Windows Installer then keeps the old file, which
+      # the old product's removal deletes (PR run 40065420159); a real release always has a
+      # higher file version because Tauri stamps it from package.json.
       - name: Unsigned MSI lifecycle fixtures
         run: |
           set -eu
           exe=readout/src-tauri/target/x86_64-pc-windows-msvc/release/ztg-readout.exe
           mkdir -p lifecycle
           cp "$exe" lifecycle/UNSIGNED-TEST-ztg-readout.exe
-          cp "$exe" "$RUNNER_TEMP/prior.exe"
-          printf 'ZTG CI PRIOR BUILD FIXTURE' >> "$RUNNER_TEMP/prior.exe"
+          printf 'MZ ZTG CI PRIOR BUILD FIXTURE, not a real executable' > "$RUNNER_TEMP/prior.exe"
           readout/installer/build-msi.sh "$RUNNER_TEMP/prior.exe" out/THIRD-PARTY-NOTICES.txt 0.0.1 lifecycle/UNSIGNED-TEST-ZTG-Readout-0.0.1-x64.msi
           readout/installer/build-msi.sh "$exe" out/THIRD-PARTY-NOTICES.txt 0.0.2 lifecycle/UNSIGNED-TEST-ZTG-Readout-0.0.2-x64.msi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -77,8 +77,12 @@ consistently named, not what the final hashes are.
 
 Limits of the prior-build fixture: no Readout MSI has been released (v0.1.0 shipped the Setup
 installer and the portable exe only), so there is no real prior MSI to upgrade from. The fixture
-is synthetic: the same exe with a marker appended, packaged as 0.0.1, upgraded to the real exe
-packaged as 0.0.2. A real next-release upgrade test becomes possible once an MSI release exists.
+is synthetic: an unversioned stand-in file packaged as 0.0.1, upgraded to the real exe packaged
+as 0.0.2. (A first attempt used the real exe with bytes appended; both builds then had the same
+PE file version, Windows Installer kept the old file, and the old product's removal deleted it,
+see PR run 40065420159. That cannot happen across real releases because Tauri stamps the exe's
+file version from package.json, which every release bumps. Two MSIs with the same exe version are
+not a supported upgrade.) A real next-release upgrade test becomes possible once an MSI release exists.
 Upgrading an NSIS install with the MSI (or the reverse) is not tested; both write the same
 folder and registry entries and neither detects the other.
 
