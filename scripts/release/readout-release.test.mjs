@@ -63,7 +63,8 @@ test('release versions must be strictly newer than the highest readout tag', () 
   assert.equal(highestTagVersion(refs('0.9.0', '0.10.0', '0.2.0')), '0.10.0');
   assert.equal(highestTagVersion(`${refs('0.1.0')}\n${'b'.repeat(40)}\trefs/tags/readout-v0.1.0^{}\n${'c'.repeat(40)}\trefs/tags/readout-v9.9.9-rc1\n${'d'.repeat(40)}\trefs/tags/scanner-v5.0.0`), '0.1.0');
   assert.equal(highestTagVersion(''), null);
-  assert.equal(newerProblem('0.1.0', ''), null);
+  assert.match(newerProblem('0.2.0', ''), /no readout-v\* tags/);
+  assert.match(newerProblem('0.2.0', `${'e'.repeat(40)}\trefs/tags/scanner-v1.0.0`), /no readout-v\* tags/);
   assert.equal(newerProblem('0.2.0', refs('0.1.0', '0.10.0')), 'version 0.2.0 must be strictly greater than the highest released tag readout-v0.10.0');
   assert.match(newerProblem('0.1.0', refs('0.1.0')), /strictly greater/);
   assert.equal(newerProblem('0.10.0', refs('0.9.0')), null);

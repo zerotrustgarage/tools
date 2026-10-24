@@ -100,8 +100,8 @@ jobs:
       # One of two steps that get the tools-signing client secret (the other is "Sign the MSI";
       # both run only signing code). With no secret configured, signing uses the job's GitHub
       # OIDC token through an Entra federated credential; that request token is available to
-      # the whole job because of id-token: write. The
-      # tenant and client IDs are identifiers, read from environment variables or secrets alike.
+      # the whole job because of id-token: write. The tenant
+      # and client IDs are identifiers, read from environment variables or secrets alike.
       - name: Sign the app, build and sign the installer
         env:
           AZURE_SIGNING_TENANT_ID: ${{ vars.AZURE_SIGNING_TENANT_ID || secrets.AZURE_SIGNING_TENANT_ID }}

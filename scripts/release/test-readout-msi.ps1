@@ -162,7 +162,7 @@ try {
   # Tauri stamps the exe's file version from package.json. If that stopped, real upgrades would
   # keep the old file (see docs/release-readiness-readout.md).
   $fileVersion = (Get-Item -LiteralPath $exe).VersionInfo.FileVersion
-  if (-not $fileVersion -or -not $fileVersion.StartsWith($ExeVersion)) { throw "installed exe FileVersion is '$fileVersion', expected it to start with '$ExeVersion'" }
+  if (-not $fileVersion -or ($fileVersion -ne $ExeVersion -and $fileVersion -ne "$ExeVersion.0")) { throw "installed exe FileVersion is '$fileVersion', expected '$ExeVersion' or '$ExeVersion.0'" }
   Ok "installed executable FileVersion $fileVersion"
   Assert-Launches 'current'
   if ($PriorMsi) {

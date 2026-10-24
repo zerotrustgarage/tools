@@ -132,10 +132,12 @@ export function highestTagVersion(lsRemote) {
   return best;
 }
 
-/** A problem string unless version is strictly greater than every released readout-v* tag. */
+/** A problem string unless version is strictly greater than every released readout-v* tag; fails closed on no tags. */
 export function newerProblem(version, lsRemote) {
   const best = highestTagVersion(lsRemote);
-  if (best !== null && compareVersions(version, best) <= 0)
+  // readout-v0.1.0 is released, so a remote that lists none is a failed or filtered lookup.
+  if (best === null) return 'no readout-v* tags found on the remote; refusing to guess (readout-v0.1.0 is released)';
+  if ( compareVersions(version, best) <= 0)
     return `version ${version} must be strictly greater than the highest released tag readout-v${best}`;
   return null;
 }
