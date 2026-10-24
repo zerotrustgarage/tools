@@ -37,13 +37,15 @@ jobs:
         run: go test -race -v ./...
       - name: Bounded decoder fuzzing
         run: |
-          go test ./internal/wire -run '^$' -fuzz '^FuzzDecode$' -fuzztime 10s -parallel 2
-          go test ./internal/wire -run '^$' -fuzz '^FuzzOptions$' -fuzztime 10s -parallel 2
-          go test ./internal/store -run '^$' -fuzz '^FuzzName$' -fuzztime 10s -parallel 2
-          go test ./internal/xfer -run '^$' -fuzz '^FuzzNetascii$' -fuzztime 10s -parallel 2
-          go test ./internal/server -run '^$' -fuzz '^FuzzResolve$' -fuzztime 10s -parallel 2
-          go test ./internal/importer -run '^$' -fuzz '^FuzzScanner$' -fuzztime 10s -parallel 2
-          go test ./internal/findings -run '^$' -fuzz '^FuzzFindings$' -fuzztime 10s -parallel 2
+          # Iteration counts, not wall time: a -fuzztime deadline can end in "context deadline exceeded".
+          # Counts are the median final execs of 3 recent green runs, rounded down (runs 40058073696 40038268833 39965993671); timeout-minutes bounds wall time.
+          go test ./internal/wire -run '^$' -fuzz '^FuzzDecode$' -fuzztime 370000x -parallel 2
+          go test ./internal/wire -run '^$' -fuzz '^FuzzOptions$' -fuzztime 310000x -parallel 2
+          go test ./internal/store -run '^$' -fuzz '^FuzzName$' -fuzztime 125000x -parallel 2
+          go test ./internal/xfer -run '^$' -fuzz '^FuzzNetascii$' -fuzztime 50000x -parallel 2
+          go test ./internal/server -run '^$' -fuzz '^FuzzResolve$' -fuzztime 75000x -parallel 2
+          go test ./internal/importer -run '^$' -fuzz '^FuzzScanner$' -fuzztime 20000x -parallel 2
+          go test ./internal/findings -run '^$' -fuzz '^FuzzFindings$' -fuzztime 310000x -parallel 2
       - name: Cross builds (unsigned)
         run: |
           mkdir -p dist
