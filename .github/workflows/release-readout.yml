@@ -1,6 +1,8 @@
 name: Release ZTG Readout
 
-# Builds, signs and publishes the Windows installer. Run it by hand from main.
+# Builds, signs and publishes the Windows installer (Setup.exe), the MSI and the portable exe.
+# Run it by hand from main. The same asset set is dry-run unsigned on every pull request
+# (ci.yml, readout-release-dryrun); docs/release-readiness-readout.md says what each proves.
 #
 # Every job runs on GitHub-hosted runners (the repository is public; the organization's
 # self-hosted pool must never serve it). The Windows executable is cross-compiled on Linux
@@ -12,8 +14,12 @@ name: Release ZTG Readout
 # - sign runs in the tools-signing environment (main only, required reviewers recommended). It
 #   runs no third-party build code: it downloads the build output, signs the app, packages it
 #   with makensis from Ubuntu's archive (which signs the uninstaller and the installer through
-#   scripts/signing/sign-file.sh) and verifies every signature against the pinned Microsoft
-#   roots and the pinned publisher. Signing credentials reach one step only.
+#   scripts/signing/sign-file.sh), builds the MSI from the signed app with wixl and signs it
+#   through scripts/signing/sign.mjs, the same implementation as the exe. It verifies every
+#   signature against the pinned Microsoft roots and the pinned publisher. Signing credentials
+#   reach only the steps that run signing code, never the MSI packaging step.
+# - windows-test installs the signed MSI on a real Windows runner and checks signatures and
+#   the install, repair, launch and uninstall lifecycle. It holds no signing identity.
 # - publish attests provenance and creates the GitHub release; it holds no signing identity.
 on:
   workflow_dispatch:
@@ -39,9 +45,9 @@ jobs:
       - id: version
         run: |
           set -euo pipefail
-          version=$(node -p "require('./readout/package.json').version")
-          cargo_version=$(grep -m1 '^version' readout/src-tauri/Cargo.toml | cut -d'"' -f2)
-          [ "$version" = "$cargo_version" ] || { echo "package.json $version and Cargo.toml $cargo_version differ"; exit 1; }
+          # package.json, Cargo.toml and Cargo.lock agree, the MSI and NSIS identity is intact
+          # and the UpgradeCode is the permanent one (scripts/release/readout-release.mjs).
+          version=$(node scripts/release/readout-release.mjs check --print-version)
           if git ls-remote --exit-code --tags origin "refs/tags/readout-v$version" >/dev/null; then
             echo "readout-v$version is already released; bump the version first"; exit 1
           fi
@@ -49,6 +55,7 @@ jobs:
       - run: scripts/ci/apt-install.sh clang lld llvm
       - run: npm ci
       - run: node scripts/updates/sync.mjs --check
+      - run: node --test scripts/release/readout-release.test.mjs
       - run: npm run check --workspace @ztg-tools/readout
       - run: scripts/ci/build-windows.sh readout
       - name: Collect the unsigned build and its notices
@@ -85,7 +92,7 @@ jobs:
         run: cd out && sha256sum --check --strict build.sha256
       # osslsigncode and openssl verify; Java runs jsign, which sign.mjs downloads and checks
       # against a pinned SHA-256. makensis packages. All from Ubuntu's signed archive.
-      - run: scripts/ci/apt-install.sh nsis osslsigncode openjdk-17-jre-headless
+      - run: scripts/ci/apt-install.sh nsis wixl msitools osslsigncode openjdk-17-jre-headless
       - run: node scripts/signing/sign.mjs check
       # The only step that sees signing credentials: the tools-signing client secret, or, with no
       # secret configured, the job's GitHub OIDC token through an Entra federated credential. The
@@ -101,24 +108,49 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/signing/sign.mjs sign out/ztg-readout.exe
-          mkdir -p dist
+          mkdir -p staging
           makensis -V2 \
             "-DVERSION=$VERSION" \
             "-DAPP_EXE=$GITHUB_WORKSPACE/out/ztg-readout.exe" \
             "-DNOTICES=$GITHUB_WORKSPACE/out/THIRD-PARTY-NOTICES.txt" \
-            "-DOUTFILE=$GITHUB_WORKSPACE/dist/ZTG-Readout-$VERSION-Setup.exe" \
+            "-DOUTFILE=$GITHUB_WORKSPACE/staging/ZTG-Readout-$VERSION-Setup.exe" \
             "-DSIGN_SCRIPT=$GITHUB_WORKSPACE/scripts/signing/sign-file.sh" \
             readout/installer/ztg-readout.nsi
+      # No credential is in scope here: wixl packages the already signed app.
+      - name: Build the MSI from the signed app
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          readout/installer/build-msi.sh out/ztg-readout.exe out/THIRD-PARTY-NOTICES.txt \
+            "$VERSION" "staging/ZTG-Readout-$VERSION-x64.msi"
+      # Same signing implementation and credentials as the exe step above; this step runs only
+      # scripts/signing/sign.mjs, which signs, then verifies against the pinned roots and
+      # publisher before the signed file replaces the unsigned one.
+      - name: Sign the MSI
+        env:
+          AZURE_SIGNING_TENANT_ID: ${{ vars.AZURE_SIGNING_TENANT_ID || secrets.AZURE_SIGNING_TENANT_ID }}
+          AZURE_SIGNING_CLIENT_ID: ${{ vars.AZURE_SIGNING_CLIENT_ID || secrets.AZURE_SIGNING_CLIENT_ID }}
+          AZURE_SIGNING_CLIENT_SECRET: ${{ secrets.AZURE_SIGNING_CLIENT_SECRET }}
+          ZTG_SIGN_NAME: ZTG Readout
+          ZTG_SIGN_URL: https://ztg.sh
+          VERSION: ${{ needs.build.outputs.version }}
+        run: node scripts/signing/sign.mjs sign "staging/ZTG-Readout-$VERSION-x64.msi"
       - name: Verify again, without credentials
         env:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           set -euo pipefail
           node scripts/signing/sign.mjs verify out/ztg-readout.exe
-          node scripts/signing/sign.mjs verify "dist/ZTG-Readout-$VERSION-Setup.exe"
-          cp out/ztg-readout.exe "dist/ztg-readout-$VERSION.exe"
-          cp out/THIRD-PARTY-NOTICES.txt dist/
-          (cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          node scripts/signing/sign.mjs verify "staging/ZTG-Readout-$VERSION-Setup.exe"
+          node scripts/signing/sign.mjs verify "staging/ZTG-Readout-$VERSION-x64.msi"
+          # Names the release files, writes SHA256SUMS.txt and fails unless the set is exactly
+          # the expected one (the same code the pull request dry run uses).
+          node scripts/release/readout-release.mjs assemble --version "$VERSION" \
+            --exe out/ztg-readout.exe --notices out/THIRD-PARTY-NOTICES.txt \
+            --setup "staging/ZTG-Readout-$VERSION-Setup.exe" \
+            --msi "staging/ZTG-Readout-$VERSION-x64.msi" --out dist
+          cat dist/SHA256SUMS.txt
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: readout-signed
@@ -126,8 +158,43 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  publish:
+  windows-test:
+    timeout-minutes: 20
     needs: [build, sign]
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: readout-signed
+          path: dist
+      - name: Verify download hashes
+        shell: bash
+        run: cd dist && sha256sum --check --strict SHA256SUMS.txt
+      # No released Readout MSI exists to upgrade from, so this release run covers install,
+      # repair, launch and uninstall; the upgrade path is covered by the unsigned pull request job.
+      - name: Test the signed MSI on Windows
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: >-
+          ./scripts/release/test-readout-msi.ps1
+          -Msi "dist/ZTG-Readout-$env:VERSION-x64.msi"
+          -Version $env:VERSION
+          -ExpectedExe "dist/ztg-readout-$env:VERSION.exe"
+          -Sample readout/test/corpus/ai-report.md
+          -LogDir msi-logs
+          -RequireSignatures
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: readout-msi-logs
+          path: msi-logs/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    needs: [build, sign, windows-test]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -142,13 +209,19 @@ jobs:
       # Public repository: attestations are available on every plan, so every release is attested.
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: dist/*.exe
+          subject-path: |
+            dist/*.exe
+            dist/*.msi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: src
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
+      - name: Check the download set again
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: node src/scripts/release/readout-release.mjs verify-dist dist "$VERSION"
       - name: Create the GitHub release
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -156,5 +229,5 @@ jobs:
         run: |
           set -euo pipefail
           node src/scripts/ci/github-release.mjs "readout-v$VERSION" "ZTG Readout $VERSION" \
-            "Signed Windows installer for ZTG Readout $VERSION. Verify downloads against SHA256SUMS.txt; build provenance is attested (gh attestation verify <file> --repo $GITHUB_REPOSITORY)." \
+            "Signed Windows installer (Setup.exe), x64 MSI and portable exe for ZTG Readout $VERSION. Verify downloads against SHA256SUMS.txt; build provenance is attested (gh attestation verify <file> --repo $GITHUB_REPOSITORY)." \
             dist/*

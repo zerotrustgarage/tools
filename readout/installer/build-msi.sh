@@ -7,6 +7,12 @@ set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 exe=$(realpath "$1"); notices=$(realpath "$2"); version=$3; out=$(realpath -m "$4")
 case "$version" in *[!0-9.]*|'') echo "version must be numeric, like 0.1.0" >&2; exit 2;; esac
+# Windows Installer compares only major.minor.build, at most 255.255.65535; anything else
+# would build a package that upgrades wrongly.
+if ! printf '%s\n' "$version" | awk -F. 'NF == 3 && $1 <= 255 && $2 <= 255 && $3 <= 65535 && $1 != "" && $2 != "" && $3 != "" { ok = 1 } END { exit !ok }'; then
+  echo "version must be X.Y.Z with X and Y at most 255 and Z at most 65535" >&2
+  exit 2
+fi
 wixl --arch x64 \
   -D "Version=$version" -D "AppExe=$exe" -D "Notices=$notices" \
   -D "IconFile=$here/../src-tauri/icons/icon.ico" \
