@@ -31,6 +31,56 @@ const url = `http://127.0.0.1:${server.address().port}/`;
 const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
 let failed = false;
 
+async function gentleTests(scheme) {
+  const page = await browser.newPage({ viewport: { width: 1320, height: 820 }, colorScheme: scheme });
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await page.addInitScript({ path: join(here, "mock.js") });
+  await page.goto(url);
+  await page.waitForFunction(() => document.getElementById("targets")?.value === "192.168.50.0/24");
+  await page.click("#settings-btn");
+  assert.equal(await page.isHidden("#gentle-info"), true, "gentle info hidden in default mode");
+  assert.equal(await page.isDisabled("#concurrency"), false);
+  // SNMP checked in default mode must not leak into a gentle request.
+  await page.check("#snmp-on");
+  await page.check("#mode-gentle");
+  await page.waitForSelector("#gentle-info:not([hidden])");
+  const summary = await page.textContent("#gentle-summary");
+  for (const want of ["4 hosts at a time", "2 connections per host", "10 probe starts per second", "1500 ms", "22, 80, 443, 445, 515, 631, 8080, 9100"]) {
+    assert.ok(summary.includes(want), "gentle summary missing " + want + ": " + summary);
+  }
+  const tradeoff = await page.textContent("#gentle-tradeoff");
+  assert.ok(tradeoff.includes("does not remove it") && !/harmless/i.test(tradeoff), tradeoff);
+  for (const id of ["#ports", "#concurrency", "#timeout", "#snmp-on", "#snmp-user"]) {
+    assert.equal(await page.isDisabled(id), true, id + " must be disabled in gentle mode");
+  }
+  for (const key of ["banners", "netbios", "mdns", "ssdp", "snmp"]) {
+    assert.equal(await page.isChecked(`[data-probe="${key}"]`), false, key + " shown on in gentle mode");
+  }
+  assert.equal(await page.isChecked('[data-probe="ports"]'), true);
+  assert.equal(await page.isVisible("#gentle-info"), true);
+  if (shots) await page.screenshot({ path: join(shots, `gentle-${scheme}.png`) });
+  await page.click("#settings-close");
+  await page.click("#scan-btn");
+  await page.waitForFunction(() => window.__calls.some((c) => c[0] === "StartScan"));
+  const req = (await page.evaluate(() => window.__calls)).find((c) => c[0] === "StartScan")[1];
+  assert.equal(req.mode, "gentle");
+  assert.equal(req.ports, "");
+  assert.equal(req.concurrency, 0);
+  assert.equal(req.timeout_ms, 0);
+  assert.equal(req.probes.snmp, false);
+  assert.equal(req.snmp, null);
+  assert.deepEqual(req.probes, { ports: true, banners: false, reverse_dns: true, netbios: false, mdns: false, ssdp: false, snmp: false });
+  // Back to default restores the user's own probe choices and fields.
+  await page.click("#settings-btn");
+  await page.check("#mode-default");
+  assert.equal(await page.isDisabled("#concurrency"), false);
+  assert.equal(await page.isChecked('[data-probe="banners"]'), true, "default probe choices restored");
+  assert.equal(await page.isHidden("#gentle-info"), true);
+  assert.deepEqual(errors, [], "page errors");
+  await page.close();
+}
+
 async function targetSetTests(scheme) {
   const page = await browser.newPage({ viewport: { width: 1320, height: 820 }, colorScheme: scheme });
   const errors = [];
@@ -607,6 +657,8 @@ try {
     await page.close();
     await targetSetTests(scheme);
     console.log(`ok  ${scheme} target sets`);
+    await gentleTests(scheme);
+    console.log(`ok  ${scheme} gentle mode`);
   }
 } catch (e) {
   failed = true;

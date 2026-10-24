@@ -97,7 +97,16 @@
 
   <aside id="settings" class="drawer" hidden aria-label="Scan settings">
     <h2>Scan settings</h2>
-    <fieldset>
+    <fieldset id="mode-fields">
+      <legend>Scan mode</legend>
+      <label class="check"><input type="radio" name="scan-mode" value="default" id="mode-default"> Default</label>
+      <label class="check"><input type="radio" name="scan-mode" value="gentle" id="mode-gentle"> Gentle (lower rate, fewer probes)</label>
+      <div id="gentle-info" class="muted small" hidden>
+        <p id="gentle-summary"></p>
+        <p id="gentle-tradeoff"></p>
+      </div>
+    </fieldset>
+    <fieldset id="probe-fields">
       <legend>Probes</legend>
       <label class="check"><input type="checkbox" data-probe="ports"> Port scan</label>
       <label class="check"><input type="checkbox" data-probe="banners"> Identify services (banners, web titles, certificates)</label>
@@ -120,11 +129,13 @@
         <p class="muted small">Model, serial, firmware and location from switches, firewalls, printers and NAS units. Passphrases stay in memory for this session and are never saved or exported. SNMP v1/v2c, MD5 and DES are not supported.</p>
       </div>
     </fieldset>
+    <fieldset id="engine-fields" class="plain">
     <label>TCP ports <textarea id="ports" rows="3" spellcheck="false"></textarea></label>
     <div class="row">
       <label>Hosts in parallel <input id="concurrency" type="number" min="1" max="512"></label>
       <label>Connect timeout (ms) <input id="timeout" type="number" min="100" max="10000" step="100"></label>
     </div>
+    </fieldset>
     <p class="muted small">Defaults identify devices without logging in to anything. Only private networks are scanned unless you confirm you are authorized to scan a public range.</p>
     <div class="row end"><button type="button" id="settings-reset" class="ghost">Restore defaults</button><button type="button" id="settings-close" class="primary">Done</button></div>
   </aside>

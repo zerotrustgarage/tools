@@ -184,6 +184,27 @@ standard service port; imported public addresses require a fresh authorization. 
 Wake-on-LAN is a separate, explicitly confirmed action: one magic packet to the most specific directly connected
 internal IPv4 network's broadcast address, never a forwarded or arbitrary broadcast. No credentials are persisted.
 
+### Gentle mode (SC13)
+
+A named, opt-in scan mode for fragile networks (OT, medical, old printers). The user selects it (`--mode gentle`, or
+Scan mode in the settings panel); nothing selects it automatically, and the default mode's plan is unchanged.
+
+One definition drives both front ends. `scan.BuildPlan` resolves a `PlanRequest` into a `Plan`; the CLI and the
+Desktop app both call it, and `Plan.Config` produces the engine settings. Gentle fixes: 4 hosts in parallel, 2
+connections per host, one echo request per host, a 1500 ms connect timeout, TCP ports 22, 80, 443, 445, 515, 631,
+8080 and 9100, and a shared pacer that allows one probe start every 100 ms (10 per second) across all hosts. The
+pacer gates every probe start: echo, ARP, TCP connect, reverse DNS and, if ever enabled, banner grabs. It uses an
+injectable clock, so tests assert the schedule without real time. Probes in gentle mode are ICMP, ARP, TCP connect
+and reverse DNS only; banner grabs, NetBIOS, mDNS, SSDP and SNMP are off and a request to enable them is ignored
+(SNMP is rejected with an error). A request can ask for fewer hosts, a subset of the gentle ports, fewer probes or any positive connect timeout,
+never more, and malformed values fail with a message instead of being clamped. Cancellation interrupts a pending pacer wait. A gentle scan records
+`"mode": "gentle"` in the summary; default scans omit the field.
+
+Gentle mode lowers load and skips the more intrusive probes; it is slower and identifies less. It does not make a
+scan safe for every device, and the CLI help and the settings panel say so. The Desktop UI shows the selected numbers
+and the tradeoff from the same constants. Validation on real fragile equipment needs an approved lab and is not
+claimed here.
+
 ### Saved target sets (SC9)
 
 Target sets contain a client/site label, a set name and target specifications only. Up to 50 sets are kept in the

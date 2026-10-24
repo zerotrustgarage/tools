@@ -102,7 +102,7 @@ credentials, no cloud reporting.
 | SC10 | Technician-defined "Open with" commands with `{ip}` and `{hostname}` placeholders (PuTTY, mstsc, an RMM console URL). Commands come from the technician's settings, never from what a device reports | Medium | Angry IP Scanner, Advanced IP Scanner |
 | SC11 | Deeper identification through single standard exchanges: WS-Discovery (printers, ONVIF cameras), LLMNR names, an SMB2 negotiate for OS and version, an HTTP favicon fingerprint | Medium | Fing |
 | SC12 | Client-ready reports: branded HTML or XLSX export, and CSV layouts that match common RMM and PSA import templates | Medium | **HTML built**: offline, printable reports with scope, findings, notes and evidence from desktop or CLI; XLSX and RMM/PSA CSV layouts remain open |
-| SC13 | A gentle scan mode (lower rate, fewer probes) for fragile OT, medical or old printer networks | Medium | |
+| SC13 | A gentle scan mode (lower rate, fewer probes) for fragile OT, medical or old printer networks | Medium | **Built**: opt-in `--mode gentle` and Desktop Scan mode share one plan (4 hosts, 2 connections each, 10 probe starts per second, 8 ports, no banners or name/UPnP/SNMP probes); reduces load, not a guarantee for fragile devices, and lab validation on real equipment is still open |
 | SC14 | Shared folder listing, only as an opt-in per scan; needs a design decision under Scanner's principles | Low | Advanced IP Scanner |
 
 ### Deliberately excluded

@@ -927,16 +927,30 @@ import { showUpdateDialog } from "./updates.js";
     $("status-text").textContent = "Scanned " + done + " of " + total + " · " + up + " up · " + secs + "s";
   }
 
+  function effectiveGentleProbes() {
+    const g = (state.defaults && state.defaults.gentle && state.defaults.gentle.probes) || {};
+    const out = {};
+    for (const k of Object.keys(state.settings.probes)) out[k] = !!state.settings.probes[k] && !!g[k] && k !== "snmp";
+    out.snmp = false;
+    return out;
+  }
+
   function request(allowPublic) {
     const s = state.settings;
+    const gentle = s.mode === "gentle";
+    // Gentle mode fixes the engine settings; the UI sends zeros so the plan
+    // comes from the shared definition in the engine, not from this form.
+    // Probes are masked to the gentle set and SNMP is always off.
+    const probes = gentle ? effectiveGentleProbes() : s.probes;
     return {
+      mode: gentle ? "gentle" : "default",
       targets: $("targets").value,
-      ports: s.ports,
-      probes: s.probes,
-      concurrency: Number(s.concurrency) || 0,
-      timeout_ms: Number(s.timeout_ms) || 0,
+      ports: gentle ? "" : s.ports,
+      probes,
+      concurrency: gentle ? 0 : Number(s.concurrency) || 0,
+      timeout_ms: gentle ? 0 : Number(s.timeout_ms) || 0,
       allow_public: !!allowPublic,
-      snmp: s.probes.snmp
+      snmp: !gentle && s.probes.snmp
         ? {
             username: $("snmp-user").value.trim(),
             auth_protocol: $("snmp-auth").value,
@@ -1016,6 +1030,7 @@ import { showUpdateDialog } from "./updates.js";
     const saved = store.get("settings", null);
     state.settings = saved && saved.probes ? saved : { ports: d.ports, probes: { ...d.probes }, concurrency: d.concurrency, timeout_ms: d.timeout_ms };
     state.settings.probes.snmp = false; // opt-in for each session
+    state.settings.mode = state.settings.mode === "gentle" ? "gentle" : "default";
     const fill = (sel, opts, cur) => {
       sel.replaceChildren(...opts.map((o) => el("option", { value: o, text: o })));
       sel.value = opts.includes(cur) ? cur : opts[0];
@@ -1029,21 +1044,49 @@ import { showUpdateDialog } from "./updates.js";
 
   function paintSettings() {
     const s = state.settings;
-    for (const cb of document.querySelectorAll("[data-probe]")) cb.checked = !!s.probes[cb.dataset.probe];
     $("ports").value = s.ports;
     $("concurrency").value = s.concurrency;
     $("timeout").value = s.timeout_ms;
     $("snmp-fields").classList.toggle("on", !!s.probes.snmp);
+    paintMode();
+  }
+
+  // paintMode shows the gentle settings and tradeoff from the engine's own
+  // definition and locks the fields that gentle mode fixes.
+  function paintMode() {
+    const s = state.settings;
+    const gentle = s.mode === "gentle";
+    $("mode-default").checked = !gentle;
+    $("mode-gentle").checked = gentle;
+    const g = state.defaults.gentle;
+    $("gentle-info").hidden = !gentle || !g;
+    if (gentle && g) {
+      $("gentle-summary").textContent = "Settings: " + g.concurrency + " hosts at a time, " + g.port_concurrency +
+        " connections per host, at most " + g.probes_per_second + " probe starts per second in total, " +
+        g.timeout_ms + " ms connect timeout, TCP ports " + g.ports.join(", ") +
+        ". Service banners, NetBIOS, mDNS, UPnP and SNMP are skipped.";
+      $("gentle-tradeoff").textContent = g.tradeoff;
+    }
+    // Show the probes that will really run, not stale checkboxes.
+    const shown = gentle ? effectiveGentleProbes() : s.probes;
+    for (const cb of document.querySelectorAll("[data-probe]")) cb.checked = !!shown[cb.dataset.probe];
+    $("snmp-fields").classList.toggle("on", !!shown.snmp);
+    for (const id of ["probe-fields", "snmp-fields", "engine-fields"]) $(id).disabled = gentle;
   }
 
   function readSettings() {
     const s = state.settings;
-    for (const cb of document.querySelectorAll("[data-probe]")) s.probes[cb.dataset.probe] = cb.checked;
+    // The boxes show the gentle probe set while gentle is on; only read them
+    // when they reflect the user's own choices.
+    const wasGentle = s.mode === "gentle";
+    s.mode = $("mode-gentle").checked ? "gentle" : "default";
+    if (!wasGentle && s.mode === "default") for (const cb of document.querySelectorAll("[data-probe]")) s.probes[cb.dataset.probe] = cb.checked;
     s.ports = $("ports").value.trim();
     s.concurrency = Number($("concurrency").value) || state.defaults.concurrency;
     s.timeout_ms = Number($("timeout").value) || state.defaults.timeout_ms;
     s.snmp = { username: $("snmp-user").value.trim(), auth_protocol: $("snmp-auth").value, priv_protocol: $("snmp-priv").value };
     $("snmp-fields").classList.toggle("on", !!s.probes.snmp);
+    paintMode();
     // Saved: the username and protocols. Never saved: the passphrases, and
     // whether SNMP is on (it is opt-in each session).
     store.set("settings", { ...s, probes: { ...s.probes, snmp: false } });
