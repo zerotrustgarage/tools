@@ -324,6 +324,26 @@ body.resizing .pane, body.resizing .sidebar { pointer-events: none; }
 .outline-item.level-1 { color: var(--bright); font-weight: 600; }
 .outline-item.active { background: color-mix(in srgb, var(--acc) 16%, transparent); color: var(--bright); border-color: transparent; }
 .outline-item:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.search-bar { display: flex; align-items: center; gap: 8px; padding: 0 10px 6px; min-height: 24px; }
+.search-bar .text-button { height: 24px; padding: 0 8px; font-size: 12px; }
+.search-status { flex: 1; font-size: 12px; color: var(--dim); }
+.search-file { margin-bottom: 8px; }
+.search-file-name {
+  margin: 6px 4px 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--bright);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-file-name span { font-weight: 400; color: var(--dim); }
+.search-list { list-style: none; margin: 0; padding: 0; }
+.search-hit { display: flex; gap: 8px; align-items: baseline; width: 100%; padding: 3px 6px; text-align: left; }
+.search-hit:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.search-line { flex: none; min-width: 3ch; text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; }
+.search-snippet { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-snippet mark { background: color-mix(in srgb, var(--warn) 35%, transparent); color: inherit; border-radius: 2px; }
 
 /* CodeMirror chrome (gutter, active line, selection, panels) is styled by the editor theme in
    src/ui/editor.ts: CodeMirror's own base theme outranks plain selectors here. Only the

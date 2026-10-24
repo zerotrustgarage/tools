@@ -12,11 +12,13 @@ import { ExternalChangeWatcher, type WatchHost } from '../core/reload';
 import { defaultDocument, documentFor, resolveInFolder, resolveWikiLink, splitHref } from '../core/paths';
 import { postprocess } from '../core/postprocess';
 import { renderMarkdown } from '../core/render';
+import type { SearchMatch } from '../core/search';
 import type { Arrival, FileRef, Listing, OpenedFile, PendingSession, Platform } from '../platform/types';
 import { el, icon } from './dom';
 import { createEditor, documentText, scrollToLine, type JumpOptions } from './editor';
 import { runFormat, type FormatCommand } from './format';
 import { OutlinePanel } from './outline';
+import { SearchPanel } from './search';
 import { Sidebar } from './sidebar';
 import { splitter } from './splitter';
 import { titleBar } from './titlebar';
@@ -117,6 +119,12 @@ export class App {
     (line) => this.outlineJump(line),
     () => this.closeOutline(),
   );
+  private readonly search = new SearchPanel({
+    scope: () => this.searchScope(),
+    open: (path, match) => void this.openSearchHit(path, match),
+    onClose: () => this.closeSearch(),
+  });
+  private readonly searchButton = el('button', { class: 'text-button', type: 'button', title: 'Search the open folder (Ctrl+Shift+F)', 'aria-pressed': 'false', disabled: '' }, 'Search');
   private readonly outlineButton = el('button', { class: 'text-button', type: 'button', title: 'Outline: the headings of this document', 'aria-pressed': 'false' }, 'Outline');
 
   private readonly watcher: ExternalChangeWatcher;
@@ -192,6 +200,7 @@ export class App {
     });
     this.backButton.addEventListener('click', () => void this.back());
     this.outlineButton.addEventListener('click', () => this.toggleOutline());
+    this.searchButton.addEventListener('click', () => this.toggleSearch());
 
     const top = el(
       'header',
@@ -211,6 +220,7 @@ export class App {
         modes,
         el('span', { class: 'divider' }),
         this.outlineButton,
+        this.searchButton,
         button('Export', 'Export as HTML', () => void this.exportHtml(), 'export'),
         button('Print', 'Print or save as PDF (Ctrl+P)', () => void this.print(), 'print'),
         this.measureButton,
@@ -271,7 +281,7 @@ export class App {
     });
     paneSplitter.classList.add('splitter-panes');
     this.panes.append(this.editorHost, paneSplitter, this.previewPane);
-    this.workspace.append(this.sidebar.element, sidebarSplitter, this.outline.element, this.panes, this.dropOverlay);
+    this.workspace.append(this.sidebar.element, sidebarSplitter, this.outline.element, this.search.element, this.panes, this.dropOverlay);
     if (this.platform.window) {
       this.root.classList.add('has-titlebar');
       this.root.append(titleBar(this.platform.window, APP_NAME));
@@ -537,6 +547,7 @@ export class App {
       if (this.history.length > MAX_HISTORY) this.history.shift();
     }
     this.backButton.disabled = this.history.length === 0;
+    this.pendingLine = null;
     this.pendingFragment = fragment;
     const decoded = decodeDocument(file.bytes);
     this.load(file.ref, decoded.text, decoded.format, file.bytes);
@@ -580,6 +591,10 @@ export class App {
     this.history = [];
     this.backButton.disabled = true;
     this.sidebar.show(listing);
+    // A search belongs to one folder: a new or closed folder cancels it and starts from nothing.
+    this.search.reset();
+    if (listing === null) this.closeSearch();
+    this.searchButton.disabled = listing === null;
     this.root.classList.toggle('has-folder', listing !== null);
     this.watcher.sync();
   }
@@ -620,17 +635,20 @@ export class App {
     this.load(null, '', NEW_DOCUMENT_FORMAT);
   }
 
-  private async openFolderPath(folderPath: string, fragment: string | null, remember: boolean, confirmed = false): Promise<void> {
-    if (!this.listing) return;
+  /** Resolves true when folderPath is the open document afterwards (false: declined or unreadable). */
+  private async openFolderPath(folderPath: string, fragment: string | null, remember: boolean, confirmed = false): Promise<boolean> {
+    if (!this.listing) return false;
     if (folderPath === this.doc.ref?.folderPath) {
       this.scrollToFragment(fragment);
-      return;
+      return true;
     }
-    if (!confirmed && !(await this.confirmDiscard())) return;
+    if (!confirmed && !(await this.confirmDiscard())) return false;
     try {
       this.show(await this.platform.readFolderFile(this.listing, folderPath), fragment, remember);
+      return true;
     } catch (error) {
       this.notify(`Could not open ${folderPath}: ${message(error)}`);
+      return false;
     }
   }
 
@@ -730,6 +748,11 @@ export class App {
     }
     if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
     const key = event.key.toLowerCase();
+    if (key === 'f' && event.shiftKey) {
+      event.preventDefault();
+      this.openSearch();
+      return;
+    }
     const actions: Record<string, () => Promise<unknown>> = {
       s: () => this.save(event.shiftKey),
       o: () => (event.shiftKey ? this.openFolder() : this.open()),
@@ -798,6 +821,7 @@ export class App {
   }
 
   private openOutline(): void {
+    this.closeSearch();
     this.outline.show(true);
     this.outlineButton.setAttribute('aria-pressed', 'true');
     this.refreshOutline();
@@ -809,6 +833,59 @@ export class App {
     this.outline.show(false);
     this.outlineButton.setAttribute('aria-pressed', 'false');
     if (hadFocus) this.view.focus();
+  }
+
+  // ---- folder search ----------------------------------------------------------------------
+
+  private toggleSearch(): void {
+    if (this.search.hidden) this.openSearch();
+    else this.closeSearch();
+  }
+
+  private openSearch(): void {
+    if (!this.listing) {
+      this.notify('Open a folder (Ctrl+Shift+O) to search it.');
+      return;
+    }
+    this.closeOutline();
+    this.search.show(true);
+    this.searchButton.setAttribute('aria-pressed', 'true');
+  }
+
+  private closeSearch(): void {
+    const hadFocus = this.search.element.contains(document.activeElement);
+    this.search.show(false);
+    this.searchButton.setAttribute('aria-pressed', 'false');
+    if (hadFocus) this.view.focus();
+  }
+
+  /**
+   * What a search may read: the files of the open listing, through the platform's folder reader.
+   * The open file is searched as it is in the editor, unsaved edits included, so a hit's line is
+   * the line the jump lands on.
+   */
+  private searchScope(): { files: readonly string[]; read: (path: string) => Promise<Uint8Array | string | null> } | null {
+    const listing = this.listing;
+    if (!listing) return null;
+    return {
+      files: listing.files,
+      read: async (path) => {
+        if (this.listing === listing && path === this.doc.ref?.folderPath) return documentText(this.view.state);
+        return (await this.platform.readFolderFile(listing, path)).bytes;
+      },
+    };
+  }
+
+  /** Opens a result's file the way the sidebar does (asking about unsaved edits), then its line. */
+  private async openSearchHit(path: string, match: SearchMatch): Promise<void> {
+    const already = path === this.doc.ref?.folderPath;
+    if (!(await this.openFolderPath(path, null, true))) return;
+    if (this.doc.ref?.folderPath !== path) return;
+    // On a narrow window the panel covers the document, so it gives way to the result.
+    if (window.matchMedia('(max-width: 720px)').matches) this.closeSearch();
+    // A freshly opened file in preview view renders a moment later; the line waits for it.
+    if (this.mode === 'preview' && !already) this.pendingLine = match.line;
+    else this.jumpToLine(match.line, { column: match.column, length: match.length });
   }
 
   /** On a narrow window the panel covers the document, so it closes to show where the jump landed. */

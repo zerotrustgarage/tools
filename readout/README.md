@@ -66,6 +66,24 @@ returns along the links you followed.
   edits and marks the heading the cursor is under; Escape closes it. It works the same in the
   browser and on the desktop. On a narrow window the panel covers the document and closes after a
   jump.
+- Search folder (Ctrl+Shift+F, or the Search button; needs an open folder) finds text in the
+  folder's Markdown files, case-insensitively and literally (no patterns), and lists the matching
+  lines grouped by file with their line numbers. Click a result, or arrow to it and press Enter,
+  to open that file with the match selected; unsaved edits are asked about first, exactly as when
+  opening a file from the file list. The open file is searched as it is in the editor. Only the
+  files in the folder's list are read, through the same folder reader as the file list, so
+  nothing outside the folder is touched and nothing is fetched. The search is bounded: at most
+  2,000 files, 2 MiB per file, 500 matching lines (50 per file) and 10 seconds. Binary files
+  (a NUL byte or invalid UTF-8), files over the size limit and unreadable files are skipped and
+  counted in the line under the field, which also says when a limit cut the search short. Typing
+  a new query, pressing Stop, or opening or closing a folder cancels the running search; a folder
+  change also clears the query and results. The size limit is checked after a file is read (the
+  desktop reader itself refuses anything over 64 MiB); the app has no cheaper way to ask a file's
+  size.
+  - Desktop and Chromium browsers (File System Access API): each file is read from disk when
+    searched, so results reflect the current files.
+  - Browser fallback for Firefox and Safari (folder upload): the search covers the snapshot taken
+    when the folder was chosen, as the file list does.
 - Drag a Markdown file or a folder onto the window to open it. Anything else is refused with a
   note saying why, and in the browser a dropped file is never pasted into the open document.
 - Drag the dividers between the file list, the editor and the preview to set their widths. The
