@@ -60,7 +60,7 @@ These actions were completed by the repository owner. New release workflows stil
 | --- | --- | --- | --- |
 | RD6 | Obsidian callouts (all types and aliases, custom titles, foldable `+`/`-`, nested), MkDocs `!!!`/`???` admonitions and Docusaurus `:::` blocks render as one callout element (`src/core/plugins/callouts.ts`); folds the reader opens survive live re-renders and print open | **Done** | Obsidian, MkDocs |
 | RD7 | Reload when the open file changes on disk (git pull, an AI agent rewriting it), asking first if there are unsaved edits; refresh the folder tree (`readout/src/core/reload.ts`: polling with a two-poll settle, clean reload, ask when dirty, rename and delete handled) | **Done** | VS Code, Typora |
-| RD8 | Outline panel: the heading tree, click to jump | High | Typora, MarkText |
+| RD8 | Outline panel: the heading tree, click to jump (`readout/src/core/outline.ts`; keyboard navigation, follows edits) | **Done** | Typora, MarkText |
 | RD9 | Search across the open folder, with results that jump to the line | High | Obsidian, VS Code |
 | RD10 | Tabs or a recent-files list; a single instance (a second file from Explorer opens in the running window); remembered window size and position. Reopening the last folder and document at start is built | Medium | Typora, MarkText |
 | RD11 | Copy as rich text, so a rendered section pastes into Outlook, Teams or Word with tables and colours | Medium | Typora |

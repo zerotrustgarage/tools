@@ -157,8 +157,18 @@ export function createEditor(options: EditorOptions): EditorView {
 /** The document text with the file's own line endings (never doc.toString(), which uses LF). */
 export const documentText = (state: EditorState): string => state.sliceDoc();
 
-export function scrollToLine(view: EditorView, zeroBasedLine: number): void {
-  const line = view.state.doc.line(Math.min(view.state.doc.lines, zeroBasedLine + 1));
-  view.dispatch({ selection: { anchor: line.from }, effects: EditorView.scrollIntoView(line.from, { y: 'start' }) });
-  view.focus();
+export interface JumpOptions {
+  /** Zero-based offset into the line where a match starts, and its length, to select it. */
+  column?: number;
+  length?: number;
+  /** Move keyboard focus into the editor (default true). */
+  focus?: boolean;
+}
+
+export function scrollToLine(view: EditorView, zeroBasedLine: number, options: JumpOptions = {}): void {
+  const line = view.state.doc.line(Math.min(view.state.doc.lines, Math.max(0, zeroBasedLine) + 1));
+  const from = Math.min(line.from + (options.column ?? 0), line.to);
+  const to = Math.min(from + (options.length ?? 0), line.to);
+  view.dispatch({ selection: { anchor: from, head: to }, effects: EditorView.scrollIntoView(from, { y: 'start' }) });
+  if (options.focus !== false) view.focus();
 }

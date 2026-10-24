@@ -7,14 +7,16 @@ import {
   type DocumentFormat,
 } from '../core/document';
 import { exportHtml } from '../core/export';
+import { extractOutline } from '../core/outline';
 import { ExternalChangeWatcher, type WatchHost } from '../core/reload';
 import { defaultDocument, documentFor, resolveInFolder, resolveWikiLink, splitHref } from '../core/paths';
 import { postprocess } from '../core/postprocess';
 import { renderMarkdown } from '../core/render';
 import type { Arrival, FileRef, Listing, OpenedFile, PendingSession, Platform } from '../platform/types';
 import { el, icon } from './dom';
-import { createEditor, documentText, scrollToLine } from './editor';
+import { createEditor, documentText, scrollToLine, type JumpOptions } from './editor';
 import { runFormat, type FormatCommand } from './format';
+import { OutlinePanel } from './outline';
 import { Sidebar } from './sidebar';
 import { splitter } from './splitter';
 import { titleBar } from './titlebar';
@@ -27,6 +29,7 @@ type Measure = 'readable' | 'full';
 
 const APP_NAME = 'ZTG Readout';
 const PREVIEW_DELAY_MS = 120;
+const OUTLINE_DELAY_MS = 150;
 const MAX_HISTORY = 50;
 const SIDEBAR_DEFAULT = 270;
 const SIDEBAR_MIN = 160;
@@ -71,6 +74,9 @@ export class App {
   private listing: Listing | null = null;
   private history: FileRef[] = [];
   private pendingFragment: string | null = null;
+  /** A line to bring into view in the preview once it has rendered (zero-based). */
+  private pendingLine: number | null = null;
+  private outlineTimer: number | undefined;
   private mode: ViewMode = stored('ztg-readout-mode', ['edit', 'split', 'preview'], 'split');
   private theme: ThemeChoice = stored('ztg-readout-theme', ['auto', 'light', 'dark'], 'auto');
   private measure: Measure = stored('ztg-readout-measure', ['readable', 'full'], 'readable');
@@ -106,6 +112,12 @@ export class App {
     (path) => void this.openFolderPath(path, null, true),
     () => void this.closeFolder(),
   );
+
+  private readonly outline = new OutlinePanel(
+    (line) => this.outlineJump(line),
+    () => this.closeOutline(),
+  );
+  private readonly outlineButton = el('button', { class: 'text-button', type: 'button', title: 'Outline: the headings of this document', 'aria-pressed': 'false' }, 'Outline');
 
   private readonly watcher: ExternalChangeWatcher;
 
@@ -179,6 +191,7 @@ export class App {
       this.applyTheme();
     });
     this.backButton.addEventListener('click', () => void this.back());
+    this.outlineButton.addEventListener('click', () => this.toggleOutline());
 
     const top = el(
       'header',
@@ -197,6 +210,7 @@ export class App {
         el('span', { class: 'divider' }),
         modes,
         el('span', { class: 'divider' }),
+        this.outlineButton,
         button('Export', 'Export as HTML', () => void this.exportHtml(), 'export'),
         button('Print', 'Print or save as PDF (Ctrl+P)', () => void this.print(), 'print'),
         this.measureButton,
@@ -257,7 +271,7 @@ export class App {
     });
     paneSplitter.classList.add('splitter-panes');
     this.panes.append(this.editorHost, paneSplitter, this.previewPane);
-    this.workspace.append(this.sidebar.element, sidebarSplitter, this.panes, this.dropOverlay);
+    this.workspace.append(this.sidebar.element, sidebarSplitter, this.outline.element, this.panes, this.dropOverlay);
     if (this.platform.window) {
       this.root.classList.add('has-titlebar');
       this.root.append(titleBar(this.platform.window, APP_NAME));
@@ -366,14 +380,17 @@ export class App {
         this.updateDirty();
         this.schedulePreview(PREVIEW_DELAY_MS);
         this.updateWords();
+        this.scheduleOutline();
       },
       onCursor: (line, column) => {
         this.status.cursor.textContent = `Ln ${line}, Col ${column}`;
+        this.outline.setCursorLine(line - 1);
       },
       onScroll: (line) => this.syncPreview(line),
     });
     this.notify(readOnly);
     this.syncLine = 0;
+    this.refreshOutline();
     this.folds.clear();
     this.previewPane.scrollTo({ top: 0 });
     this.status.cursor.textContent = 'Ln 1, Col 1';
@@ -763,10 +780,72 @@ export class App {
     this.preview.replaceChildren(...container.childNodes);
     const details = this.preview.querySelectorAll('details');
     for (const [index, open] of this.folds) if (details[index]) details[index].open = open;
-    if (this.pendingFragment !== null) {
+    if (this.pendingLine !== null) {
+      this.scrollPreviewToLine(this.pendingLine);
+      this.pendingLine = null;
+      this.pendingFragment = null;
+    } else if (this.pendingFragment !== null) {
       this.scrollToFragment(this.pendingFragment);
       this.pendingFragment = null;
     } else this.syncPreview(this.syncLine);
+  }
+
+  // ---- outline ----------------------------------------------------------------------------
+
+  private toggleOutline(): void {
+    if (this.outline.hidden) this.openOutline();
+    else this.closeOutline();
+  }
+
+  private openOutline(): void {
+    this.outline.show(true);
+    this.outlineButton.setAttribute('aria-pressed', 'true');
+    this.refreshOutline();
+    this.outline.setCursorLine(this.view.state.doc.lineAt(this.view.state.selection.main.head).number - 1);
+  }
+
+  private closeOutline(): void {
+    const hadFocus = this.outline.element.contains(document.activeElement);
+    this.outline.show(false);
+    this.outlineButton.setAttribute('aria-pressed', 'false');
+    if (hadFocus) this.view.focus();
+  }
+
+  /** On a narrow window the panel covers the document, so it closes to show where the jump landed. */
+  private outlineJump(line: number): void {
+    const narrow = window.matchMedia('(max-width: 720px)').matches;
+    if (narrow) this.closeOutline();
+    this.jumpToLine(line, { focus: narrow });
+  }
+
+  private scheduleOutline(): void {
+    if (this.outline.hidden) return;
+    window.clearTimeout(this.outlineTimer);
+    this.outlineTimer = window.setTimeout(() => this.refreshOutline(), OUTLINE_DELAY_MS);
+  }
+
+  private refreshOutline(): void {
+    window.clearTimeout(this.outlineTimer);
+    if (this.outline.hidden) return;
+    this.outline.update(extractOutline(documentText(this.view.state)));
+  }
+
+  /**
+   * Brings a zero-based source line into view: the editor selects it in edit and split view (the
+   * preview follows the editor), and the preview scrolls to its block in preview-only view.
+   */
+  private jumpToLine(line: number, options: JumpOptions = {}): void {
+    if (this.mode === 'preview') this.scrollPreviewToLine(line);
+    else scrollToLine(this.view, line, options);
+  }
+
+  private scrollPreviewToLine(line: number): void {
+    let target: HTMLElement | null = null;
+    for (const node of this.preview.querySelectorAll<HTMLElement>('[data-line]')) {
+      if (Number(node.dataset.line) > line) break;
+      target = node;
+    }
+    target?.scrollIntoView({ block: 'start' });
   }
 
   private scrollToFragment(fragment: string | null): void {

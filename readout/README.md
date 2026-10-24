@@ -59,6 +59,13 @@ returns along the links you followed.
     picker is watched the same way, but only while the page is visible. A file dropped on the
     page, a folder opened through the upload fallback (Firefox, Safari) and a file saved with
     the download fallback have no handle to read again, so they are not watched.
+- The Outline button opens a panel with the document's headings as a tree (ATX and setext
+  headings; none are taken from code blocks, comments or front matter). Click a heading, or use
+  the arrow keys, Home and End and press Enter, to jump to it: the editor in edit and split view,
+  the preview in preview view. Duplicate headings stay separate entries. The list follows your
+  edits and marks the heading the cursor is under; Escape closes it. It works the same in the
+  browser and on the desktop. On a narrow window the panel covers the document and closes after a
+  jump.
 - Drag a Markdown file or a folder onto the window to open it. Anything else is refused with a
   note saying why, and in the browser a dropped file is never pasted into the open document.
 - Drag the dividers between the file list, the editor and the preview to set their widths. The
