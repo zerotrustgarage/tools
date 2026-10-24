@@ -41,6 +41,24 @@ returns along the links you followed.
   holds only paths you had already opened; anything that has since been moved or deleted is
   skipped. In the browser, Chromium keeps the folder or file handle, and unless you allowed
   access on every visit the page asks with a Reopen button, since access needs a click.
+- Changes made outside Readout (a git pull, an AI agent rewriting a file, a sync client) are
+  picked up. The open file is checked every 1.5 seconds and the folder tree every 6 seconds,
+  and again when the window regains focus; a change is acted on only after it has looked the
+  same on two checks in a row, so a pull that touches many files settles into one refresh.
+  With no unsaved edits the file reloads by itself (the preview scroll position is kept). With
+  unsaved edits you are asked: **Keep my version**, **Load disk version** (discards your edits)
+  or **Decide later**; Escape counts as Decide later, your edits stay, and a Review button in
+  the banner asks again. Neither version is overwritten silently: Save also asks first when the
+  file on disk changed since you opened it. A file renamed inside the folder is followed (found
+  by identical content); a deleted file stays open in the editor and Save writes it back. Only
+  the folder you chose is listed or read. This is polling through the existing file commands,
+  not an operating-system watcher: no new dependency or permission was added, so a change can
+  take a few seconds to show.
+  - Desktop: the open file, a lone file and the opened folder are all watched.
+  - Browser with the File System Access API (Chromium): a file or folder opened through the
+    picker is watched the same way, but only while the page is visible. A file dropped on the
+    page, a folder opened through the upload fallback (Firefox, Safari) and a file saved with
+    the download fallback have no handle to read again, so they are not watched.
 - Drag a Markdown file or a folder onto the window to open it. Anything else is refused with a
   note saying why, and in the browser a dropped file is never pasted into the open document.
 - Drag the dividers between the file list, the editor and the preview to set their widths. The

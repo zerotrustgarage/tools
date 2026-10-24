@@ -79,6 +79,12 @@ export interface Platform {
   open(): Promise<OpenedFile | null>;
   /** Shows a folder dialog and lists its Markdown files. */
   openFolder(): Promise<Listing | null>;
+  /**
+   * Lists the open folder again, without a dialog, for change detection. Only the folder the
+   * user already chose is listed. Null when the platform cannot (a browser folder upload is a
+   * fixed snapshot). Absent on platforms that cannot watch at all.
+   */
+  relist?(listing: Listing): Promise<Listing | null>;
   /** Reads a file of the open folder by its folder-relative path. */
   readFolderFile(listing: Listing, folderPath: string): Promise<OpenedFile>;
   /**

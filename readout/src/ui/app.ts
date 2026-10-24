@@ -7,6 +7,7 @@ import {
   type DocumentFormat,
 } from '../core/document';
 import { exportHtml } from '../core/export';
+import { ExternalChangeWatcher, type WatchHost } from '../core/reload';
 import { defaultDocument, documentFor, resolveInFolder, resolveWikiLink, splitHref } from '../core/paths';
 import { postprocess } from '../core/postprocess';
 import { renderMarkdown } from '../core/render';
@@ -106,7 +107,11 @@ export class App {
     () => void this.closeFolder(),
   );
 
-  constructor(private readonly platform: Platform) {}
+  private readonly watcher: ExternalChangeWatcher;
+
+  constructor(private readonly platform: Platform) {
+    this.watcher = new ExternalChangeWatcher(this.watchHost());
+  }
 
   async start(host: HTMLElement): Promise<void> {
     host.replaceChildren(this.buildChrome());
@@ -126,6 +131,9 @@ export class App {
         ),
     });
     window.addEventListener('resize', () => this.applySizes());
+    // Coming back to the window checks at once instead of waiting for the next poll.
+    window.addEventListener('focus', () => void this.watcher.tick());
+    document.addEventListener('visibilitychange', () => void this.watcher.tick());
     this.platform.onCloseRequested(() => this.confirmDiscard());
     window.addEventListener('keydown', (event) => this.globalShortcut(event));
     this.preview.addEventListener('click', (event) => void this.previewClick(event));
@@ -345,7 +353,7 @@ export class App {
 
   // ---- documents ------------------------------------------------------------------------
 
-  private load(ref: FileRef | null, text: string, format: DocumentFormat): void {
+  private load(ref: FileRef | null, text: string, format: DocumentFormat, bytes: Uint8Array | null = null): void {
     const readOnly = readOnlyReason(format);
     this.doc = { ref, format, readOnly, savedText: text };
     this.view?.destroy();
@@ -378,6 +386,94 @@ export class App {
     this.setMode(this.mode);
     this.schedulePreview(0);
     this.rememberSession();
+    this.watcher.rebase(bytes);
+    this.watcher.sync();
+  }
+
+  // ---- external changes (the decisions live in core/reload.ts) ----------------------------
+
+  private watchHost(): WatchHost {
+    const read = async (get: () => Promise<OpenedFile | null>) => {
+      try {
+        return (await get())?.bytes ?? null;
+      } catch {
+        return null;
+      }
+    };
+    return {
+      active: () => this.listing !== null || this.canReread(),
+      paused: () => document.hidden || openDialogs > 0,
+      currentPath: () => (this.listing ? (this.doc.ref?.folderPath ?? null) : null),
+      hasFile: () => this.canReread(),
+      isDirty: () => this.dirty,
+      folderFiles: () => this.listing?.files ?? null,
+      relist: async () => {
+        const listing = this.listing;
+        if (!listing || !this.platform.relist) return null;
+        try {
+          return await this.platform.relist(listing);
+        } catch {
+          return null;
+        }
+      },
+      readCurrent: () => read(async () => this.reread(this.doc.ref)),
+      readFolderFile: (path) => read(async () => (this.listing ? this.platform.readFolderFile(this.listing, path) : null)),
+      applyListing: (next) => {
+        if (!this.listing) return;
+        this.listing = { ...this.listing, files: next.files, truncated: next.truncated };
+        this.sidebar.update(this.listing);
+      },
+      reload: (bytes) => {
+        const decoded = decodeDocument(bytes);
+        const top = this.previewPane.scrollTop;
+        this.load(this.doc.ref, decoded.text, decoded.format, bytes);
+        this.previewPane.scrollTop = top;
+        this.notify(this.doc.readOnly ?? `${this.doc.ref?.name ?? 'The file'} changed on disk and was reloaded.`);
+      },
+      resolveConflict: async (bytes) => {
+        void bytes;
+        const choice = await confirmDialog(
+          `${this.doc.ref?.name ?? 'This file'} changed on disk`,
+          'It was changed outside Readout, and you have unsaved edits. Neither version is overwritten until you choose. Loading the disk version discards your edits.',
+          ['Keep my version', 'Load disk version', 'Decide later'],
+        );
+        return choice === 'Keep my version' ? 'mine' : choice === 'Load disk version' ? 'disk' : null;
+      },
+      conflictDeferred: () => {
+        const review = el('button', { type: 'button', class: 'text-button banner-action' }, 'Review');
+        review.addEventListener('click', () => this.watcher.review());
+        this.banner.replaceChildren(`${this.doc.ref?.name ?? 'The file'} changed on disk. Your unsaved edits are kept. `, review);
+        this.banner.hidden = false;
+      },
+      renamed: async (path) => {
+        const listing = this.listing;
+        if (!listing) return;
+        try {
+          const moved = await this.platform.readFolderFile(listing, path);
+          this.doc = { ...this.doc, ref: moved.ref };
+          this.sidebar.select(moved.ref.folderPath);
+          this.updateDirty();
+          this.rememberSession();
+          this.notify(`The file was renamed to ${path} on disk. It stays open here.`);
+        } catch {
+          this.notify(`The file was renamed to ${path} on disk, but it could not be followed.`);
+        }
+      },
+      gone: () => this.notify(`${this.doc.ref?.name ?? 'The file'} was deleted or moved on disk. It stays open here; Save writes it back.`),
+    };
+  }
+
+  /** True when the open document can be read again from where it came from. */
+  private canReread(): boolean {
+    const ref = this.doc.ref;
+    if (!ref) return false;
+    return ref.folderPath !== undefined ? this.listing !== null : ref.path !== undefined || ref.handle !== undefined;
+  }
+
+  private reread(ref: FileRef | null): Promise<OpenedFile | null> {
+    if (!ref) return Promise.resolve(null);
+    if (ref.folderPath !== undefined && this.listing) return this.platform.readFolderFile(this.listing, ref.folderPath);
+    return this.platform.reopen(ref);
   }
 
   private get dirty(): boolean {
@@ -422,7 +518,7 @@ export class App {
     this.backButton.disabled = this.history.length === 0;
     this.pendingFragment = fragment;
     const decoded = decodeDocument(file.bytes);
-    this.load(file.ref, decoded.text, decoded.format);
+    this.load(file.ref, decoded.text, decoded.format, file.bytes);
   }
 
   private async arrive(arrival: Arrival, startup: boolean): Promise<void> {
@@ -464,6 +560,7 @@ export class App {
     this.backButton.disabled = true;
     this.sidebar.show(listing);
     this.root.classList.toggle('has-folder', listing !== null);
+    this.watcher.sync();
   }
 
   private async openFolder(): Promise<void> {
@@ -533,6 +630,24 @@ export class App {
     this.backButton.disabled = this.history.length === 0;
   }
 
+  /** A save never replaces a disk version it has not seen: when the file changed, ask first. */
+  private async confirmOverwrite(): Promise<boolean> {
+    if (!this.canReread()) return true;
+    let disk: Uint8Array | null = null;
+    try {
+      disk = (await this.reread(this.doc.ref))?.bytes ?? null;
+    } catch {
+      return true;
+    }
+    if (!disk || this.watcher.matchesBaseline(disk)) return true;
+    const choice = await confirmDialog(
+      `${this.doc.ref?.name ?? 'This file'} changed on disk`,
+      'Saving replaces the version on disk, which was changed outside Readout after you opened it.',
+      ['Cancel', 'Overwrite'],
+    );
+    return choice === 'Overwrite';
+  }
+
   /** Resolves true when the document was written. */
   private async save(as: boolean): Promise<boolean> {
     if (this.doc.readOnly) {
@@ -540,6 +655,7 @@ export class App {
       return false;
     }
     const text = documentText(this.view.state);
+    if (!as && !(await this.confirmOverwrite())) return false;
     try {
       const bytes = encodeDocument(text, this.doc.format);
       const name = this.doc.ref?.name ?? 'Untitled.md';
@@ -548,6 +664,8 @@ export class App {
       // Saving somewhere else makes the file independent of the open folder.
       const kept = ref === this.doc.ref ? ref : { ...ref, folderPath: undefined };
       this.doc = { ...this.doc, ref: kept, savedText: text };
+      this.watcher.rebase(bytes);
+      this.watcher.sync();
       this.sidebar.select(kept.folderPath);
       this.updateDirty();
       this.notify(null);
@@ -736,6 +854,8 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+let openDialogs = 0;
+
 function confirmDialog(title: string, body: string, choices: string[]): Promise<string | null> {
   return new Promise((resolve) => {
     const dialog = el('dialog', { class: 'modal' }) as HTMLDialogElement;
@@ -749,7 +869,11 @@ function confirmDialog(title: string, body: string, choices: string[]): Promise<
     });
     dialog.append(el('h2', {}, title), el('p', {}, body), el('div', { class: 'modal-actions' }, ...buttons));
     dialog.addEventListener('cancel', () => resolve(null));
-    dialog.addEventListener('close', () => dialog.remove());
+    dialog.addEventListener('close', () => {
+      openDialogs--;
+      dialog.remove();
+    });
+    openDialogs++;
     document.body.append(dialog);
     dialog.showModal();
     buttons[0]?.focus();
