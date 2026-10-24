@@ -71,6 +71,28 @@ export interface DropHandlers {
   refused(name: string, folder?: boolean): void;
 }
 
+/** Options for reading a folder file. Absent options read the whole file, as before. */
+export interface ReadFolderOptions {
+  /**
+   * Refuse a file larger than this many bytes with a FileTooLargeError, before it is read where
+   * the platform can tell the size first (the browser build). The desktop reader ignores the
+   * value and keeps its own 64 MiB cap in Rust (read_limited), which still applies.
+   */
+  maxBytes?: number;
+}
+
+/** The distinct outcome of a readFolderFile refused for size under ReadFolderOptions.maxBytes. */
+export class FileTooLargeError extends Error {
+  constructor(
+    readonly path: string,
+    readonly size: number,
+    readonly maxBytes: number,
+  ) {
+    super(`${path} is ${size} bytes, over the ${maxBytes} byte limit`);
+    this.name = 'FileTooLargeError';
+  }
+}
+
 export interface Platform {
   kind: 'desktop' | 'web';
   /** Present when the app draws its own title bar. */
@@ -85,8 +107,11 @@ export interface Platform {
    * fixed snapshot). Absent on platforms that cannot watch at all.
    */
   relist?(listing: Listing): Promise<Listing | null>;
-  /** Reads a file of the open folder by its folder-relative path. */
-  readFolderFile(listing: Listing, folderPath: string): Promise<OpenedFile>;
+  /**
+   * Reads a file of the open folder by its folder-relative path. With options.maxBytes, an
+   * oversized file rejects with FileTooLargeError instead of being returned.
+   */
+  readFolderFile(listing: Listing, folderPath: string, options?: ReadFolderOptions): Promise<OpenedFile>;
   /**
    * Follows a relative link (decoded path, no fragment) from a document. Inside the open folder
    * the app resolves it to a folder path itself; this is for a lone file's links, and returns

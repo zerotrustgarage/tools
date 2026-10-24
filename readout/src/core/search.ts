@@ -4,6 +4,8 @@
 // order, and when to stop. It never touches the network and never invents a path: anything that is
 // not a plain folder-relative path is counted as unreadable and not read.
 
+import { FileTooLargeError } from '../platform/types';
+
 export interface SearchBounds {
   /** Files read at most. The rest of the listing is not searched. */
   maxFiles: number;
@@ -68,7 +70,7 @@ export interface SearchSummary {
 export interface SearchOptions {
   files: readonly string[];
   /** Bytes from the folder, or text already held in memory (an open buffer). Throws or returns null when unreadable. */
-  read(path: string): Promise<Uint8Array | string | null>;
+  read(path: string, maxBytes: number): Promise<Uint8Array | string | null>;
   bounds?: Partial<SearchBounds>;
   signal?: AbortSignal;
   /** Called for each file with at least one match, in listing order, never after cancellation. */
@@ -157,9 +159,10 @@ export async function searchFolder(query: string, options: SearchOptions): Promi
       batch.map(async (path): Promise<Loaded> => {
         if (!isFolderRelative(path)) return { kind: 'unreadable' };
         try {
-          return load(await options.read(path), bounds.maxFileBytes);
-        } catch {
-          return { kind: 'unreadable' };
+          return load(await options.read(path, bounds.maxFileBytes), bounds.maxFileBytes);
+        } catch (error) {
+          // A reader that refuses before reading says so with this error; it counts as large.
+          return error instanceof FileTooLargeError ? { kind: 'large' } : { kind: 'unreadable' };
         }
       }),
     );

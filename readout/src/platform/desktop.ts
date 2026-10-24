@@ -105,7 +105,10 @@ export const desktopPlatform: Platform = {
     return listing.folder.root ? list(listing.folder.root) : null;
   },
 
-  async readFolderFile(listing, folderPath) {
+  // options.maxBytes is accepted but not applied here: the listing carries no sizes and the Rust
+  // side is unchanged, so the only cap is read_limited's 64 MiB in lib.rs. Callers that pass a
+  // smaller bound must still check the returned length (searchFolder does).
+  async readFolderFile(listing, folderPath, _options) {
     const root = listing.folder.root!;
     return read(inRoot(root, folderPath), root);
   },

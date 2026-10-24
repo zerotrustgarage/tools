@@ -1,5 +1,5 @@
 import { LISTED_EXTENSIONS, resolveInFolder, skipFolder } from '../core/paths';
-import type { Arrival, FileRef, Listing, OpenedFile, Platform } from './types';
+import { FileTooLargeError, type Arrival, type FileRef, type Listing, type OpenedFile, type Platform } from './types';
 
 // Browser build. Files never leave the machine: they are read and written locally through the
 // File System Access API (Chromium browsers) or through file inputs and downloads elsewhere.
@@ -200,8 +200,12 @@ export const webPlatform: Platform = {
     return handle ? { folder: listing.folder, ...(await walk(handle)) } : null;
   },
 
-  async readFolderFile(listing, folderPath) {
+  async readFolderFile(listing, folderPath, options) {
     const { file, handle } = await folderFile(listing, folderPath);
+    // File.size is known without reading, so an oversized file is never pulled into memory.
+    if (options?.maxBytes !== undefined && file.size > options.maxBytes) {
+      throw new FileTooLargeError(folderPath, file.size, options.maxBytes);
+    }
     return { ref: { name: file.name, handle, folderPath }, bytes: new Uint8Array(await file.arrayBuffer()) };
   },
 
