@@ -30,6 +30,11 @@ class FakeApp {
   asked = 0;
   listCalls = 0;
   readCalls: string[] = [];
+  truncated = false;
+  /** Runs during the rename read, like a click in the sidebar. */
+  duringRename: (() => void) | null = null;
+  renameApplied = false;
+  reloadThrows = false;
   watcher: ExternalChangeWatcher;
 
   constructor(initial: Record<string, string>, current: string | null, listEvery = 1) {
@@ -51,9 +56,12 @@ class FakeApp {
       hasFile: () => this.current !== null,
       isDirty: () => this.dirty,
       folderFiles: () => (this.lone ? null : this.files),
+      listingTruncated: () => this.truncated,
       relist: async () => {
         this.listCalls++;
-        return { files: [...this.disk.keys()].sort(), truncated: false };
+        const all = [...this.disk.keys()].sort();
+        // A truncated listing stops at the cap: here, a.md is beyond it.
+        return this.truncated ? { files: all.filter((f) => f !== 'a.md'), truncated: true } : { files: all, truncated: false };
       },
       readCurrent: async () => {
         this.readCalls.push(this.current!);
@@ -68,6 +76,7 @@ class FakeApp {
         this.events.push(`listing:${l.files.length}`);
       },
       reload: (bytes) => {
+        if (this.reloadThrows) throw new Error('editor failed');
         this.buffer = bytes;
         this.dirty = false;
         this.watcher.rebase(bytes);
@@ -79,7 +88,11 @@ class FakeApp {
         return this.answer;
       },
       conflictDeferred: () => this.events.push('deferred'),
-      renamed: (path) => {
+      renamed: async (path, stillCurrent) => {
+        this.duringRename?.();
+        await Promise.resolve();
+        if (!stillCurrent()) return;
+        this.renameApplied = true;
         this.current = path;
         this.events.push(`renamed:${path}`);
       },
@@ -273,6 +286,37 @@ describe('delete and rename', () => {
   });
 });
 
+describe('safety edges', () => {
+  it('a reload that throws leaves the baseline alone, so a later change is still seen', async () => {
+    const app = new FakeApp({ 'a.md': 'one' }, 'a.md');
+    app.reloadThrows = true;
+    app.watcher.start();
+    app.disk.set('a.md', enc('two'));
+    await app.settle(2);
+    expect(dec(app.buffer)).toBe('one');
+    expect(app.watcher.matchesBaseline(enc('two'))).toBe(false);
+    app.reloadThrows = false;
+    await app.settle(2);
+    expect(app.events).toEqual(['reload:two']);
+  });
+
+  it('a file beyond a truncated listing is not reported deleted and is still read', async () => {
+    const app = new FakeApp({ 'a.md': 'one', 'b.md': 'b' }, 'a.md');
+    app.truncated = true;
+    app.watcher.start();
+    await app.settle(3); // listing lacks a.md but says it is cut off
+    expect(app.events.filter((e) => e === 'gone')).toEqual([]);
+    app.disk.set('a.md', enc('two'));
+    await app.settle(3);
+    expect(app.events).toContain('reload:two');
+    expect(app.events).not.toContain('gone');
+  });
+
+  it('an empty file is not followed to an arbitrary new empty file', () => {
+    expect(findRename(enc(''), [{ path: 'new.md', bytes: enc('') }])).toBeNull();
+  });
+});
+
 describe('burst', () => {
   it('a git-pull-like burst refreshes the tree once and reads only the open file and rename candidates', async () => {
     const app = new FakeApp({ 'a.md': 'one', 'docs/x.md': 'x' }, 'a.md');
@@ -349,13 +393,26 @@ describe('lifecycle', () => {
     host.reload = (b) => void events.push(dec(b));
     watcher.rebase(enc('one'));
     watcher.start();
-    await vi.advanceTimersByTimeAsync(INTERVAL);
+    // Forced, so the two-poll settle cannot hide a missing stale check.
+    void watcher.tick(true);
+    await vi.advanceTimersByTimeAsync(0);
     watcher.rebase(enc('other file'));
     release(enc('two'));
     await vi.advanceTimersByTimeAsync(INTERVAL * 3);
     expect(events).toEqual([]);
     watcher.stop();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('a rename whose read straddles a document change is not applied to the new document', async () => {
+    const app = new FakeApp({ 'a.md': 'one', 'b.md': 'b' }, 'a.md');
+    app.watcher.start();
+    app.duringRename = () => app.watcher.rebase(enc('b')); // the reader opened b.md
+    app.disk.set('c.md', app.disk.get('a.md')!);
+    app.disk.delete('a.md');
+    await app.settle(3);
+    expect(app.renameApplied).toBe(false);
+    expect(app.current).toBe('a.md');
   });
 
   it('pauses while hidden or a dialog is open, then catches up', async () => {

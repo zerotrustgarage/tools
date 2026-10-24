@@ -57,6 +57,8 @@ export function diffFiles(previous: readonly string[], next: readonly string[]):
 
 /** The new path of a renamed file: an added file whose bytes equal the baseline. */
 export function findRename(baseline: Uint8Array, candidates: readonly { path: string; bytes: Uint8Array }[]): string | null {
+  // Every empty file looks like every other; an empty file is never followed.
+  if (baseline.length === 0) return null;
   return candidates.find((c) => sameBytes(c.bytes, baseline))?.path ?? null;
 }
 
@@ -76,6 +78,8 @@ export interface WatchHost {
   hasFile(): boolean;
   isDirty(): boolean;
   folderFiles(): readonly string[] | null;
+  /** True when the folder listing was cut off, so a path missing from it proves nothing. */
+  listingTruncated(): boolean;
   /** Lists the open folder again; null when the platform cannot or the folder is unreadable. */
   relist(): Promise<WatchedListing | null>;
   readCurrent(): Promise<Uint8Array | null>;
@@ -88,8 +92,8 @@ export interface WatchHost {
   resolveConflict(bytes: Uint8Array): Promise<Choice>;
   /** The user dismissed or kept: say that the edits are kept and offer to review. */
   conflictDeferred(): void;
-  /** The file was renamed inside the folder: follow it without touching the buffer. */
-  renamed(path: string): Promise<void> | void;
+  /** The file was renamed inside the folder: follow it without touching the buffer. Check stillCurrent after any await. */
+  renamed(path: string, stillCurrent: () => boolean): Promise<void> | void;
   /** The file is gone; the buffer stays open. */
   gone(): void;
 }
@@ -214,14 +218,14 @@ export class ExternalChangeWatcher {
     this.listSeen = null;
     this.host.applyListing(next);
     const path = this.host.currentPath();
-    if (path !== null && this.baseline && !next.files.includes(path)) await this.fileGone(diffFiles(known, next.files).added, stale);
+    if (path !== null && this.baseline && !next.truncated && !next.files.includes(path)) await this.fileGone(diffFiles(known, next.files).added, stale);
   }
 
   private async pollFile(force: boolean, stale: () => boolean): Promise<void> {
     const path = this.host.currentPath();
     const files = this.host.folderFiles();
     // A file the listing no longer has is handled by the listing poll (rename or delete).
-    if (path !== null && files && !files.includes(path)) return;
+    if (path !== null && files && !files.includes(path) && !this.host.listingTruncated()) return;
     const disk = await this.host.readCurrent();
     if (stale() || !this.baseline) return;
     if (disk === null && path !== null) return; // in a folder, a failed read is not proof of deletion
@@ -236,9 +240,9 @@ export class ExternalChangeWatcher {
     if (action === 'none') {
       if (disk && sameBytes(disk, this.baseline)) this.acknowledged = null;
     } else if (action === 'reload') {
+      this.host.reload(disk!);
       this.baseline = disk;
       this.acknowledged = null;
-      this.host.reload(disk!);
     } else if (action === 'missing') {
       await this.fileGone([], stale);
     } else {
@@ -246,9 +250,9 @@ export class ExternalChangeWatcher {
       if (stale()) return;
       this.acknowledged = disk;
       if (choice === 'disk') {
+        this.host.reload(disk!);
         this.baseline = disk;
         this.acknowledged = null;
-        this.host.reload(disk!);
       } else this.host.conflictDeferred();
     }
   }
@@ -265,7 +269,8 @@ export class ExternalChangeWatcher {
     const moved = findRename(baseline, candidates);
     if (moved !== null) {
       this.goneReported = false;
-      await this.host.renamed(moved);
+      const generation = this.generation;
+      await this.host.renamed(moved, () => generation === this.generation && this.timer !== undefined);
     } else if (!this.goneReported) {
       this.goneReported = true;
       this.host.gone();

@@ -50,7 +50,7 @@ returns along the links you followed.
   or **Decide later**; Escape counts as Decide later, your edits stay, and a Review button in
   the banner asks again. Neither version is overwritten silently: Save also asks first when the
   file on disk changed since you opened it. A file renamed inside the folder is followed (found
-  by identical content); a deleted file stays open in the editor and Save writes it back. Only
+  by identical content); a deleted file stays open in the editor and Save writes it back (in the browser the saved-to handle may no longer exist; the save then fails with an error, and the buffer is kept). Only
   the folder you chose is listed or read. This is polling through the existing file commands,
   not an operating-system watcher: no new dependency or permission was added, so a change can
   take a few seconds to show.

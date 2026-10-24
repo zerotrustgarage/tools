@@ -407,6 +407,7 @@ export class App {
       hasFile: () => this.canReread(),
       isDirty: () => this.dirty,
       folderFiles: () => this.listing?.files ?? null,
+      listingTruncated: () => this.listing?.truncated ?? false,
       relist: async () => {
         const listing = this.listing;
         if (!listing || !this.platform.relist) return null;
@@ -445,11 +446,14 @@ export class App {
         this.banner.replaceChildren(`${this.doc.ref?.name ?? 'The file'} changed on disk. Your unsaved edits are kept. `, review);
         this.banner.hidden = false;
       },
-      renamed: async (path) => {
+      renamed: async (path, stillCurrent) => {
         const listing = this.listing;
+        const before = this.doc;
         if (!listing) return;
         try {
           const moved = await this.platform.readFolderFile(listing, path);
+          // The reader may have opened something else while the file was read.
+          if (!stillCurrent() || this.doc !== before || this.listing !== listing) return;
           this.doc = { ...this.doc, ref: moved.ref };
           this.sidebar.select(moved.ref.folderPath);
           this.updateDirty();
