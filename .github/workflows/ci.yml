@@ -202,6 +202,7 @@ jobs:
         shell: pwsh
         run: >-
           ./scripts/release/test-readout-msi.ps1
+          -ExeVersion (Get-Content readout/package.json -Raw | ConvertFrom-Json).version
           -Msi lifecycle/UNSIGNED-TEST-ZTG-Readout-0.0.2-x64.msi -Version 0.0.2
           -PriorMsi lifecycle/UNSIGNED-TEST-ZTG-Readout-0.0.1-x64.msi -PriorVersion 0.0.1
           -ExpectedExe lifecycle/UNSIGNED-TEST-ztg-readout.exe

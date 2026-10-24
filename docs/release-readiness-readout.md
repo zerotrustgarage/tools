@@ -3,7 +3,10 @@
 Status as of October 24, 2026 (packet READOUT-04, roadmap RD3). This page separates what
 pull request CI proves without any secret from what only a protected, credentialed release run
 can prove. Nothing here signs or publishes anything. No unsigned package is a production
-download: the dry-run files are CI artifacts named `UNSIGNED`.
+download. In the dry run only the artifact name (`readout-release-dryrun-UNSIGNED`),
+`DRY-RUN-UNSIGNED.txt` and `asset-manifest.json` are labelled unsigned. The files inside
+`dist/` carry the production names on purpose (that is what the manifest checks) but are
+unsigned test packages; never publish or distribute them.
 
 ## 1. Readout release assets
 
@@ -58,7 +61,12 @@ installer, so adding the MSI to a release cannot change what Check for updates s
 - The NSIS script names the same product and publisher, and `docs/updates.md` still documents
   `ZTG-Readout-<X.Y.Z>-Setup.exe` as the update installer.
 - If a tag is given, it equals `readout-v<package version>`. The release workflow also refuses a
-  version whose tag already exists.
+  version whose tag already exists, and runs `check --require-newer`, which requires the version
+  to be strictly greater than the highest `readout-v*` tag on the remote (`git ls-remote`, no
+  credential).
+- On Windows, `windows-test` and the lifecycle job also require the installed exe's file
+  version to start with the package version, which catches a regression in the version stamping
+  that real MSI upgrades depend on.
 
 ## 2. Uncredentialed checks (pull request CI, no secret)
 

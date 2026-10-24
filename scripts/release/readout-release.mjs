@@ -4,7 +4,7 @@
 // release workflow, so what CI proves is what the release uses. Signing and signature
 // verification stay in scripts/signing/sign.mjs; this file only decides which files must exist.
 //
-//   node scripts/release/readout-release.mjs check [--tag readout-vX.Y.Z] [--print-version]
+//   node scripts/release/readout-release.mjs check [--tag readout-vX.Y.Z] [--print-version] [--require-newer]
 //   node scripts/release/readout-release.mjs manifest <version>
 //   node scripts/release/readout-release.mjs assemble --version V --exe F --setup F --msi F --notices F --out DIR
 //   node scripts/release/readout-release.mjs verify-dist <dir> <version>
@@ -14,6 +14,7 @@
 // verify-dist fails unless the directory holds exactly the expected assets and every checksum
 // matches. dry-run-manifest prints the names and SHA-256 of a verified directory as JSON.
 
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
@@ -114,6 +115,31 @@ export function checkMetadata(sources, { tag } = {}) {
   return problems;
 }
 
+/** Compares numeric X.Y.Z versions: negative, zero or positive like a - b. */
+export function compareVersions(a, b) {
+  const [x, y] = [a, b].map((v) => v.split('.').map(Number));
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] - y[i];
+  return 0;
+}
+
+/** The highest strict readout-vX.Y.Z version in `git ls-remote --tags` output, or null. */
+export function highestTagVersion(lsRemote) {
+  let best = null;
+  for (const line of lsRemote.split('\n')) {
+    const m = /\trefs\/tags\/readout-v(.+)$/.exec(line);
+    if (m && !versionProblem(m[1]) && (best === null || compareVersions(m[1], best) > 0)) best = m[1];
+  }
+  return best;
+}
+
+/** A problem string unless version is strictly greater than every released readout-v* tag. */
+export function newerProblem(version, lsRemote) {
+  const best = highestTagVersion(lsRemote);
+  if (best !== null && compareVersions(version, best) <= 0)
+    return `version ${version} must be strictly greater than the highest released tag readout-v${best}`;
+  return null;
+}
+
 const sha256 = async (path) => createHash('sha256').update(await readFile(path)).digest('hex');
 
 /** Copies the built files to their release names and writes the checksum file. */
@@ -186,9 +212,15 @@ async function main(argv) {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
   if (command === 'check') {
     const printVersion = rest.includes('--print-version');
-    const options = flags(rest.filter((a) => a !== '--print-version'));
+    const requireNewer = rest.includes('--require-newer');
+    const options = flags(rest.filter((a) => a !== '--print-version' && a !== '--require-newer'));
     const sources = await readSources(root);
     const problems = checkMetadata(sources, { tag: options.tag });
+    if (requireNewer && !problems.length) {
+      const tags = execFileSync('git', ['ls-remote', '--tags', 'origin', 'refs/tags/readout-v*'], { cwd: root, encoding: 'utf8' });
+      const problem = newerProblem(sources.packageVersion, tags);
+      if (problem) problems.push(problem);
+    }
     if (problems.length) throw new Error(`Readout release metadata is inconsistent:\n- ${problems.join('\n- ')}`);
     console.error(`Readout ${sources.packageVersion}: package, Cargo, lock, MSI, NSIS and update contract agree; UpgradeCode ${UPGRADE_CODE}.`);
     if (printVersion) console.log(sources.packageVersion);

@@ -23,6 +23,8 @@ param(
   [string] $PriorMsi = '',
   [string] $PriorVersion = '',
   [string] $LogDir = '',
+  # Package version the installed exe's file version must start with (the MSI Version can differ in CI fixtures).
+  [string] $ExeVersion = '',
   [switch] $RequireSignatures
 )
 $ErrorActionPreference = 'Stop'
@@ -34,6 +36,7 @@ if ($PriorMsi) {
   if (-not $PriorVersion) { throw 'PriorVersion is required with PriorMsi' }
   $PriorMsi = (Resolve-Path -LiteralPath $PriorMsi).ProviderPath
 }
+if (-not $ExeVersion) { $ExeVersion = $Version }
 if (-not $LogDir) { $LogDir = Join-Path $env:RUNNER_TEMP 'readout-msi-logs' }
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
@@ -156,6 +159,11 @@ try {
   if ((Hash $exe) -ne $expectedHash) { throw 'the installed executable is not the expected build' }
   Assert-Signed $exe
   Ok "installed executable is the expected build (SHA-256 $expectedHash)"
+  # Tauri stamps the exe's file version from package.json. If that stopped, real upgrades would
+  # keep the old file (see docs/release-readiness-readout.md).
+  $fileVersion = (Get-Item -LiteralPath $exe).VersionInfo.FileVersion
+  if (-not $fileVersion -or -not $fileVersion.StartsWith($ExeVersion)) { throw "installed exe FileVersion is '$fileVersion', expected it to start with '$ExeVersion'" }
+  Ok "installed executable FileVersion $fileVersion
   Assert-Launches 'current'
   if ($PriorMsi) {
     Run-Msi $PriorMsi '/i' 1603 # downgrade refused by MajorUpgrade

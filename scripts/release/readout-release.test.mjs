@@ -11,7 +11,10 @@ import {
   assemble,
   checkMetadata,
   dryRunManifest,
+  compareVersions,
   expectedAssets,
+  highestTagVersion,
+  newerProblem,
   readSources,
   verifyDist,
   versionProblem,
@@ -51,6 +54,19 @@ test('version limits follow the MSI ProductVersion rules', () => {
   assert.match(versionProblem('0.0.65536'), /exceeds/);
   assert.match(versionProblem('01.0.0'), /not numeric/);
   assert.match(versionProblem('1.0'), /not numeric/);
+});
+
+test('release versions must be strictly newer than the highest readout tag', () => {
+  const refs = (...v) => v.map((x, i) => `${'a'.repeat(40)}\trefs/tags/readout-v${x}`).join('\n');
+  assert.ok(compareVersions('0.10.0', '0.9.9') > 0);
+  assert.ok(compareVersions('1.0.0', '1.0.0') === 0);
+  assert.equal(highestTagVersion(refs('0.9.0', '0.10.0', '0.2.0')), '0.10.0');
+  assert.equal(highestTagVersion(`${refs('0.1.0')}\n${'b'.repeat(40)}\trefs/tags/readout-v0.1.0^{}\n${'c'.repeat(40)}\trefs/tags/readout-v9.9.9-rc1\n${'d'.repeat(40)}\trefs/tags/scanner-v5.0.0`), '0.1.0');
+  assert.equal(highestTagVersion(''), null);
+  assert.equal(newerProblem('0.1.0', ''), null);
+  assert.equal(newerProblem('0.2.0', refs('0.1.0', '0.10.0')), 'version 0.2.0 must be strictly greater than the highest released tag readout-v0.10.0');
+  assert.match(newerProblem('0.1.0', refs('0.1.0')), /strictly greater/);
+  assert.equal(newerProblem('0.10.0', refs('0.9.0')), null);
 });
 
 test('the pinned UpgradeCode is the one in the wxs', () => {

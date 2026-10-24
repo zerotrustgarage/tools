@@ -16,8 +16,10 @@ name: Release ZTG Readout
 #   with makensis from Ubuntu's archive (which signs the uninstaller and the installer through
 #   scripts/signing/sign-file.sh), builds the MSI from the signed app with wixl and signs it
 #   through scripts/signing/sign.mjs, the same implementation as the exe. It verifies every
-#   signature against the pinned Microsoft roots and the pinned publisher. Signing credentials
-#   reach only the steps that run signing code, never the MSI packaging step.
+#   signature against the pinned Microsoft roots and the pinned publisher. The client secret
+#   is in the environment of two steps, each running only signing code (makensis with
+#   sign-file.sh, and sign.mjs for the MSI); the MSI packaging and verify steps get none. The
+#   job's id-token: write makes the OIDC request token available job-wide.
 # - windows-test installs the signed MSI on a real Windows runner and checks signatures and
 #   the install, repair, launch and uninstall lifecycle. It holds no signing identity.
 # - publish attests provenance and creates the GitHub release; it holds no signing identity.
@@ -45,9 +47,10 @@ jobs:
       - id: version
         run: |
           set -euo pipefail
-          # package.json, Cargo.toml and Cargo.lock agree, the MSI and NSIS identity is intact
-          # and the UpgradeCode is the permanent one (scripts/release/readout-release.mjs).
-          version=$(node scripts/release/readout-release.mjs check --print-version)
+          # package.json, Cargo.toml and Cargo.lock agree, the MSI and NSIS identity is intact,
+          # the UpgradeCode is the permanent one and the version is strictly greater than the
+          # highest readout-v* tag (scripts/release/readout-release.mjs).
+          version=$(node scripts/release/readout-release.mjs check --print-version --require-newer)
           if git ls-remote --exit-code --tags origin "refs/tags/readout-v$version" >/dev/null; then
             echo "readout-v$version is already released; bump the version first"; exit 1
           fi
@@ -94,8 +97,10 @@ jobs:
       # against a pinned SHA-256. makensis packages. All from Ubuntu's signed archive.
       - run: scripts/ci/apt-install.sh nsis wixl msitools osslsigncode openjdk-17-jre-headless
       - run: node scripts/signing/sign.mjs check
-      # The only step that sees signing credentials: the tools-signing client secret, or, with no
-      # secret configured, the job's GitHub OIDC token through an Entra federated credential. The
+      # One of two steps that get the tools-signing client secret (the other is "Sign the MSI";
+      # both run only signing code). With no secret configured, signing uses the job's GitHub
+      # OIDC token through an Entra federated credential; that request token is available to
+      # the whole job because of id-token: write. The
       # tenant and client IDs are identifiers, read from environment variables or secrets alike.
       - name: Sign the app, build and sign the installer
         env:

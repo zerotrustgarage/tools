@@ -50,7 +50,7 @@ it on a real Windows runner (`windows-install` in `ci.yml`).
 | Job | Sees | Does |
 | --- | --- | --- |
 | build | nothing secret | Compiles all third-party code (npm, cargo), runs the tests, cross-compiles the Windows exe (`scripts/ci/build-windows.sh`), writes the notices file and the SHA-256 digests |
-| sign (environment `tools-signing`) | the signing identity, in one step | Checks the digests, signs the exe, runs makensis, which signs the uninstaller (`!uninstfinalize`) and the installer (`!finalize`) through `sign-file.sh`, then verifies everything again with no credential in scope |
+| sign (environment `tools-signing`) | the signing identity: the client secret in two steps that run only signing code (makensis with `sign-file.sh`, and `sign.mjs` for the MSI); with OIDC, the request token is available job-wide (`id-token: write`) | Checks the digests, signs the exe, runs makensis, which signs the uninstaller (`!uninstfinalize`) and the installer (`!finalize`) through `sign-file.sh`, then verifies everything again with no credential in scope |
 | publish | `contents: write` | Attests build provenance and publishes the release `readout-v<version>` with `SHA256SUMS.txt` through the REST API (`scripts/ci/github-release.mjs`; `gh` may be absent on the pool) |
 
 The sign job also builds the Readout MSI (wixl, from the signed exe, in a step with no credential)
