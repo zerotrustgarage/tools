@@ -61,6 +61,11 @@ describe('outline extraction', () => {
     expect(flat('<b>Bold</b> title\n=====')).toEqual(['1:0:Bold title']);
   });
 
+  it('keeps an autolink as heading text instead of stripping it as a tag', () => {
+    expect(plainHeadingText('See <https://x.y/z> now')).toBe('See https://x.y/z now');
+    expect(flat('<https://x.y>\n---')).toEqual(['2:0:https://x.y']);
+  });
+
   it('skips an empty ATX heading such as "## ##"', () => {
     expect(flat('## ##\n# \n#\n### Real ###')).toEqual(['3:3:Real']);
   });

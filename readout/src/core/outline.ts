@@ -34,6 +34,7 @@ export function plainHeadingText(source: string): string {
     .replace(/\[\[([^\]|#]*)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]/g, (_m, target: string, label?: string) => label || target)
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/\[([^\]]*)\]\[[^\]]*\]/g, '$1')
+    .replace(/<([A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*)>/g, '$1')
     .replace(/<\/?[A-Za-z][^>]*>/g, '')
     .replace(/(`+)([^`]+?)\1/g, '$2')
     .replace(/(\*\*|__|~~|\*|(?<![\p{L}\p{N}])_|_(?![\p{L}\p{N}]))/gu, '')

@@ -280,15 +280,22 @@ describe('search in the app', () => {
     expect(s.sliceDoc(s.selection.main.from, s.selection.main.to)).toBe('needle');
   });
 
-  it('still searches the open file from the buffer after the listing object is replaced by a refresh', async () => {
-    const { app, host, view, reads, search } = await started();
+  it('reads the open file from the buffer when a refresh swaps the listing while a read is pending', async () => {
+    const { app, view, reads } = await started();
     view().dispatch({ changes: { from: view().state.doc.length, insert: 'buffer needle\n' } });
-    // READOUT-02's refresh swaps in a new listing object that keeps the same folder.
-    const internals = app as unknown as { listing: Listing };
+    const internals = app as unknown as { listing: Listing; searchScope(): SearchScope };
+    // The search has its scope (and so the old listing object) ...
+    const scope = internals.searchScope();
+    const gate = deferred<void>();
+    const pending = gate.promise.then(() => scope.read('README.md'));
+    // ... then READOUT-03's refresh swaps in a new listing object with the same folder, and only
+    // afterwards does the read run.
     internals.listing = { ...internals.listing, files: [...internals.listing.files] };
-    await search('needle');
+    gate.resolve();
+    const text = await pending;
+    expect(typeof text).toBe('string');
+    expect(text as string).toContain('buffer needle');
     expect(reads).not.toContain('README.md');
-    expect([...host.querySelectorAll('.search-file-name')].map((h) => h.firstChild!.textContent)).toContain('README.md');
   });
 
   it('is cleared and disabled when the folder is closed', async () => {
