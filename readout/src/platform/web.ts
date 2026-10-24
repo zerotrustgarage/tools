@@ -194,6 +194,12 @@ export const webPlatform: Platform = {
     return { folder: { name, entries }, files, truncated: false };
   },
 
+  // Only a directory handle can be walked again; a folder upload is a fixed snapshot.
+  async relist(listing) {
+    const handle = listing.folder.handle;
+    return handle ? { folder: listing.folder, ...(await walk(handle)) } : null;
+  },
+
   async readFolderFile(listing, folderPath) {
     const { file, handle } = await folderFile(listing, folderPath);
     return { ref: { name: file.name, handle, folderPath }, bytes: new Uint8Array(await file.arrayBuffer()) };

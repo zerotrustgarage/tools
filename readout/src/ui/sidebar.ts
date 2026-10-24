@@ -33,6 +33,16 @@ export class Sidebar {
     this.render();
   }
 
+  /** Swaps in a refreshed listing, keeping the filter text and the folders the reader opened. */
+  update(listing: Listing): void {
+    const open = new Set<string>();
+    for (const d of this.tree.querySelectorAll('details[open] > summary')) open.add((d as HTMLElement).title);
+    this.listing = listing;
+    this.render();
+    for (const s of this.tree.querySelectorAll<HTMLElement>('details > summary'))
+      if (open.has(s.title)) (s.parentElement as HTMLDetailsElement).open = true;
+  }
+
   select(folderPath: string | undefined): void {
     this.current = folderPath;
     for (const node of this.tree.querySelectorAll<HTMLElement>('[data-path]')) {

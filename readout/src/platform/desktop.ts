@@ -100,6 +100,11 @@ export const desktopPlatform: Platform = {
     return root ? list(root) : null;
   },
 
+  // list_folder accepts only a root the user granted, so polling cannot leave the folder.
+  async relist(listing) {
+    return listing.folder.root ? list(listing.folder.root) : null;
+  },
+
   async readFolderFile(listing, folderPath) {
     const root = listing.folder.root!;
     return read(inRoot(root, folderPath), root);
