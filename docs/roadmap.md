@@ -50,7 +50,7 @@ These actions were completed by the repository owner. New release workflows stil
 | --- | --- | --- |
 | RD1 | Done by the owner (O7): interactive checks on real Windows by a person (title bar dragging and shadow, drag and drop from Explorer, the folder context menu, both themes). Installing, launching and opening a file run in CI (R8) | High |
 | RD2 | **Done**: signed Readout `v0.1.0` published October 22, 2026, with the setup EXE, checksums and notices. It uses the shared Azure Artifact Signing identity | High |
-| RD3 | The MSI is not in the release workflow and is not signed. Native Windows CI installs, launches, opens a file and uninstalls it; Intune and Group Policy deployment remain unverified | High |
+| RD3 | Source ready, not released: `release-readout.yml` now builds the MSI from the signed exe, signs it through `scripts/signing/sign.mjs`, verifies it on Windows and attaches it with checksums and provenance. PR CI dry-runs the asset set unsigned and tests MSI install, repair, upgrade, refused downgrade, launch and uninstall (`docs/release-readiness-readout.md`). No signed Readout MSI exists until the owner runs the protected release; Intune and Group Policy deployment remain unverified | High |
 | RD4 | THIRD-PARTY-NOTICES.txt now carries a license text for every package: six Rust crates publish no license file, so `scripts/notices.mjs` uses the standard SPDX text of their license (`scripts/licenses/`), and a package with neither fails the build instead of warning | **Done** |
 | RD5 | Browser-driven checks (drag and drop, dividers, folder mode, title bar) ran as one-off scripts. Commit them as a `uitest/` suite in CI, as Scanner has | Medium |
 

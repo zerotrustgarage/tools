@@ -50,8 +50,16 @@ it on a real Windows runner (`windows-install` in `ci.yml`).
 | Job | Sees | Does |
 | --- | --- | --- |
 | build | nothing secret | Compiles all third-party code (npm, cargo), runs the tests, cross-compiles the Windows exe (`scripts/ci/build-windows.sh`), writes the notices file and the SHA-256 digests |
-| sign (environment `tools-signing`) | the signing identity, in one step | Checks the digests, signs the exe, runs makensis, which signs the uninstaller (`!uninstfinalize`) and the installer (`!finalize`) through `sign-file.sh`, then verifies everything again with no credential in scope |
+| sign (environment `tools-signing`) | the signing identity: the client secret in two steps that run only signing code (makensis with `sign-file.sh`, and `sign.mjs` for the MSI); with OIDC, the request token is available job-wide (`id-token: write`) | Checks the digests, signs the exe, runs makensis, which signs the uninstaller (`!uninstfinalize`) and the installer (`!finalize`) through `sign-file.sh`, then verifies everything again with no credential in scope |
 | publish | `contents: write` | Attests build provenance and publishes the release `readout-v<version>` with `SHA256SUMS.txt` through the REST API (`scripts/ci/github-release.mjs`; `gh` may be absent on the pool) |
+
+The sign job also builds the Readout MSI (wixl, from the signed exe, in a step with no credential)
+and signs it with the same `sign.mjs sign`; a `windows-test` job then installs the signed MSI on
+a real Windows runner before `publish` may run. The release carries `ZTG-Readout-<version>-Setup.exe`,
+`ZTG-Readout-<version>-x64.msi`, `ztg-readout-<version>.exe`, the notices and `SHA256SUMS.txt`.
+`scripts/release/readout-release.mjs` checks version, tag and MSI identity metadata and the exact
+asset set, and pull requests dry-run it with unsigned test packages; see
+[release-readiness-readout.md](release-readiness-readout.md).
 
 The split matters. A malicious dependency would run during build, which holds no signing
 identity. The sign job runs only this repository's scripts, official actions, and makensis,

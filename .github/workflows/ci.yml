@@ -90,7 +90,7 @@ jobs:
       - run: scripts/ci/check-pe.sh readout/src-tauri/target/x86_64-pc-windows-msvc/release/ztg-readout.exe gui amd64
       # The same installers the release builds, unsigned, for the Windows job below. They are staged
       # in out/, not a dot directory: upload-artifact skips hidden paths.
-      - run: scripts/ci/apt-install.sh nsis wixl msitools
+      - run: scripts/ci/apt-install.sh nsis wixl msitools osslsigncode
       - name: Unsigned installers
         run: |
           set -eu
@@ -105,6 +105,61 @@ jobs:
         with:
           name: readout-windows-unsigned
           path: out/
+          if-no-files-found: error
+          retention-days: 3
+      # Release dry run: the release workflow's own asset naming, checksum and set checks
+      # (scripts/release/readout-release.mjs) over UNSIGNED test packages built at the real
+      # package version. No secret, no signing, nothing published. Its manifest is the list of
+      # names and checksums the release must produce; the signed bytes will differ.
+      - name: Release dry run (unsigned test packages, no secrets)
+        run: |
+          set -eu
+          version=$(node scripts/release/readout-release.mjs check --print-version)
+          exe=readout/src-tauri/target/x86_64-pc-windows-msvc/release/ztg-readout.exe
+          mkdir -p dryrun/staging
+          makensis -V2 "-DVERSION=$version" "-DAPP_EXE=$PWD/$exe" "-DNOTICES=$PWD/out/THIRD-PARTY-NOTICES.txt" \
+            "-DOUTFILE=$PWD/dryrun/staging/ZTG-Readout-$version-Setup.exe" readout/installer/ztg-readout.nsi
+          readout/installer/build-msi.sh "$exe" out/THIRD-PARTY-NOTICES.txt "$version" "dryrun/staging/ZTG-Readout-$version-x64.msi"
+          node scripts/release/readout-release.mjs assemble --version "$version" --exe "$exe" \
+            --notices out/THIRD-PARTY-NOTICES.txt --setup "dryrun/staging/ZTG-Readout-$version-Setup.exe" \
+            --msi "dryrun/staging/ZTG-Readout-$version-x64.msi" --out dryrun/dist
+          rm -r dryrun/staging
+          # The production verifier must refuse every unsigned binary in the set. Its tools and
+          # pinned trust must work first, or a refusal would prove nothing.
+          command -v osslsigncode >/dev/null
+          node scripts/signing/sign.mjs check
+          for f in dryrun/dist/*.exe dryrun/dist/*.msi; do
+            if node scripts/signing/sign.mjs verify "$f" >/dev/null 2>&1; then echo "unsigned $f passed production verification"; exit 1; fi
+          done
+          printf 'UNSIGNED DRY RUN. These are CI test packages: not signed, not published, not for distribution.\nThe production release signs exe, Setup.exe and MSI through scripts/signing and replaces these checksums.\n' > dryrun/DRY-RUN-UNSIGNED.txt
+          node scripts/release/readout-release.mjs dry-run-manifest dryrun/dist "$version" > dryrun/asset-manifest.json
+          { echo '### Readout release dry run (UNSIGNED test packages)'; echo '```'; cat dryrun/asset-manifest.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          cat dryrun/asset-manifest.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: readout-release-dryrun-UNSIGNED
+          path: dryrun/
+          if-no-files-found: error
+          retention-days: 7
+      # Upgrade lifecycle fixtures. No Readout MSI has been released, so the prior build is
+      # synthetic: an UNVERSIONED stand-in file packaged as 0.0.1, upgraded to the real
+      # (versioned) exe packaged as 0.0.2. A copy of the real exe with bytes appended would
+      # carry the same PE file version, and Windows Installer then keeps the old file, which
+      # the old product's removal deletes (PR run 40065420159); a real release always has a
+      # higher file version because Tauri stamps it from package.json.
+      - name: Unsigned MSI lifecycle fixtures
+        run: |
+          set -eu
+          exe=readout/src-tauri/target/x86_64-pc-windows-msvc/release/ztg-readout.exe
+          mkdir -p lifecycle
+          cp "$exe" lifecycle/UNSIGNED-TEST-ztg-readout.exe
+          printf 'MZ ZTG CI PRIOR BUILD FIXTURE, not a real executable' > "$RUNNER_TEMP/prior.exe"
+          readout/installer/build-msi.sh "$RUNNER_TEMP/prior.exe" out/THIRD-PARTY-NOTICES.txt 0.0.1 lifecycle/UNSIGNED-TEST-ZTG-Readout-0.0.1-x64.msi
+          readout/installer/build-msi.sh "$exe" out/THIRD-PARTY-NOTICES.txt 0.0.2 lifecycle/UNSIGNED-TEST-ZTG-Readout-0.0.2-x64.msi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: readout-msi-lifecycle-unsigned
+          path: lifecycle/
           if-no-files-found: error
           retention-days: 3
 
@@ -132,6 +187,34 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  windows-msi-lifecycle:
+    name: Readout MSI on real Windows (install, repair, upgrade, downgrade refusal, launch, uninstall; unsigned test packages)
+    needs: windows
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: readout-msi-lifecycle-unsigned
+          path: lifecycle
+      - name: MSI lifecycle (UNSIGNED TEST PACKAGES)
+        shell: pwsh
+        run: >-
+          ./scripts/release/test-readout-msi.ps1
+          -ExeVersion (Get-Content readout/package.json -Raw | ConvertFrom-Json).version
+          -Msi lifecycle/UNSIGNED-TEST-ZTG-Readout-0.0.2-x64.msi -Version 0.0.2
+          -PriorMsi lifecycle/UNSIGNED-TEST-ZTG-Readout-0.0.1-x64.msi -PriorVersion 0.0.1
+          -ExpectedExe lifecycle/UNSIGNED-TEST-ztg-readout.exe
+          -Sample readout/test/corpus/ai-report.md -LogDir msi-logs
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: readout-msi-lifecycle-logs
+          path: msi-logs/
+          if-no-files-found: ignore
+          retention-days: 7
+
   palette:
     name: ZTG palette (every tool matches design-tokens.json)
     runs-on: ubuntu-24.04
@@ -153,7 +236,11 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
-      - run: scripts/ci/apt-install.sh nsis osslsigncode
+      - run: scripts/ci/apt-install.sh nsis wixl msitools osslsigncode
       - run: node scripts/signing/sign.mjs check
+      # Release metadata (versions, MSI identity, UpgradeCode, update contract) and the asset set
+      # logic the release workflow uses; the MSI packaging and signing test runs here too.
+      - run: node scripts/release/readout-release.mjs check
+      - run: node --test scripts/release/readout-release.test.mjs
       # A throwaway test CA stands in for Azure; no credential is involved.
       - run: npm run test:signing
