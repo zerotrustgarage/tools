@@ -57,6 +57,9 @@ func TestPreviewCopyConvergenceAndRecord(t *testing.T) {
 	if err := json.Unmarshal(data, &saved); err != nil || saved.State != "copied" || len(saved.Phases) != 5 {
 		t.Fatalf("record: %s, %v", data, err)
 	}
+	if saved.Probe == nil || saved.Probe.FileVersion.Value == "" || saved.Probe.Signature.Source == "" || len(saved.Probe.Privileges.Items) != 3 || saved.Probe.Elevation.Elevated == nil {
+		t.Fatalf("probe metadata missing from record: %+v", saved.Probe)
+	}
 	for _, p := range saved.Phases {
 		if !p.Process.InJob || p.Process.Canceled {
 			t.Fatalf("uncontained phase: %+v", p)

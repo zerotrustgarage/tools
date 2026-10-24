@@ -119,8 +119,10 @@ Records are retained until manually deleted under
 Use `--report DIRECTORY` before the job filename to select another record root. It must be
 outside both copy trees, including after resolving existing path aliases. The run folder holds:
 
-- `run.json`: job, engine path/hash, technician/host, guard facts, exact phase arguments, native
-  exits, summary totals, log hashes, timings, cancellation and normalized outcome.
+- `run.json`: job, engine path/hash, engine probe (file version,
+  elevation, backup/restore/security privilege state, signature decision, each with its source or
+  the reason it is unavailable), technician/host, guard facts, exact phase arguments, native exits,
+  summary totals, log hashes, timings, cancellation and normalized outcome.
 - `events.jsonl`: phase transitions.
 - Per-phase raw stdout/stderr and native Unicode logs for preview, copy and convergence.
 
