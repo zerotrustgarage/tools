@@ -19,14 +19,18 @@ The shared standalone checker also supports all four products, including Copy's 
 
 ```sh
 go run ./cmd/ztg-update -tool copy -current dev -json
-go run ./cmd/ztg-update -tool readout -current 0.1.0
+go run ./cmd/ztg-update -tool readout -current 0.2.0
 ```
 
 No check runs at startup, on a schedule, during scans or during transfers. Closing a dialog
 cancels its check. Offline checks show an error and allow retry; they do not report “up to date.”
 Manual checks work in managed environments without an updater service or administrator rights.
 An installed MSI can be upgraded with the newer signed MSI; a portable user replaces their
-extracted copy after closing the old app. The check never overwrites an open application.
+extracted copy after closing the old app. Readout's NSIS installer and MSI use the same install
+paths and registrations, and they do not detect or convert each other's installs. Before moving
+an NSIS-installed machine to MSI, uninstall Readout with the NSIS uninstaller first, or deploy the
+MSI to a clean machine. Do not expect the MSI to convert an NSIS install automatically. The check
+never overwrites an open application.
 
 ## Release selection and support contract
 
