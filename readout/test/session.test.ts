@@ -13,7 +13,9 @@ const inFolder = (folderPath: string): OpenedFile => ({
 });
 const lone: OpenedFile = { ref: { name: 'notes.md', path: '/elsewhere/notes.md' }, bytes: encode('# notes\n') };
 
-function fakePlatform(initial: Arrival | null) {
+type PlatformOverrides = Partial<Pick<Platform, 'readFolderFile' | 'relist'>>;
+
+function fakePlatform(initial: Arrival | null, overrides: PlatformOverrides = {}) {
   const remembered: [Listing | null, FileRef | null][] = [];
   const platform: Platform = {
     kind: 'desktop',
@@ -32,6 +34,7 @@ function fakePlatform(initial: Arrival | null) {
     onDrop: () => undefined,
     onCloseRequested: () => undefined,
     setTitle: () => undefined,
+    ...overrides,
   };
   return { platform, remembered };
 }
@@ -43,10 +46,12 @@ interface Actions {
   newDocument(): Promise<void>;
   closeFolder(): Promise<void>;
   save(as: boolean): Promise<boolean>;
+  openFolderPath(folderPath: string, fragment: string | null, remember: boolean): Promise<boolean>;
+  watcher: { tick(force?: boolean): Promise<void> };
 }
 
-async function started(initial: Arrival | null) {
-  const { platform, remembered } = fakePlatform(initial);
+async function started(initial: Arrival | null, overrides?: PlatformOverrides) {
+  const { platform, remembered } = fakePlatform(initial, overrides);
   const host = document.createElement('div');
   document.body.replaceChildren(host);
   const app = new App(platform);
@@ -56,6 +61,17 @@ async function started(initial: Arrival | null) {
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 const title = (host: HTMLElement) => host.querySelector('.doc-title')!.textContent;
+const banner = (host: HTMLElement) => host.querySelector<HTMLElement>('.banner')!;
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 // What jsdom lacks and the app calls while laying out.
 beforeAll(() => {
@@ -120,5 +136,65 @@ describe('the stored session', () => {
     expect(open).toHaveBeenCalledOnce();
     expect(title(host)).toBe('notes.md');
     expect(remembered.at(-1)).toEqual([null, lone.ref]);
+  });
+});
+
+describe('following renamed files', () => {
+  it('does not show a stale error if the renamed-file read fails after another document opens', async () => {
+    const failure = deferred<OpenedFile>();
+    const readStarted = deferred<void>();
+    const renamed = { ...inFolder('docs/renamed.md'), bytes: inFolder('docs/setup.md').bytes };
+    let renamedReads = 0;
+    const { host, act } = await started({ listing, file: inFolder('docs/setup.md') }, {
+      relist: async () => ({ ...listing, files: ['README.md', 'docs/renamed.md'], truncated: false }),
+      readFolderFile: async (_listing, path) => {
+        if (path === 'docs/renamed.md') {
+          renamedReads++;
+          if (renamedReads === 1) return renamed;
+          readStarted.resolve();
+          return failure.promise;
+        }
+        return inFolder(path);
+      },
+    });
+
+    const tick = act.watcher.tick(true);
+    await readStarted.promise;
+    expect(title(host)).toBe('docs/setup.md');
+
+    expect(await act.openFolderPath('README.md', null, true)).toBe(true);
+    expect(title(host)).toBe('README.md');
+    failure.reject(new Error('the renamed file could not be read'));
+    await tick;
+
+    expect(banner(host).hidden).toBe(true);
+    expect(banner(host).textContent).not.toContain('renamed.md');
+  });
+
+  it('shows a failed-follow notice when the rename read fails for the current document', async () => {
+    const failure = deferred<OpenedFile>();
+    const readStarted = deferred<void>();
+    let renamedReads = 0;
+    const { host, act } = await started({ listing, file: inFolder('docs/setup.md') }, {
+      relist: async () => ({ ...listing, files: ['README.md', 'docs/renamed.md'], truncated: false }),
+      readFolderFile: async (_listing, path) => {
+        if (path === 'docs/renamed.md') {
+          renamedReads++;
+          if (renamedReads === 1) return { ...inFolder(path), bytes: inFolder('docs/setup.md').bytes };
+          readStarted.resolve();
+          return failure.promise;
+        }
+        return inFolder(path);
+      },
+    });
+
+    const tick = act.watcher.tick(true);
+    await readStarted.promise;
+    failure.reject(new Error('the renamed file could not be read'));
+    await tick;
+
+    expect(banner(host).hidden).toBe(false);
+    expect(banner(host).textContent).toContain('renamed.md');
+    expect(banner(host).textContent).toContain('could not be followed');
   });
 });

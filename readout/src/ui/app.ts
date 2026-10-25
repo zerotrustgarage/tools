@@ -487,6 +487,8 @@ export class App {
           this.rememberSession();
           this.notify(`The file was renamed to ${path} on disk. It stays open here.`);
         } catch {
+          // A failed read is still stale if the reader has since opened another document.
+          if (!stillCurrent() || this.doc !== before || this.listing !== listing) return;
           this.notify(`The file was renamed to ${path} on disk, but it could not be followed.`);
         }
       },
