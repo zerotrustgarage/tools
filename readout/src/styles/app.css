@@ -397,6 +397,17 @@ body.resizing .pane, body.resizing .sidebar { pointer-events: none; }
 .modal::backdrop { background: rgba(2, 12, 27, 0.55); }
 .modal h2 { margin: 0 0 8px; font-size: 16px; color: var(--bright); }
 .modal p { margin: 0 0 18px; }
+.modal p.linked-file { margin: 0 0 10px; }
+.modal .linked-file code {
+  display: block;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--bright);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .modal .primary { background: var(--acc); color: var(--acc-ink); padding: 0 14px; height: 30px; font-weight: 600; }
 
