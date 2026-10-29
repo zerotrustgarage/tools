@@ -105,3 +105,40 @@ func TestInspectUnsignedFileIsUnsigned(t *testing.T) {
 		t.Fatalf("version: %+v", m.FileVersion)
 	}
 }
+
+func TestObservedRunReportsMonotoneProcessIOAndKeepsTheResult(t *testing.T) {
+	e, err := Discover()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	if err := private.EnsureDir(root); err != nil {
+		t.Fatal(err)
+	}
+	src, dst := filepath.Join(root, "source"), filepath.Join(root, "destination")
+	for _, dir := range []string{src, dst} {
+		if err := os.Mkdir(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(src, "data.bin"), make([]byte, 1<<20), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var samples []IOCounters
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	r, err := e.RunObserved(ctx, []string{src, dst, "/E", "/R:0", "/W:0", "/XJ"}, filepath.Join(root, "copy.stdout"), filepath.Join(root, "copy.stderr"), Observer{IO: func(c IOCounters) { samples = append(samples, c) }})
+	if err != nil || !r.InJob || r.Canceled || r.NativeExit != 1 {
+		t.Fatalf("%+v, %v", r, err)
+	}
+	// The final sample after the process exits guarantees at least one reading, even for a short copy.
+	if len(samples) == 0 {
+		t.Fatal("the observer was never called")
+	}
+	for i := 1; i < len(samples); i++ {
+		if samples[i].ReadBytes < samples[i-1].ReadBytes || samples[i].WriteBytes < samples[i-1].WriteBytes {
+			t.Fatalf("counters went backwards at %d: %+v then %+v", i, samples[i-1], samples[i])
+		}
+	}
+	t.Logf("%d I/O samples; last: %+v", len(samples), samples[len(samples)-1])
+}

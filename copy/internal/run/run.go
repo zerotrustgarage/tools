@@ -17,6 +17,7 @@ import (
 	"github.com/zerotrustgarage/tools/copy/internal/engine"
 	"github.com/zerotrustgarage/tools/copy/internal/guard"
 	"github.com/zerotrustgarage/tools/copy/internal/job"
+	"github.com/zerotrustgarage/tools/copy/internal/metrics"
 	"github.com/zerotrustgarage/tools/copy/internal/parse"
 	"github.com/zerotrustgarage/tools/copy/internal/private"
 )
@@ -28,6 +29,9 @@ type Phase struct {
 	LogSHA256   string             `json:"log_sha256,omitempty"`
 	Error       string             `json:"error,omitempty"`
 	Diagnostics *parse.Diagnostics `json:"diagnostics,omitempty"`
+	// Metrics is absent from records written before it existed, and for phases
+	// that are not followed live (help and validate).
+	Metrics *metrics.Final `json:"metrics,omitempty"`
 }
 
 type Record struct {
@@ -59,7 +63,12 @@ func DefaultRecords() (string, error) {
 	return filepath.Join(dir, "ZTG", "Copy", "runs"), nil
 }
 
-func Execute(ctx context.Context, j job.Job, root, version string, copyData bool, progress io.Writer) (record Record, err error) {
+func Execute(ctx context.Context, j job.Job, root, version string, copyData bool, progress io.Writer) (Record, error) {
+	return ExecuteWith(ctx, j, root, version, copyData, progress, Options{})
+}
+
+// ExecuteWith is Execute with observation options.
+func ExecuteWith(ctx context.Context, j job.Job, root, version string, copyData bool, progress io.Writer, opts Options) (record Record, err error) {
 	record = Record{Schema: 1, Version: version, Job: j, Started: time.Now().UTC(), State: "error", NormalizedExit: 3, Phases: []Phase{}, Mode: "plan"}
 	if copyData {
 		record.Mode = "run"
@@ -128,7 +137,7 @@ func Execute(ctx context.Context, j job.Job, root, version string, copyData bool
 		}
 		return events.Sync()
 	}
-	raw := func(name string, args []string) (engine.Result, error) {
+	raw := func(name string, args []string, obs engine.Observer) (engine.Result, error) {
 		if observer, ok := progress.(interface{ PhaseStarted(string) }); ok {
 			observer.PhaseStarted(name)
 		}
@@ -136,7 +145,7 @@ func Execute(ctx context.Context, j job.Job, root, version string, copyData bool
 		if err := emit(name, "started"); err != nil {
 			return engine.Result{}, err
 		}
-		result, launchErr := record.Engine.Run(ctx, args, filepath.Join(record.Directory, name+".stdout.bin"), filepath.Join(record.Directory, name+".stderr.bin"))
+		result, launchErr := record.Engine.RunObserved(ctx, args, filepath.Join(record.Directory, name+".stdout.bin"), filepath.Join(record.Directory, name+".stderr.bin"), obs)
 		eventErr := emit(name, "finished")
 		return result, errors.Join(launchErr, eventErr)
 	}
@@ -162,7 +171,7 @@ func Execute(ctx context.Context, j job.Job, root, version string, copyData bool
 			return record, fmt.Errorf("installed Robocopy does not advertise %s", job.Key(arg))
 		}
 	}
-	validated, err := raw("validate", append(j.Arguments(), "/QUIT"))
+	validated, err := raw("validate", append(j.Arguments(), "/QUIT"), engine.Observer{})
 	record.Phases = append(record.Phases, Phase{Name: "validate", Process: validated})
 	if err != nil {
 		return record, err
@@ -171,7 +180,7 @@ func Execute(ctx context.Context, j job.Job, root, version string, copyData bool
 		record.State, record.NormalizedExit = "invalid", parse.Exit(validated.NativeExit)
 		return record, nil
 	}
-	var plannedBytes uint64
+	var plannedBytes, plannedFiles uint64
 	phase := func(name string, list bool) (Phase, error) {
 		p := Phase{Name: name}
 		newFacts, err := guard.InspectContext(ctx, j, root)
@@ -197,15 +206,37 @@ func Execute(ctx context.Context, j job.Job, root, version string, copyData bool
 			}
 			jobArgs = serial
 		}
-		args := append(jobArgs, "/BYTES", "/FP", "/X", "/TEE", "/UNILOG:"+filepath.Join(record.Directory, name+".log"))
+		logPath := filepath.Join(record.Directory, name+".log")
+		args := append(jobArgs, "/BYTES", "/FP", "/X", "/TEE", "/UNILOG:"+logPath)
 		if list {
 			args = append(args, "/L")
 		}
-		p.Process, err = raw(name, args)
+		var planned *metrics.Planned
+		if name == "copy" {
+			planned = &metrics.Planned{Files: plannedFiles, Bytes: plannedBytes}
+		}
+		cfg := metrics.ConfigFor(j, name, list, planned)
+		cfg.Clock = opts.Clock
+		// The convergence pass runs without /MT; its configuration reads the job's options.
+		cfg.Concurrent = cfg.Concurrent && name != "convergence"
+		live := newMonitor(cfg, logPath, func(s metrics.Snapshot) {
+			if observer, ok := progress.(metricsObserver); ok {
+				observer.MetricsUpdated(name, s)
+			}
+		})
+		live.start(opts.PollEvery)
+		p.Process, err = raw(name, args, engine.Observer{IO: live.io})
 		launchErr := err
-		summary, hash, diagnostics, readErr := readNative(filepath.Join(record.Directory, name+".log"))
+		summary, hash, diagnostics, readErr := readNative(logPath)
 		p.LogSHA256, p.Diagnostics = hash, &diagnostics
 		err = errors.Join(launchErr, readErr)
+		var final metrics.Final
+		if err != nil {
+			final = live.finish(nil)
+		} else {
+			final = live.finish(&summary)
+		}
+		p.Metrics = &final
 		if err != nil {
 			p.Error = err.Error()
 			return p, err
@@ -236,7 +267,7 @@ func Execute(ctx context.Context, j job.Job, root, version string, copyData bool
 	if preview.Summary == nil || preview.Summary.Bytes.Copied > facts.FreeBytes {
 		return record, errors.New("insufficient available destination space for the preview byte total")
 	}
-	plannedBytes = preview.Summary.Bytes.Copied
+	plannedBytes, plannedFiles = preview.Summary.Bytes.Copied, preview.Summary.Files.Copied
 	copied, err := phase("copy", false)
 	record.Phases = append(record.Phases, copied)
 	if err != nil {

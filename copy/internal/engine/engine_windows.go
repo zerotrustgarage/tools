@@ -26,7 +26,7 @@ func systemEngine() (string, error) {
 	return filepath.Join(windows.UTF16ToString(buf[:n]), "Robocopy.exe"), nil
 }
 
-func launch(ctx context.Context, executable string, args []string, stdout, stderr string) (result Result, err error) {
+func launch(ctx context.Context, executable string, args []string, stdout, stderr string, obs Observer) (result Result, err error) {
 	result.Arguments = append([]string(nil), args...)
 	result.Started = time.Now().UTC()
 	defer func() { result.ElapsedMS = time.Since(result.Started).Milliseconds() }()
@@ -116,11 +116,22 @@ func launch(ctx context.Context, executable string, args []string, stdout, stder
 	if _, err := windows.ResumeThread(pi.Thread); err != nil {
 		return result, err
 	}
+	var lastSample time.Time
+	sample := func(force bool) {
+		if obs.IO == nil || !force && time.Since(lastSample) < SampleInterval {
+			return
+		}
+		lastSample = time.Now()
+		if counters, ok := processIO(pi.Process); ok {
+			obs.IO(counters)
+		}
+	}
 	for {
 		state, waitErr := windows.WaitForSingleObject(pi.Process, 100)
 		if waitErr != nil {
 			return result, waitErr
 		}
+		sample(false)
 		if ctx.Err() != nil {
 			result.Canceled = true
 			// Closing the non-inherited job handle kills every contained process.
@@ -135,6 +146,7 @@ func launch(ctx context.Context, executable string, args []string, stdout, stder
 			return result, ctx.Err()
 		}
 		if state == windows.WAIT_OBJECT_0 {
+			sample(true)
 			if err := windows.GetExitCodeProcess(pi.Process, &result.NativeExit); err != nil {
 				return result, err
 			}
@@ -144,4 +156,20 @@ func launch(ctx context.Context, executable string, args []string, stdout, stder
 			return result, errors.New("unexpected Robocopy wait status")
 		}
 	}
+}
+
+var getProcessIoCounters = kernel.NewProc("GetProcessIoCounters")
+
+// processIO reads the I/O counters of a process handle opened by CreateProcess,
+// which carries PROCESS_QUERY_INFORMATION and stays valid after the process exits.
+func processIO(process windows.Handle) (IOCounters, bool) {
+	var c windows.IO_COUNTERS
+	ok, _, _ := getProcessIoCounters.Call(uintptr(process), uintptr(unsafe.Pointer(&c)))
+	if ok == 0 {
+		return IOCounters{}, false
+	}
+	return IOCounters{
+		ReadOperations: c.ReadOperationCount, WriteOperations: c.WriteOperationCount, OtherOperations: c.OtherOperationCount,
+		ReadBytes: c.ReadTransferCount, WriteBytes: c.WriteTransferCount, OtherBytes: c.OtherTransferCount,
+	}, true
 }
