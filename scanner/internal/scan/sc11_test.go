@@ -25,6 +25,17 @@ var fakeLocals = func() []localIface {
 	return []localIface{{addr: netip.MustParseAddr("192.0.2.1"), prefix: netip.MustParsePrefix("127.0.0.0/8")}}
 }
 
+// loopbackPinger answers every echo, so 127.0.0.1 is alive on runners that
+// refuse unprivileged ICMP (the fake interface list makes loopback "on-link"
+// rather than this computer, so it needs liveness evidence of its own).
+type loopbackPinger struct{}
+
+func (loopbackPinger) Ping(context.Context, netip.Addr, time.Duration) (probe.EchoReply, error) {
+	return probe.EchoReply{RTT: time.Millisecond, TTL: 64}, nil
+}
+func (loopbackPinger) Method() string { return "icmp-fake" }
+func (loopbackPinger) Close() error   { return nil }
+
 type sc11Fakes struct {
 	wsdCalls, llmnrCalls, smbCalls, faviconCalls atomic.Int32
 	hooks                                        hooks
@@ -50,6 +61,7 @@ func newFakes(t *testing.T) *sc11Fakes {
 			return &probe.SMBInfo{Dialect: "2.1", SigningEnabled: true}, nil
 		},
 		favicon: probe.FetchFavicon,
+		pinger:  func() (probe.Pinger, error) { return loopbackPinger{}, nil },
 	}
 	return f
 }

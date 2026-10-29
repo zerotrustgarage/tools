@@ -155,6 +155,9 @@ type hooks struct {
 	smb     func(ctx context.Context, addr netip.Addr, timeout time.Duration) (*probe.SMBInfo, error)
 	favicon func(ctx context.Context, addr netip.Addr, port int, useTLS bool, timeout time.Duration) (*probe.FaviconInfo, error)
 	locals  func() []localIface
+	// pinger opens the ICMP pinger; nil means probe.NewPinger. Tests set it so
+	// liveness does not depend on whether the runner allows unprivileged ICMP.
+	pinger func() (probe.Pinger, error)
 }
 
 func defaultHooks() hooks {
@@ -195,7 +198,11 @@ func run(ctx context.Context, cfg Config, obs Observer, hk hooks) Summary {
 	sum := Summary{Started: cfg.Now(), Total: len(cfg.Targets), Mode: cfg.Mode}
 	e := &engine{hk: hk, cfg: cfg, obs: obs, ssdpDone: make(chan struct{}), wsdDone: make(chan struct{})}
 
-	if p, err := probe.NewPinger(); err == nil {
+	newPinger := probe.NewPinger
+	if hk.pinger != nil {
+		newPinger = hk.pinger
+	}
+	if p, err := newPinger(); err == nil {
 		e.pinger = p
 		defer p.Close()
 		sum.Methods = append(sum.Methods, p.Method())
