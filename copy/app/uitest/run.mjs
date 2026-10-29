@@ -62,6 +62,20 @@ try{
     assert.equal(await page.textContent('#verification-badge'),'Passed');
     const starts=await page.evaluate(()=>window.__calls.filter(c=>c[0]==='Start'));
     assert.equal(starts.length,2);assert.equal(starts[0][2],false);assert.equal(starts[1][2],true);
+    console.log('UI_STAGE '+scheme+' final readings');
+    assert.equal(await page.locator('#live-metrics').isVisible(),true);
+    assert.equal(await page.textContent('#live-title'),'Copy · final readings');
+    assert.match(await page.textContent('#live-completed'),/12 files · 8 MiB/);
+    assert.match(await page.textContent('#live-completed-note'),/Robocopy's summary/);
+    assert.equal(await page.textContent('#live-rate-label'),'AVERAGE RATE');
+    assert.match(await page.textContent('#live-rate'),/89 KiB\/s/);
+    assert.match(await page.textContent('#live-rate-note'),/Peak 2 MiB\/s · 17 Mbit\/s in a 5 second window/);
+    assert.match(await page.textContent('#live-activity-note'),/Not completed bytes/);
+    assert.match(await page.textContent('#live-status-note'),/Stalled 1 time, 00:11 in total\. A stall is a status, not a failure\./);
+    assert.equal(await page.locator('#live-rows').isVisible(),false,'no percentage or ETA after the run');
+    assert.ok((await page.textContent('#live-limits')).includes('<img src=x'),'limit text is shown as text');
+    assert.equal(await page.locator('#live-metrics img').count(),0);
+    assert.equal(await page.evaluate(()=>window.__pwned),undefined);
     if(scheme==='dark')await screenshot(page,'copy-activity-dark.png');
     await page.click('#open-latest');
     await page.click('#back-design');
@@ -184,9 +198,76 @@ try{
     await page.click('#preview');await page.waitForSelector('#preview-actions:not([hidden])');
     await page.evaluate(()=>{window.__holdRun=true;});
     await page.click('#start-copy');await page.click('#modal-submit');
-    await page.waitForSelector('#stop:not([disabled])');await page.click('#stop');
+    await page.waitForSelector('#stop:not([disabled])');
+    console.log('UI_STAGE '+scheme+' live metrics');
+    const reading={phase:'copy',status:'active',elapsed_ms:70000,quiet_ms:2000,concurrent:true,list_only:false,
+      completed:{known:false,files:0,bytes:0,note:'With /MT Robocopy does not say when each file finishes. Completed totals appear when the phase ends.'},
+      seen:{files:40,bytes:41943040,dirs:3},current:{path:'C:\\src\\'+hostile+'.bin',size:1048576,announced:true},
+      rate:{window_seconds:5},
+      activity:{available:true,read_bytes:524288000,bytes_per_sec:7340032,average_bytes_per_sec:7000000,note:'Bytes Robocopy has read, from the process I/O counters. This is transfer activity, not completed bytes.'},
+      progress_note:'No percentage: finished files cannot be counted while this runs.',
+      eta_note:'ETA is not shown yet: it has not been measured within 15% on real copies that run longer than a minute.',error_lines:0};
+    await page.evaluate(r=>{window.__liveMetrics=r;},reading);
+    await page.waitForFunction(()=>document.getElementById('live-status').textContent==='Active');
+    assert.equal(await page.locator('#live-metrics').isVisible(),true);
+    assert.equal(await page.textContent('#live-title'),'Copy · live readings');
+    assert.equal(await page.textContent('#live-completed'),'Not known yet','/MT shows no completed total');
+    assert.match(await page.textContent('#live-completed-note'),/does not say when each file finishes/);
+    assert.equal(await page.textContent('#live-rate'),'n/a');
+    assert.equal(await page.textContent('#live-files-rate'),'n/a');
+    assert.equal(await page.textContent('#live-activity'),'7 MiB/s · 59 Mbit/s');
+    assert.match(await page.textContent('#live-activity-note'),/not completed bytes/);
+    assert.equal(await page.textContent('#live-current-label'),'LAST ANNOUNCED FILE');
+    assert.ok((await page.textContent('#live-current')).includes(hostile),'file name is shown as text');
+    assert.equal(await page.locator('#live-metrics img').count(),0);
+    assert.equal(await page.locator('#live-bar').isVisible(),false,'no percentage without finished-file counts');
+    assert.equal(await page.textContent('#live-progress'),'Not shown');
+    assert.equal(await page.textContent('#live-eta'),'Not shown');
+    assert.match(await page.textContent('#live-eta-note'),/not been measured within 15%/);
+    assert.equal(await page.locator('#live-status-note').isVisible(),false);
+    assert.equal(await page.locator('#activity-progress').isVisible(),true,'indeterminate bar while no percentage is allowed');
+    for(const id of ['live-completed','live-completed-note','live-rate','live-activity','live-current','live-progress','live-progress-note'])assert.doesNotMatch(await page.textContent('#'+id),/\d%/,'no percentage in #'+id+' under /MT');
+    assert.equal(await page.evaluate(()=>window.__pwned),undefined);
+    if(scheme==='dark')await screenshot(page,'copy-live-mt-dark.png');
+    console.log('UI_STAGE '+scheme+' stall and percentage');
+    const serial={...reading,status:'stalled',quiet_ms:64000,concurrent:false,
+      status_note:'No progress signal for 64 seconds. Robocopy may be waiting on a slow or disconnected share, a locked file or a scan. This is a status, not a failure.',
+      completed:{known:true,files:20,bytes:20971520},seen:{files:21,bytes:22020096,dirs:3},current:{path:'C:\\src\\big.bin',size:1073741824,announced:true,percent:41},
+      rate:{window_seconds:5,completed_bytes_per_sec:0,average_bytes_per_sec:299593,files_per_sec:0},
+      activity:{available:true,read_bytes:524288000,bytes_per_sec:0,note:'Bytes Robocopy has read.'},
+      progress:{planned_files:48,planned_bytes:50331648,bytes_percent:41.67,files_percent:41.67},
+      progress_note:'Share of the preview totals that finished. A file in progress is not counted.'};
+    await page.evaluate(r=>{window.__liveMetrics=r;},serial);
+    await page.waitForFunction(()=>document.getElementById('live-status').textContent==='Stalled');
+    assert.ok((await page.getAttribute('#live-status','class')).includes('warn'));
+    assert.equal(await page.locator('#live-status-note').isVisible(),true);
+    assert.match(await page.textContent('#live-status-note'),/not a failure/);
+    assert.doesNotMatch(await page.textContent('#live-metrics'),/failed/i);
+    assert.equal(await page.textContent('#live-completed'),'20 files · 20 MiB');
+    assert.match(await page.textContent('#live-completed-note'),/21 files announced\. An announcement does not mean a file finished\./);
+    assert.equal(await page.textContent('#live-rate'),'0 B/s · 0 Mbit/s');
+    assert.equal(await page.textContent('#live-current-label'),'CURRENT FILE');
+    assert.match(await page.textContent('#live-current'),/big\.bin.*41% of this file \(Robocopy's own marker\)/);
+    assert.equal(await page.locator('#live-bar').isVisible(),true);
+    assert.equal(await page.getAttribute('#live-bar','aria-valuenow'),'42');
+    assert.equal(await page.textContent('#live-progress'),'41.67% of bytes · 41.67% of files');
+    assert.equal(await page.locator('#activity-progress').isVisible(),false,'a real bar replaces the indeterminate one');
+    assert.equal(await page.textContent('#live-eta'),'Not shown');
+    if(scheme==='dark')await screenshot(page,'copy-live-stall-dark.png');
+    console.log('UI_STAGE '+scheme+' retry and eta');
+    await page.evaluate(r=>{window.__liveMetrics=r;},{...serial,status:'retrying',quiet_ms:0,status_note:'Robocopy reported an error and is waiting to retry. This is not a stall.',eta:{seconds:150,low_seconds:100,high_seconds:200,steady:false,basis:'Remaining bytes over the byte rate plus remaining files times the per-file time, fitted over the last minute.'}});
+    await page.waitForFunction(()=>document.getElementById('live-status').textContent==='Retrying');
+    assert.match(await page.textContent('#live-status-note'),/not a stall/);
+    assert.equal(await page.textContent('#live-eta'),'01:40 to 03:20');
+    await page.evaluate(r=>{window.__liveMetrics=r;},{...serial,status:'active',status_note:'',eta:{seconds:150,low_seconds:140,high_seconds:160,steady:true,basis:'x'}});
+    await page.waitForFunction(()=>document.getElementById('live-status').textContent==='Active');
+    assert.equal(await page.textContent('#live-eta'),'about 02:30');
+    assert.equal(await page.locator('#live-status-note').isVisible(),false);
+    await page.evaluate(()=>{window.__liveMetrics=undefined;});
+    await page.click('#stop');
     await page.waitForFunction(()=>document.getElementById('phase').textContent==='Operation stopped');
     assert.equal(await page.locator('#preview-actions').isVisible(),false);
+    assert.equal(await page.locator('#live-metrics').isVisible(),false,'a stopped run shows no readings');
     assert.equal(await page.locator('[data-phase="convergence"]').evaluate(node=>node.classList.contains('done')||node.classList.contains('active')),false);
     assert.equal(await page.textContent('#verification-badge'),'Incomplete');
     console.log('UI_STAGE '+scheme+' failure diagnostics');
@@ -268,7 +349,7 @@ try{
     assert.equal(requests,1);
     await page.click('#win-min');await page.click('#win-max');await page.click('#win-close');
     assert.deepEqual(errors,[]);
-    console.log('PASS '+scheme+': designer, option editing, preview, confirmed copy, stop, templates, RCJ import and export, history, safe text, BITS command design, error causes, run details, themes and explicit updates');
+    console.log('PASS '+scheme+': designer, option editing, preview, confirmed copy, live and final readings (stall, retry, no percentage under /MT), stop, templates, RCJ import and export, history, safe text, BITS command design, error causes, run details, themes and explicit updates');
     await page.close();
   }
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}

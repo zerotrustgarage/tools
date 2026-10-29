@@ -21,6 +21,7 @@ import (
 	"github.com/zerotrustgarage/tools/copy/internal/cmdline"
 	"github.com/zerotrustgarage/tools/copy/internal/guard"
 	"github.com/zerotrustgarage/tools/copy/internal/job"
+	"github.com/zerotrustgarage/tools/copy/internal/metrics"
 	"github.com/zerotrustgarage/tools/copy/internal/private"
 	copyrun "github.com/zerotrustgarage/tools/copy/internal/run"
 	"github.com/zerotrustgarage/tools/copy/internal/template"
@@ -67,8 +68,10 @@ type State struct {
 	Started  time.Time       `json:"started"`
 	Messages []string        `json:"messages"`
 	Phases   []copyrun.Phase `json:"phases"`
-	Record   *copyrun.Record `json:"record,omitempty"`
-	Error    string          `json:"error,omitempty"`
+	// Metrics is the latest live reading of the phase that is running (or ran last).
+	Metrics *metrics.Snapshot `json:"metrics,omitempty"`
+	Record  *copyrun.Record   `json:"record,omitempty"`
+	Error   string            `json:"error,omitempty"`
 }
 
 type CatalogEntry struct {
@@ -332,7 +335,23 @@ func (w *progressWriter) PhaseFinished(p copyrun.Phase) {
 	w.app.mu.Lock()
 	defer w.app.mu.Unlock()
 	if w.id == w.app.state.ID {
+		// The page polls twice a second; the full timeline is in the saved record.
+		if p.Metrics != nil {
+			light := *p.Metrics
+			light.Timeline = nil
+			p.Metrics = &light
+		}
 		w.app.state.Phases = append(w.app.state.Phases, p)
+	}
+}
+
+// MetricsUpdated keeps the latest live reading for the Activity view. It is called
+// from the run monitor's goroutine, about twice a second.
+func (w *progressWriter) MetricsUpdated(phase string, s metrics.Snapshot) {
+	w.app.mu.Lock()
+	defer w.app.mu.Unlock()
+	if w.id == w.app.state.ID {
+		w.app.state.Metrics = &s
 	}
 }
 
@@ -342,6 +361,10 @@ func (a *App) Status() State {
 	state := a.state
 	state.Messages = append([]string{}, state.Messages...)
 	state.Phases = append([]copyrun.Phase{}, state.Phases...)
+	if state.Metrics != nil {
+		reading := *state.Metrics
+		state.Metrics = &reading
+	}
 	// Completed records are immutable after publication.
 	return state
 }
