@@ -402,8 +402,8 @@ const scenarios = [
     await openFolder(page);
     await page.waitForSelector('.markdown-body h1');
     for (const folder of ['docs', 'docs/guide']) {
-      const summary = page.locator(`summary[title="${folder}"]`);
-      if (!(await summary.evaluate((n) => n.parentElement.open))) await summary.click();
+      const item = page.locator(`.tree-folder[data-path="${folder}"]`);
+      if ((await item.getAttribute('aria-expanded')) !== 'true') await item.locator('> .tree-row').click();
     }
     await page.locator('.tree-file[data-path="docs/guide/setup.md"]').click();
     await page.locator('.markdown-body h1', { hasText: 'Setup' }).waitFor();
