@@ -22,6 +22,9 @@
 //!   rules, judged by an allow-list of document types (programs and scripts are refused, never
 //!   run), shown to the reader in a confirmation, and only then opened in the operating system's
 //!   default application, with no arguments and no shell.
+//! - Pasting or dropping an image (`images.rs`, RD13) saves it in an `images` folder beside a
+//!   granted document, never through a link, never over a file, only PNG, JPEG, GIF or WebP whose
+//!   bytes match, up to 20 MiB. A dropped file is one Rust saw dropped on the window and is copied.
 //! - The session (the open folder and document, so the next start reopens them) is kept by Rust
 //!   in the app's local data folder. The WebView can only ask to remember paths that are already
 //!   granted, and a stored path is checked again (it must still exist and be a folder or a
@@ -32,6 +35,7 @@
 //!   API and restored onto a monitor that exists now. The WebView is given no window permission
 //!   for it and holds no say in it.
 
+mod images;
 mod linked;
 mod recent;
 mod window_state;
@@ -96,6 +100,9 @@ struct Granted {
     files: Mutex<HashSet<PathBuf>>,
     roots: Mutex<HashSet<PathBuf>>,
     initial: Mutex<Option<Initial>>,
+    /// Image files dropped on the window, the only ones `copy_dropped_image` may copy. Each drop
+    /// replaces the set, and a file leaves it when it is copied.
+    dropped_images: Mutex<HashSet<PathBuf>>,
     /// Held while the recent-files file is read and rewritten, so two quick opens cannot drop one.
     recent_lock: Mutex<()>,
 }
@@ -139,6 +146,25 @@ impl Granted {
             .filter(|root| path.starts_with(root))
             .max_by_key(|root| root.components().count())
             .cloned()
+    }
+
+    /// Remembers the image file of the latest drop (none clears the earlier one).
+    fn offer_dropped_image(&self, path: Option<&Path>) {
+        let mut set = self.dropped_images.lock().expect("allow-list lock");
+        set.clear();
+        if let Some(path) = path {
+            set.insert(path.to_path_buf());
+        }
+    }
+
+    /// Takes a dropped image off the list: the path must be one Rust saw dropped.
+    fn take_dropped_image(&self, path: &str) -> Result<PathBuf, String> {
+        let path = canonical(Path::new(path))?;
+        if self.dropped_images.lock().expect("allow-list lock").remove(&path) {
+            Ok(path)
+        } else {
+            Err("That image was not dropped on this window".into())
+        }
     }
 
     fn allows(&self, path: &Path) -> bool {
@@ -393,6 +419,27 @@ fn dropped_target(paths: &[PathBuf]) -> Result<(PathBuf, bool), String> {
         })
 }
 
+/// What a drop of image files names: the first image file, and its canonical path when it is a
+/// type that may be saved (PNG, JPEG, GIF, WebP; SVG and the rest are named but not offered).
+#[derive(Clone, Serialize, Debug, PartialEq)]
+struct DroppedImage {
+    name: String,
+    path: Option<String>,
+}
+
+fn dropped_image(paths: &[PathBuf]) -> Option<DroppedImage> {
+    let file = paths
+        .iter()
+        .find(|p| p.is_file() && has_extension(p, IMAGE_EXTENSIONS))?;
+    let name = file.file_name()?.to_string_lossy().into_owned();
+    let path = if has_extension(file, images::EXTENSIONS) {
+        fs::canonicalize(file).ok().map(|c| c.to_string_lossy().into_owned())
+    } else {
+        None
+    };
+    Some(DroppedImage { name, path })
+}
+
 fn startup_argument(args: impl Iterator<Item = String>) -> Option<(PathBuf, bool)> {
     args.map(PathBuf::from)
         .find(|p| p.is_dir() || (p.is_file() && has_extension(p, DOCUMENT_EXTENSIONS)))
@@ -585,6 +632,68 @@ async fn read_image(document: String, relative: String, granted: State<'_, Grant
         return Err("Not an image".into());
     }
     Ok(Response::new(read_limited(&path, MAX_IMAGE_BYTES)?))
+}
+
+#[derive(Serialize)]
+struct SavedImage {
+    name: String,
+    link: String,
+}
+
+fn now_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// The document an image is saved beside: granted, and a Markdown or text file.
+fn image_document(path: &str, granted: &Granted) -> Result<PathBuf, String> {
+    let document = granted.check(path)?;
+    if !has_extension(&document, DOCUMENT_EXTENSIONS) {
+        return Err("Images are saved only beside a Markdown or text document".into());
+    }
+    Ok(document)
+}
+
+/// Saves pasted image bytes in the `images` folder beside a granted document.
+#[tauri::command]
+async fn paste_image(request: Request<'_>, granted: State<'_, Granted>) -> Result<SavedImage, String> {
+    let document = image_document(&header(&request, "x-ztg-path")?, &granted)?;
+    let claimed = images::Kind::from_mime(&header(&request, "x-ztg-type")?)
+        .ok_or("Only PNG, JPEG, GIF and WebP images can be added")?;
+    let bytes = raw_body(&request)?;
+    let kind = images::check_bytes(&bytes, claimed)?;
+    let saved = images::save(&document, None, kind, &bytes, now_seconds())?;
+    Ok(SavedImage {
+        name: saved.name,
+        link: saved.link,
+    })
+}
+
+/// Copies an image file the user dropped on the window into the `images` folder beside a granted
+/// document. The original is read, never moved or changed.
+#[tauri::command]
+async fn copy_dropped_image(
+    document: String,
+    source: String,
+    granted: State<'_, Granted>,
+) -> Result<SavedImage, String> {
+    let document = image_document(&document, &granted)?;
+    let source = granted.take_dropped_image(&source)?;
+    let claimed = source
+        .extension()
+        .and_then(|e| e.to_str())
+        .and_then(images::Kind::from_extension)
+        .ok_or("Only PNG, JPEG, GIF and WebP images can be added")?;
+    let bytes = read_limited(&source, images::MAX_BYTES)?;
+    let kind = images::check_bytes(&bytes, claimed)?;
+    let original = source.file_name().map(|n| n.to_string_lossy().into_owned());
+    let saved = images::save(&document, original.as_deref(), kind, &bytes, now_seconds())?;
+    Ok(SavedImage {
+        name: saved.name,
+        link: saved.link,
+    })
 }
 
 /// Follows a relative link from one document to another. Inside the open folder this needs no
@@ -965,9 +1074,16 @@ pub fn run() {
                             };
                             let _ = window.emit("document-dropped", initial);
                         }
-                        Err(name) => {
-                            let _ = window.emit("document-drop-refused", name);
-                        }
+                        Err(name) => match dropped_image(paths) {
+                            Some(image) => {
+                                let granted = window.state::<Granted>();
+                                granted.offer_dropped_image(image.path.as_deref().map(Path::new));
+                                let _ = window.emit("image-dropped", image);
+                            }
+                            None => {
+                                let _ = window.emit("document-drop-refused", name);
+                            }
+                        },
                     }
                 }
                 _ => {}
@@ -983,6 +1099,8 @@ pub fn run() {
             export_html,
             open_external,
             read_image,
+            paste_image,
+            copy_dropped_image,
             resolve_link,
             inspect_link_file,
             open_link_file,
@@ -1176,6 +1294,66 @@ mod tests {
             Err("main.rs".to_string())
         );
         assert_eq!(dropped_target(&[]), Err(String::new()));
+    }
+
+    #[test]
+    fn a_dropped_image_is_named_and_only_the_safe_types_are_offered() {
+        let dir = fixture("drop-image");
+        let png = dir.join("outside/logo.png");
+        let svg = dir.join("outside/logo.svg");
+        fs::write(&svg, "<svg/>").unwrap();
+        let found = dropped_image(std::slice::from_ref(&png)).unwrap();
+        assert_eq!(found.name, "logo.png");
+        assert_eq!(found.path.as_deref(), Some(png.to_string_lossy().as_ref()));
+        let found = dropped_image(&[svg]).unwrap();
+        assert_eq!((found.name.as_str(), found.path), ("logo.svg", None));
+        assert_eq!(dropped_image(&[dir.join("outside/secret.md")]), None);
+        assert_eq!(dropped_image(&[dir.join("repo")]), None);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn only_the_latest_dropped_image_can_be_copied_and_only_once() {
+        let dir = fixture("drop-take");
+        let png = dir.join("outside/logo.png");
+        let other = dir.join("outside/other.png");
+        fs::write(&other, "png").unwrap();
+        let granted = Granted::default();
+        let invented = png.to_string_lossy().into_owned();
+        assert!(granted.take_dropped_image(&invented).is_err(), "never dropped");
+        granted.offer_dropped_image(Some(&png));
+        assert_eq!(granted.take_dropped_image(&invented).unwrap(), png);
+        assert!(granted.take_dropped_image(&invented).is_err(), "single use");
+        granted.offer_dropped_image(Some(&png));
+        granted.offer_dropped_image(Some(&other));
+        assert!(
+            granted.take_dropped_image(&invented).is_err(),
+            "replaced by a later drop"
+        );
+        granted.offer_dropped_image(None);
+        assert!(granted.take_dropped_image(&other.to_string_lossy()).is_err());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn images_are_saved_only_beside_a_granted_document() {
+        let dir = fixture("image-document");
+        let granted = Granted::default();
+        let doc = dir.join("repo/docs/setup.md");
+        let outside = dir.join("outside/secret.md");
+        assert!(image_document(&doc.to_string_lossy(), &granted).is_err(), "not granted");
+        granted.grant_root(&dir.join("repo"));
+        assert_eq!(image_document(&doc.to_string_lossy(), &granted).unwrap(), doc);
+        assert!(
+            image_document(&outside.to_string_lossy(), &granted).is_err(),
+            "outside the folder"
+        );
+        granted.grant_file(&dir.join("repo/src/main.rs"));
+        assert!(
+            image_document(&dir.join("repo/src/main.rs").to_string_lossy(), &granted).is_err(),
+            "not a document"
+        );
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]

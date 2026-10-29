@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { writeRichText } from './clipboard';
-import type { Arrival, FileRef, LinkedFileCheck, Listing, OpenedFile, Platform, RecentFiles } from './types';
+import type { Arrival, FileRef, LinkedFileCheck, Listing, OpenedFile, Platform, RecentFiles, SavedImage } from './types';
 
 // The WebView has no file system, dialog or shell permission. Every file operation is a Rust
 // command that only touches paths the user chose through a native dialog, a file association
@@ -190,6 +190,16 @@ export const desktopPlatform: Platform = {
     await invoke('open_external', { url });
   },
 
+  async saveImage(ref, _listing, image) {
+    if (!ref.path) throw new Error('Save the document first, then add the image.');
+    if (image.kind === 'dropped') {
+      return invoke<SavedImage>('copy_dropped_image', { document: ref.path, source: image.path });
+    }
+    return invoke<SavedImage>('paste_image', image.bytes, {
+      headers: { 'x-ztg-path': encodeURIComponent(ref.path), 'x-ztg-type': encodeURIComponent(image.type) },
+    });
+  },
+
   async loadLocalImage(ref: FileRef | null, relative: string) {
     if (!ref?.path) return null;
     const buffer = await invoke<ArrayBuffer>('read_image', { document: ref.path, relative });
@@ -213,6 +223,11 @@ export const desktopPlatform: Platform = {
   onDrop(handlers) {
     void listen<boolean>('document-drag', (event) => handlers.dragging(event.payload));
     void listen<string>('document-drop-refused', (event) => handlers.refused(event.payload));
+    void listen<{ name: string; path: string | null }>('image-dropped', (event) => {
+      const { name, path } = event.payload;
+      if (handlers.image) handlers.image(name, path ? { kind: 'dropped', path, name } : null);
+      else handlers.refused(name);
+    });
     void listen<RustInitial>('document-dropped', async (event) => {
       const arrived = await arrival(event.payload);
       if (arrived) handlers.open(arrived);

@@ -18,8 +18,10 @@ import { postprocess } from '../core/postprocess';
 import { renderMarkdown } from '../core/render';
 import { blobUrlToDataUrl, buildRichText, fragmentForRange, isEmptyFragment } from '../core/richtext';
 import { DEFAULT_BOUNDS, type SearchMatch } from '../core/search';
-import type { Arrival, FileRef, LinkedFileCheck, Listing, OpenedFile, PendingSession, Platform, RecentEntry } from '../platform/types';
+import type { Arrival, FileRef, ImageSource, LinkedFileCheck, Listing, OpenedFile, PendingSession, Platform, RecentEntry } from '../platform/types';
+import { IMAGE_REFUSED, MAX_IMAGE_BYTES, imageKindFromMime, imageMarkdown, imageProblem } from '../core/images';
 import { el, icon } from './dom';
+import { isolateHistory } from '@codemirror/commands';
 import { createEditor, documentText, scrollToLine, type JumpOptions } from './editor';
 import { runFormat, type FormatCommand } from './format';
 import { OutlinePanel } from './outline';
@@ -115,7 +117,7 @@ export class App {
   private readonly previewPane = el('div', { class: 'pane preview-pane' }, this.preview);
   private readonly panes = el('div', { class: 'panes' });
   private readonly workspace = el('main', { class: 'workspace' });
-  private readonly dropOverlay = el('div', { class: 'drop-overlay', hidden: '', 'aria-hidden': 'true' }, el('div', { class: 'drop-card' }, 'Drop a Markdown file or folder to open it'));
+  private readonly dropOverlay = el('div', { class: 'drop-overlay', hidden: '', 'aria-hidden': 'true' }, el('div', { class: 'drop-card' }, 'Drop a Markdown file or folder to open it, or an image to add it'));
   private readonly measureButton = el('button', { class: 'icon-button', type: 'button' });
   private readonly status = { cursor: el('span'), words: el('span'), encoding: el('span'), eol: el('span') };
   private readonly modeButtons = new Map<ViewMode, HTMLButtonElement>();
@@ -178,6 +180,7 @@ export class App {
         this.dropOverlay.hidden = !active;
       },
       open: (arrival) => void this.arrive(arrival, false),
+      image: this.platform.saveImage ? (name, source, reason) => void this.dropImage(name, source, reason) : undefined,
       refused: (name, folder) =>
         this.notify(
           folder
@@ -461,7 +464,65 @@ export class App {
         this.outline.setCursorLine(line - 1);
       },
       onScroll: (line) => this.syncPreview(line),
+      onPasteImage: (file) => void this.pasteImage(file),
     });
+  }
+
+  // ---- images (RD13) --------------------------------------------------------------------
+
+  private static readonly SAVE_FIRST =
+    'Save the document first (Ctrl+S), then paste or drop the image. Images are saved in an images folder beside the document. Nothing was written.';
+
+  /** A pasted image: checked here for the message, and again by whoever writes it. */
+  private async pasteImage(file: File): Promise<void> {
+    if (!this.platform.saveImage) return this.notify('Images cannot be saved here.');
+    if (this.doc.readOnly !== null) return this.notify('This document is read-only, so no image was added.');
+    if (!this.doc.ref) return this.notify(App.SAVE_FIRST);
+    const kind = imageKindFromMime(file.type);
+    if (!kind) return this.notify(IMAGE_REFUSED);
+    if (file.size > MAX_IMAGE_BYTES) return this.notify(`The image is larger than ${MAX_IMAGE_BYTES / (1024 * 1024)} MB.`);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const problem = imageProblem(bytes, kind);
+    if (problem) return this.notify(problem);
+    await this.insertImage({ kind: 'bytes', bytes, type: file.type, name: undefined });
+  }
+
+  /** An image file dropped on the window. Markdown and folders never come here. */
+  private async dropImage(name: string, source: ImageSource | null, reason?: string): Promise<void> {
+    const pristine = !this.doc.ref && documentText(this.view.state) === '' && !this.dirty;
+    // With nothing open the drop is refused as any other file is.
+    if (pristine) return this.notify(`Only Markdown files (.md, .markdown, .txt) and folders open here: ${name}`);
+    if (!this.doc.ref) return this.notify(App.SAVE_FIRST);
+    if (this.doc.readOnly !== null) return this.notify('This document is read-only, so no image was added.');
+    if (!source) return this.notify(reason ?? `${name} was not added. ${IMAGE_REFUSED}`);
+    await this.insertImage(source);
+  }
+
+  /** Saves the image beside the document, then writes the link at the cursor as one undo step. */
+  private async insertImage(source: ImageSource): Promise<void> {
+    const { ref } = this.doc;
+    const view = this.view;
+    if (!ref || !this.platform.saveImage) return;
+    try {
+      const saved = await this.platform.saveImage(ref, this.listing, source);
+      if (view !== this.view) {
+        // Another document was loaded while the file was written.
+        return this.notify(`Saved ${saved.link}, but the document changed, so the link was not inserted.`);
+      }
+      const text = imageMarkdown(saved.link);
+      const { from, to } = view.state.selection.main;
+      view.dispatch({
+        changes: { from, to, insert: text },
+        selection: { anchor: from + text.length },
+        scrollIntoView: true,
+        userEvent: 'input.paste',
+        annotations: isolateHistory.of('full'),
+      });
+      view.focus();
+      this.notify(`Saved ${saved.link} beside the document. Undo removes the link only; the image file stays.`);
+    } catch (error) {
+      this.notify(`No image was added: ${message(error)}`);
+    }
   }
 
   private updateFormatStatus(): void {
