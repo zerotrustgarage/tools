@@ -1,10 +1,14 @@
 import type { EditorView } from '@codemirror/view';
 import {
   NEW_DOCUMENT_FORMAT,
+  canConvertLineEndings,
+  convertDocument,
   decodeDocument,
   encodeDocument,
+  majorityEnding,
   readOnlyReason,
   type DocumentFormat,
+  type LineEnding,
 } from '../core/document';
 import { exportHtml } from '../core/export';
 import { extractOutline } from '../core/outline';
@@ -12,12 +16,14 @@ import { ExternalChangeWatcher, type WatchHost } from '../core/reload';
 import { defaultDocument, documentFor, resolveInFolder, resolveWikiLink, splitHref } from '../core/paths';
 import { postprocess } from '../core/postprocess';
 import { renderMarkdown } from '../core/render';
+import { blobUrlToDataUrl, buildRichText, fragmentForRange, isEmptyFragment } from '../core/richtext';
 import { DEFAULT_BOUNDS, type SearchMatch } from '../core/search';
-import type { Arrival, FileRef, Listing, OpenedFile, PendingSession, Platform } from '../platform/types';
+import type { Arrival, FileRef, Listing, OpenedFile, PendingSession, Platform, RecentEntry } from '../platform/types';
 import { el, icon } from './dom';
 import { createEditor, documentText, scrollToLine, type JumpOptions } from './editor';
 import { runFormat, type FormatCommand } from './format';
 import { OutlinePanel } from './outline';
+import { RecentPanel } from './recent';
 import { SearchPanel } from './search';
 import { Sidebar } from './sidebar';
 import { splitter } from './splitter';
@@ -68,11 +74,17 @@ interface DocumentState {
   readOnly: string | null;
   /** The saved text, so undoing back to it clears the unsaved marker. */
   savedText: string;
+  /**
+   * True after the reader converted the line endings and until the next save. The converted text
+   * differs from the file on disk even when the editor's text equals savedText, so the document
+   * stays unsaved (and a save is possible) whatever is typed or undone afterwards.
+   */
+  converted: boolean;
 }
 
 export class App {
   private view!: EditorView;
-  private doc: DocumentState = { ref: null, format: NEW_DOCUMENT_FORMAT, readOnly: null, savedText: '' };
+  private doc: DocumentState = { ref: null, format: NEW_DOCUMENT_FORMAT, readOnly: null, savedText: '', converted: false };
   private listing: Listing | null = null;
   private history: FileRef[] = [];
   private pendingFragment: string | null = null;
@@ -109,6 +121,16 @@ export class App {
   private readonly modeButtons = new Map<ViewMode, HTMLButtonElement>();
   private readonly formatBar = el('div', { class: 'format-bar', role: 'toolbar', 'aria-label': 'Formatting' });
   private readonly themeButton = el('button', { class: 'icon-button', type: 'button' });
+  private readonly copyRichButton = el(
+    'button',
+    {
+      class: 'icon-button',
+      type: 'button',
+      title: 'Copy as rich text: the selection in the preview, or the whole document (pastes into Outlook, Teams and Word)',
+      'aria-label': 'Copy as rich text',
+    },
+    icon('copy'),
+  );
   private readonly backButton = el('button', { class: 'icon-button', type: 'button', title: 'Back (Alt+Left)', 'aria-label': 'Back', disabled: '' }, icon('back'));
   private readonly sidebar = new Sidebar(
     (path) => void this.openFolderPath(path, null, true),
@@ -124,6 +146,19 @@ export class App {
     open: (path, match) => void this.openSearchHit(path, match),
     onClose: () => this.closeSearch(),
   });
+  private readonly recent = new RecentPanel({
+    open: (entry) => void this.openRecent(entry),
+    remove: (entry) => void this.removeRecent(entry),
+    clear: () => void this.clearRecent(),
+    onClose: () => this.closeRecent(),
+  });
+  /** Entries a failed open found gone this session, for platforms that cannot tell beforehand. */
+  private readonly recentMissing = new Set<string>();
+  private readonly recentButton = el(
+    'button',
+    { class: 'text-button', type: 'button', title: 'Recent files (Ctrl+Shift+E)', 'aria-pressed': 'false', 'aria-label': 'Recent files' },
+    'Recent',
+  );
   private readonly searchButton = el('button', { class: 'text-button', type: 'button', title: 'Search the open folder (Ctrl+Shift+F)', 'aria-pressed': 'false', disabled: '' }, 'Search');
   private readonly outlineButton = el('button', { class: 'text-button', type: 'button', title: 'Outline: the headings of this document', 'aria-pressed': 'false' }, 'Outline');
 
@@ -199,8 +234,12 @@ export class App {
       this.applyTheme();
     });
     this.backButton.addEventListener('click', () => void this.back());
+    // A click on the button must not clear the selection in the preview that it is about to copy.
+    this.copyRichButton.addEventListener('mousedown', (event) => event.preventDefault());
+    this.copyRichButton.addEventListener('click', () => void this.copyRichText());
     this.outlineButton.addEventListener('click', () => this.toggleOutline());
     this.searchButton.addEventListener('click', () => this.toggleSearch());
+    this.recentButton.addEventListener('click', () => this.toggleRecent());
 
     const top = el(
       'header',
@@ -214,6 +253,7 @@ export class App {
         button('New', 'New document (Ctrl+N)', () => void this.newDocument(), 'new'),
         button('Open', 'Open file (Ctrl+O)', () => void this.open(), 'open'),
         button('Open folder', 'Open folder or repository (Ctrl+Shift+O)', () => void this.openFolder(), 'open-folder'),
+        ...(this.platform.recent ? [this.recentButton] : []),
         button('Save', 'Save (Ctrl+S)', () => void this.save(false), 'save'),
         button('Save as', 'Save as (Ctrl+Shift+S)', () => void this.save(true), 'save-as'),
         el('span', { class: 'divider' }),
@@ -221,6 +261,7 @@ export class App {
         el('span', { class: 'divider' }),
         this.outlineButton,
         this.searchButton,
+        this.copyRichButton,
         button('Export', 'Export as HTML', () => void this.exportHtml(), 'export'),
         button('Print', 'Print or save as PDF (Ctrl+P)', () => void this.print(), 'print'),
         this.measureButton,
@@ -281,7 +322,7 @@ export class App {
     });
     paneSplitter.classList.add('splitter-panes');
     this.panes.append(this.editorHost, paneSplitter, this.previewPane);
-    this.workspace.append(this.sidebar.element, sidebarSplitter, this.outline.element, this.search.element, this.panes, this.dropOverlay);
+    this.workspace.append(this.sidebar.element, sidebarSplitter, this.outline.element, this.search.element, this.recent.element, this.panes, this.dropOverlay);
     if (this.platform.window) {
       this.root.classList.add('has-titlebar');
       this.root.append(titleBar(this.platform.window, APP_NAME));
@@ -379,13 +420,36 @@ export class App {
 
   private load(ref: FileRef | null, text: string, format: DocumentFormat, bytes: Uint8Array | null = null): void {
     const readOnly = readOnlyReason(format);
-    this.doc = { ref, format, readOnly, savedText: text };
+    this.doc = { ref, format, readOnly, savedText: text, converted: false };
+    this.mountEditor(text, format, readOnly !== null);
+    // The editor's own text is the reference for "unsaved": a mixed file is shown with LF
+    // between every line, which is not the raw text it was decoded from.
+    this.doc.savedText = documentText(this.view.state);
+    this.showReadOnly();
+    this.syncLine = 0;
+    this.refreshOutline();
+    this.folds.clear();
+    this.previewPane.scrollTo({ top: 0 });
+    this.status.cursor.textContent = 'Ln 1, Col 1';
+    this.updateFormatStatus();
+    this.sidebar.select(ref?.folderPath);
+    this.updateWords();
+    this.updateDirty();
+    this.setMode(this.mode);
+    this.schedulePreview(0);
+    this.rememberSession();
+    this.watcher.rebase(bytes);
+    this.watcher.sync();
+  }
+
+  /** Replaces the editor with one holding text. The caller sets this.doc first. */
+  private mountEditor(text: string, format: DocumentFormat, readOnly: boolean): void {
     this.view?.destroy();
     this.view = createEditor({
       parent: this.editorHost,
       text,
       format,
-      readOnly: readOnly !== null,
+      readOnly,
       onChange: () => {
         this.updateDirty();
         this.schedulePreview(PREVIEW_DELAY_MS);
@@ -398,23 +462,90 @@ export class App {
       },
       onScroll: (line) => this.syncPreview(line),
     });
-    this.notify(readOnly);
-    this.syncLine = 0;
-    this.refreshOutline();
-    this.folds.clear();
-    this.previewPane.scrollTo({ top: 0 });
-    this.status.cursor.textContent = 'Ln 1, Col 1';
+  }
+
+  private updateFormatStatus(): void {
+    const format = this.doc.format;
     this.status.encoding.textContent = format.validUtf8 ? (format.bom ? 'UTF-8 with BOM' : 'UTF-8') : 'Not UTF-8';
     this.status.encoding.title = 'Saved exactly as opened';
-    this.status.eol.textContent = format.mixedEndings ? 'Mixed line endings' : format.eol === '\r\n' ? 'CRLF' : 'LF';
-    this.sidebar.select(ref?.folderPath);
-    this.updateWords();
-    this.updateDirty();
+    const eol = format.mixedEndings ? 'Mixed line endings' : format.eol === '\r\n' ? 'CRLF' : 'LF';
+    this.status.eol.textContent = this.doc.converted ? `${eol} (converted, not saved)` : eol;
+  }
+
+  // ---- line endings (the rules live in core/document.ts) -----------------------------------
+
+  /**
+   * The banner for a read-only document. A file that is read-only only because its line endings
+   * are mixed offers the conversion; one that is not valid UTF-8 never does.
+   */
+  private showReadOnly(): void {
+    const reason = this.doc.readOnly;
+    if (reason === null || !canConvertLineEndings(this.doc.format)) {
+      this.notify(reason);
+      return;
+    }
+    const convert = el('button', { type: 'button', class: 'text-button banner-action' }, 'Convert line endings');
+    convert.addEventListener('click', () => void this.convertLineEndings());
+    this.banner.replaceChildren(`${reason} `, convert);
+    this.banner.hidden = false;
+  }
+
+  /**
+   * Asks which ending to use (the file's majority ending first) and converts the open document.
+   * The edit is in memory only: the document becomes editable and unsaved, and the file on disk
+   * is not touched until the reader saves.
+   */
+  private async convertLineEndings(): Promise<void> {
+    const { format } = this.doc;
+    if (!this.doc.readOnly || !canConvertLineEndings(format)) return;
+    const counts = format.endings;
+    const parts = counts
+      ? ([
+          [counts.crlf, 'CRLF'],
+          [counts.lf, 'LF'],
+          [counts.cr, 'CR'],
+        ] as const)
+          .filter(([n]) => n > 0)
+          .map(([n, name]) => `${n.toLocaleString()} ${name}`)
+          .join(', ')
+      : '';
+    const first: LineEnding = counts ? majorityEnding(counts) : '\n';
+    const names: Record<LineEnding, string> = { '\n': 'LF', '\r\n': 'CRLF' };
+    const other: LineEnding = first === '\n' ? '\r\n' : '\n';
+    // Say "most lines" only when one of the two is really the larger; a tie has no majority.
+    const clear = counts !== undefined && counts.crlf !== counts.lf;
+    const label = (eol: LineEnding) => `Convert to ${names[eol]}${clear && eol === first ? ' (most lines)' : ''}`;
+    const before = this.doc;
+    const choice = await confirmDialog(
+      'Convert line endings?',
+      `${this.doc.ref?.name ?? 'This file'} mixes line endings${parts ? ` (${parts})` : ''}. Every line ending will become one ending, and the document becomes editable. Nothing is written until you save.`,
+      [label(first), label(other), 'Cancel'],
+    );
+    // The reader may have opened another file, or the file may have reloaded, behind the dialog.
+    if (choice === null || choice === 'Cancel' || this.doc !== before) return;
+    this.applyConversion(choice === label(first) ? first : other);
+  }
+
+  private applyConversion(target: LineEnding): void {
+    if (!this.doc.readOnly || !canConvertLineEndings(this.doc.format)) return;
+    // The editor holds the lines joined by LF (a mixed file is split on every ending to show it).
+    const converted = convertDocument(documentText(this.view.state), this.doc.format, target);
+    const selection = this.view.state.selection;
+    const scrollTop = this.view.scrollDOM.scrollTop;
+    this.doc = { ...this.doc, format: converted.format, readOnly: null, savedText: converted.text, converted: true };
+    this.mountEditor(converted.text, converted.format, false);
+    // Same lines, same offsets: the cursor and the scroll position carry over.
+    this.view.dispatch({ selection });
+    this.view.scrollDOM.scrollTop = scrollTop;
+    this.updateFormatStatus();
     this.setMode(this.mode);
-    this.schedulePreview(0);
-    this.rememberSession();
-    this.watcher.rebase(bytes);
-    this.watcher.sync();
+    this.updateDirty();
+    this.updateWords();
+    this.refreshOutline();
+    this.notify(
+      `Line endings converted to ${target === '\r\n' ? 'CRLF' : 'LF'}. The file on disk is unchanged until you save.`,
+    );
+    this.view.focus();
   }
 
   // ---- external changes (the decisions live in core/reload.ts) ----------------------------
@@ -456,7 +587,8 @@ export class App {
         const top = this.previewPane.scrollTop;
         this.load(this.doc.ref, decoded.text, decoded.format, bytes);
         this.previewPane.scrollTop = top;
-        this.notify(this.doc.readOnly ?? `${this.doc.ref?.name ?? 'The file'} changed on disk and was reloaded.`);
+        if (this.doc.readOnly) this.showReadOnly();
+        else this.notify(`${this.doc.ref?.name ?? 'The file'} changed on disk and was reloaded.`);
       },
       resolveConflict: async (bytes) => {
         void bytes;
@@ -510,7 +642,7 @@ export class App {
   }
 
   private get dirty(): boolean {
-    return documentText(this.view.state) !== this.doc.savedText;
+    return this.doc.converted || documentText(this.view.state) !== this.doc.savedText;
   }
 
   private updateDirty(): void {
@@ -553,6 +685,7 @@ export class App {
     this.pendingFragment = fragment;
     const decoded = decodeDocument(file.bytes);
     this.load(file.ref, decoded.text, decoded.format, file.bytes);
+    this.noteRecent(file.ref);
   }
 
   private async arrive(arrival: Arrival, startup: boolean): Promise<void> {
@@ -692,7 +825,7 @@ export class App {
   /** Resolves true when the document was written. */
   private async save(as: boolean): Promise<boolean> {
     if (this.doc.readOnly) {
-      this.notify(this.doc.readOnly);
+      this.showReadOnly();
       return false;
     }
     const text = documentText(this.view.state);
@@ -702,15 +835,19 @@ export class App {
       const name = this.doc.ref?.name ?? 'Untitled.md';
       const ref = as || !this.doc.ref ? await this.platform.saveAs(bytes, name) : await this.platform.save(this.doc.ref, bytes, name);
       if (!ref) return false;
+      const previous = this.doc.ref;
       // Saving somewhere else makes the file independent of the open folder.
       const kept = ref === this.doc.ref ? ref : { ...ref, folderPath: undefined };
-      this.doc = { ...this.doc, ref: kept, savedText: text };
+      this.doc = { ...this.doc, ref: kept, savedText: text, converted: false };
+      this.updateFormatStatus();
       this.watcher.rebase(bytes);
       this.watcher.sync();
       this.sidebar.select(kept.folderPath);
       this.updateDirty();
       this.notify(null);
       this.rememberSession();
+      // A file saved under a new name or place is a document the reader will want again.
+      if (ref !== previous) this.noteRecent(kept);
       return true;
     } catch (error) {
       this.notify(`Could not save: ${message(error)}`);
@@ -728,6 +865,45 @@ export class App {
       await this.platform.exportFile(new TextEncoder().encode(html), name, 'html');
     } catch (error) {
       this.notify(`Could not export: ${message(error)}`);
+    }
+  }
+
+  /**
+   * Copy as rich text (core/richtext.ts): the selection in the preview when there is one, else the
+   * whole document. The clipboard gets text/html and text/plain together. The preview is only
+   * read; nothing is written to the document or to disk.
+   */
+  private async copyRichText(): Promise<void> {
+    let fragment: DocumentFragment | null = null;
+    const selection = window.getSelection();
+    // The selection is captured before anything is awaited: a render replaces the preview.
+    if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
+      const range = selection.getRangeAt(0);
+      if (this.preview.contains(range.commonAncestorContainer)) fragment = fragmentForRange(range, this.preview);
+    }
+    const whole = fragment === null;
+    try {
+      if (!fragment) {
+        // The preview is not kept current in edit mode, so it is rendered first.
+        window.clearTimeout(this.renderTimer);
+        await this.renderPreview();
+        const range = document.createRange();
+        range.selectNodeContents(this.preview);
+        fragment = range.cloneContents();
+      }
+      if (isEmptyFragment(fragment)) {
+        this.notify('There is nothing to copy.');
+        return;
+      }
+      const { html, text } = await buildRichText(fragment, { resolveImage: blobUrlToDataUrl });
+      await this.platform.copyRichText(html, text);
+      this.notify(
+        whole
+          ? 'Copied the whole document as rich text. Select part of the preview first to copy only that part.'
+          : 'Copied the selection as rich text.',
+      );
+    } catch (error) {
+      this.notify(`Could not copy: ${message(error)}`);
     }
   }
 
@@ -753,6 +929,11 @@ export class App {
     if (key === 'f' && event.shiftKey) {
       event.preventDefault();
       this.openSearch();
+      return;
+    }
+    if (key === 'e' && event.shiftKey && this.platform.recent) {
+      event.preventDefault();
+      this.openRecentPanel(true);
       return;
     }
     const actions: Record<string, () => Promise<unknown>> = {
@@ -824,6 +1005,7 @@ export class App {
 
   private openOutline(): void {
     this.closeSearch();
+    this.closeRecent();
     this.outline.show(true);
     this.outlineButton.setAttribute('aria-pressed', 'true');
     this.refreshOutline();
@@ -835,6 +1017,90 @@ export class App {
     this.outline.show(false);
     this.outlineButton.setAttribute('aria-pressed', 'false');
     if (hadFocus) this.view.focus();
+  }
+
+  // ---- recent files -------------------------------------------------------------------------
+
+  /** Records a document the reader opened or saved. Best effort; the platform decides what it can keep. */
+  private noteRecent(ref: FileRef | null): void {
+    const recent = this.platform.recent;
+    if (!recent || !ref) return;
+    void recent.add(ref).then(() => (this.recent.hidden ? undefined : this.refreshRecent()));
+  }
+
+  private toggleRecent(): void {
+    if (this.recent.hidden) this.openRecentPanel(false);
+    else this.closeRecent();
+  }
+
+  /** Shows the panel; from the keyboard it takes focus so the list can be used at once. */
+  private openRecentPanel(focus: boolean): void {
+    if (!this.platform.recent) return;
+    this.closeOutline();
+    this.closeSearch();
+    this.recent.show(true);
+    this.recentButton.setAttribute('aria-pressed', 'true');
+    void this.refreshRecent().then(() => {
+      if (focus) this.recent.focus();
+    });
+  }
+
+  private closeRecent(): void {
+    const hadFocus = this.recent.element.contains(document.activeElement);
+    this.recent.show(false);
+    this.recentButton.setAttribute('aria-pressed', 'false');
+    if (hadFocus) this.view.focus();
+  }
+
+  private async refreshRecent(): Promise<void> {
+    const recent = this.platform.recent;
+    if (!recent) return;
+    const entries = await recent.list();
+    for (const id of this.recentMissing) if (!entries.some((e) => e.id === id)) this.recentMissing.delete(id);
+    this.recent.update(entries.map((e): RecentEntry => (this.recentMissing.has(e.id) ? { ...e, missing: true } : e)));
+  }
+
+  /** Opens an entry the way Open does: unsaved edits are asked about first, then the folder gives way. */
+  private async openRecent(entry: RecentEntry): Promise<void> {
+    const recent = this.platform.recent;
+    if (!recent) return;
+    if (!(await this.confirmDiscard())) return;
+    try {
+      let file = await recent.open(entry.id, this.listing);
+      if (!file) {
+        this.recentMissing.add(entry.id);
+        this.notify(`${entry.name} no longer exists. Remove it from the recent files if you do not need it.`);
+        await this.refreshRecent();
+        return;
+      }
+      this.recentMissing.delete(entry.id);
+      const listing = this.listing;
+      if (listing && file.ref.folderPath !== undefined && listing.files.includes(file.ref.folderPath)) {
+        // A file of the open folder stays in it, with the file list beside it.
+        this.show(file, null, true);
+      } else {
+        file = { ...file, ref: { ...file.ref, folderPath: undefined } };
+        this.setListing(null);
+        this.show(file, null, false);
+      }
+      this.notify(null);
+      this.closeRecent();
+      this.view.focus();
+    } catch (error) {
+      this.notify(`Could not open ${entry.name}: ${message(error)}`);
+    }
+  }
+
+  private async removeRecent(entry: RecentEntry): Promise<void> {
+    await this.platform.recent?.remove(entry.id);
+    this.recentMissing.delete(entry.id);
+    await this.refreshRecent();
+  }
+
+  private async clearRecent(): Promise<void> {
+    await this.platform.recent?.clear();
+    this.recentMissing.clear();
+    await this.refreshRecent();
   }
 
   // ---- folder search ----------------------------------------------------------------------
@@ -850,6 +1116,7 @@ export class App {
       return;
     }
     this.closeOutline();
+    this.closeRecent();
     this.search.show(true);
     this.searchButton.setAttribute('aria-pressed', 'true');
   }

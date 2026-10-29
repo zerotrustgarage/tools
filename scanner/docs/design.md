@@ -1,7 +1,8 @@
 # ZTG Scanner: design
 
-Status (October 23, 2026): slices S1 (engine and CLI), S2 (desktop app), S3 (SNMPv3 inventory) and S4 (packaging
-and release pipeline), and S5 (actions, local inventories and comparison) are built. Owner signing setup is
+Status (October 29, 2026): slices S1 (engine and CLI), S2 (desktop app), S3 (SNMPv3 inventory) and S4 (packaging
+and release pipeline), and S5 (actions, local inventories and comparison) are built, as are SC9 (saved target sets),
+SC10 (Open with commands), SC13 (gentle mode) and SC7 (scheduled rescans). Owner signing setup is
 complete; S4's first signed release awaits a successful production release run. S6 is planned.
 
 ## 1. Purpose
@@ -184,6 +185,56 @@ standard service port; imported public addresses require a fresh authorization. 
 Wake-on-LAN is a separate, explicitly confirmed action: one magic packet to the most specific directly connected
 internal IPv4 network's broadcast address, never a forwarded or arbitrary broadcast. No credentials are persisted.
 
+### Open with commands (SC10)
+
+The technician can define up to 20 "Open with" commands in Settings, Open with commands. Each is either an installed
+program (an absolute path to an `.exe` plus one template per argument) or an `https://` address. They are chosen from
+an Open with menu on a result (the device pane button, or right-click on the row). Nothing launches except on that
+explicit choice, and Scanner bundles no remote access software: it starts whatever the technician already has
+installed, such as PuTTY or mstsc, or opens an RMM console link in the browser.
+
+Where commands live: only in the technician's local settings. The desktop UI keeps them in the WebView's local storage
+beside saved target sets, and hands the list to the app (`SetOpenWithCommands`), which validates it again and keeps
+the copy it launches from. A launch sends a command name and a result address; the app reads the hostname from its own
+results. Inventory files, exports and scan requests never carry commands, and a device cannot add or change one.
+
+Rules, all in `internal/openwith` and tested there:
+
+- Argument vectors, never shell strings. A program command is split into one template per argument when it is
+  saved, and a placeholder is substituted only inside its own element, so a value cannot add, remove or reorder
+  arguments. The process is started with CreateProcess and an exact vector (the same path S5 uses for SSH and RDP),
+  with the program as the application name so Windows does not search for it. No `cmd.exe /c`, PowerShell, `sh -c`
+  or other shell is used; those and other script hosts (`wscript`, `cscript`, `mshta`, `wsl`, `bash`, `rundll32`,
+  `regsvr32`, `cmdkey`, `runas` and similar) are refused as the program, as are `.bat`, `.cmd`, `.ps1`, `.vbs` and
+  `.lnk`. This guards against a mistake; it is not a sandbox, because any installed `.exe` the technician chooses
+  runs with the technician's rights.
+- Program path: absolute, on a drive letter, backslashes only, at most 260 ASCII characters, no `..`, UNC or device
+  paths, no environment variables, and it must exist as a regular file at launch.
+- `{ip}` is a parsed `net/netip` address rendered canonically (an IPv4-mapped IPv6 address becomes IPv4; zones,
+  unspecified and multicast addresses are refused).
+- `{hostname}` is the reverse DNS name if there is one, else the best name, and must be a strict DNS name: ASCII
+  letters, digits, hyphens and dots, labels of 1 to 63 characters that do not start or end with a hyphen, at most 253
+  characters, no trailing dot, and a last label that is not all digits. A name that fails is never cleaned up or
+  quoted; the command is shown as unavailable for that device, with the reason, and a command that does not use
+  `{hostname}` still works. This also means no device name can start with a hyphen and become an option.
+- URL commands must start with `https://` and have a literal host: placeholders, user names and passwords are
+  refused in the scheme and host part, so a device value can never choose the destination. Placeholders in the path
+  are path-escaped and in the query or fragment are query-escaped. The result is opened through the same browser
+  handoff as other links (`OpenURL`).
+- No other placeholders exist. There is no password placeholder, and a template that looks like it carries a password
+  or token (`-pw`, `--password`, `/pass:`, `token=` and similar) is refused. This is a heuristic for obvious cases;
+  it does not make storing a secret in some other form safe, and the settings text says Scanner stores no credentials.
+- Bounds: 20 commands, 60-character names (unique ignoring case), 16 arguments of up to 512 characters, 2,048-character
+  URLs, no control characters. A list is validated whole; an invalid one is refused and the previous list stays active.
+- The editor's Preview renders a command with a test address and hostname (checked by the same rules) and shows the
+  exact program and one bracketed line per argument, or the exact URL. It starts nothing.
+- Public addresses need the same fresh authorization as the other connection actions, and the address must be in the
+  current results.
+
+Unreadable or invalid stored commands leave none active, say why in the menu, and offer a reset in the editor.
+Real Windows launching of third-party clients has not been exercised in CI (Linux tests use a fake platform and the
+UI tests use a binding mock); the Windows paths are cross-compiled and vetted.
+
 ### Gentle mode (SC13)
 
 A named, opt-in scan mode for fragile networks (OT, medical, old printers). The user selects it (`--mode gentle`, or
@@ -222,10 +273,67 @@ into another client's scan. It clears SNMP credentials and disables SNMP. Import
 the technician explicitly chooses when to use it. Duplicate names within a client require overwrite confirmation,
 and deletion requires confirmation. Storage failures must be reported as failures to save.
 
+### Scheduled rescans (SC7)
+
+A saved target set can be rescanned on a timer, with a notification when a new device appears. It is a convenience
+for the technician at the keyboard, not a monitoring service: the schedule exists only while the desktop app runs.
+
+Boundaries, each tested (`internal/schedule`, `app/schedule_test.go`, `app/uitest`):
+
+- Opt-in and local. A schedule is off for every set until the technician turns it on. It adds no Windows service,
+  scheduled task, autostart entry or background installer, and nothing runs when the app is closed or before the
+  window has loaded. The schedule list lives in the WebView's local storage beside the saved sets (a schedule holds
+  the set's client label and name, an interval, the notification choice and a snapshot of the scan plan, never
+  targets, credentials or authorization) and the UI hands it to the app at launch and on every change. The app
+  validates it again.
+- Bounded interval with jitter. 15 minutes to 24 hours in whole minutes, at most 20 schedules. Every cycle adds a
+  random delay of up to a tenth of the interval, capped at 5 minutes, so machines set to the same interval do not
+  probe at the same second. A new or changed schedule, and every app launch, first runs one interval later, never at
+  once. The next cycle is one interval after the previous rescan ended, so a slow rescan cannot queue another.
+- No overlap. One scheduled rescan runs at a time (a second one that falls due waits), and none starts while a
+  manual scan runs: that cycle is skipped, not made up, and the skip is shown. The same applies while Windows
+  battery saver is on (`GetSystemPowerStatus`, a lazy kernel32 call made through `golang.org/x/sys/windows`). A manual scan
+  started while a rescan runs stops the rescan, waits for it, then starts, so the two never overlap. Metered
+  connections are not detected: that needs the WinRT networking API and is not trivially available.
+- Private and link-local only. The targets must pass `schedule.CheckTargets`: valid target syntax, no host names
+  (a name resolves later to an address nothing classified), and every address inside the scope guard's internal
+  ranges (`targets.IsInternal`: RFC 1918, carrier-grade NAT, link-local, loopback). A schedule with any public
+  address is refused when it is saved, and the scope guard runs again with `AllowPublic` false whenever a rescan
+  starts. Public ranges need fresh authorization (S5, SC9), which a stored schedule cannot carry, so there is no
+  way to allow them.
+- Same plan as a manual scan. A rescan builds its engine settings with `scan.BuildPlan` from the technician's mode
+  and probe settings captured when the schedule is applied, so a Gentle set keeps its pacing and probe limits.
+  SNMP is never used, because passphrases are never stored.
+- Same comparison as SC6. Each completed rescan is compared with the previous completed rescan of the same
+  schedule using `inventory.Compare`, so identity rules are those of SC6: unique stable MACs first (a DHCP move is a
+  move, not a new device), then addresses; a randomized MAC is tied to its address; another MAC at an address
+  already in use is a changed device, not a new one. Only `new` triggers a notice. The first rescan, and the first
+  after the target list or the mode changed, is a baseline that reports nothing; a canceled rescan is discarded.
+  A device is announced once, because each completed rescan replaces the baseline. A device that drops out of one
+  rescan and returns in the next is announced again.
+- Results stay in the existing inventory format. The latest completed rescan of each schedule is one local file in
+  the same JSON format as a saved scan (`report.Document`), written with the same atomic replace, in
+  `ZTG Scanner\scheduled` under the user's local application data folder (it does not roam). The file name is a hash
+  of the schedule, so it does not carry the client label. A rescan keeps its own results and never touches the
+  inventory on screen, its annotations or its unsaved state. Turning a schedule off deletes its file. Nothing is
+  sent anywhere.
+- Notification. The banner in the window is the notice of record and is always shown. It lists, with `textContent`
+  only, the client label and set name the technician typed, the count and the new addresses, and offers Show changes,
+  which opens the SC6 comparison view. The app also flashes the taskbar button until the window is foreground
+  (`FlashWindowEx` on the Wails window) and the UI puts the count in the window title. If the schedule allows it, a
+  native Windows toast is sent through Wails v2's own notification API (`runtime.SendNotification`), which adds no
+  dependency. The toast and the title text are built by `schedule.NoticeText` from counts and re-parsed IPv4
+  addresses only (at most five named); a name a device reported is never part of it. The toast is off by default for each schedule (the in-app banner and taskbar flash always run). Wails sets the toast service up
+  the first time a toast is needed, not at launch, and doing so registers the app for notifications in the current
+  user's registry (HKCU), including a COM activation entry that starts the executable if the technician clicks a
+  notification after the app has closed.
+- Not validated here: real toasts, the taskbar flash and the battery saver flag need a Windows machine; Linux tests
+  use a fake platform and the UI tests a binding mock.
+
 ## 10. Not in scope
 
 - Remote access (Advanced IP Scanner bundles Radmin; ZTG Scanner bundles no remote access software and installs
-  nothing on scanned hosts).
+  nothing on scanned hosts). SC10 only starts clients the technician already has, on the technician's choice.
 - Vulnerability scanning or exploitation.
 - Credential storage. SNMPv3 passphrases are entered per scan (CLI prompt or environment variable, GUI password
   fields), held in memory, and never written to disk, settings or exports.

@@ -25,15 +25,46 @@ type fakePlatform struct {
 	done   chan scan.Summary
 	saveTo string
 	opened []string
+	// programs records LaunchProgram calls (SC10).
+	programs  [][]string
+	launchErr error
+	// Scheduled rescans (SC7).
+	saving bool
+	alerts []alertCall
+	status [][]ScheduleStatus
+	notice []ScheduleNotice
+}
+
+type alertCall struct {
+	title, body string
+	toast       bool
 }
 
 func newFake(saveTo string) *fakePlatform {
 	return &fakePlatform{events: map[string]int{}, done: make(chan scan.Summary, 1), saveTo: saveTo}
 }
 
+func (f *fakePlatform) PowerSaving() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.saving
+}
+
+func (f *fakePlatform) Alert(title, body string, toast bool) {
+	f.mu.Lock()
+	f.alerts = append(f.alerts, alertCall{title, body, toast})
+	f.mu.Unlock()
+}
+
 func (f *fakePlatform) Emit(event string, data any) {
 	f.mu.Lock()
 	f.events[event]++
+	switch v := data.(type) {
+	case []ScheduleStatus:
+		f.status = append(f.status, v)
+	case ScheduleNotice:
+		f.notice = append(f.notice, v)
+	}
 	f.mu.Unlock()
 	if event == EventDone {
 		f.done <- data.(scan.Summary)
@@ -45,6 +76,11 @@ func (f *fakePlatform) OpenFile(string, string, string) (string, error) { return
 func (f *fakePlatform) Launch(action, ip string) (string, error) {
 	f.opened = append(f.opened, action+":"+ip)
 	return "launched", nil
+}
+
+func (f *fakePlatform) LaunchProgram(argv []string) error {
+	f.programs = append(f.programs, append([]string(nil), argv...))
+	return f.launchErr
 }
 
 func webServer(t *testing.T) (*httptest.Server, string) {

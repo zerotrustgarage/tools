@@ -15,6 +15,7 @@ type Option struct {
 	Syntax        string   `json:"syntax"`
 	Group         string   `json:"group"`
 	Argument      string   `json:"argument"`
+	Type          string   `json:"type"`
 	Help          string   `json:"help"`
 	Handling      string   `json:"handling"`
 	Tags          []string `json:"tags"`

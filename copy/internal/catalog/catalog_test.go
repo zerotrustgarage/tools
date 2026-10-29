@@ -59,3 +59,16 @@ func TestRiskAndDetection(t *testing.T) {
 		t.Fatal("search does not use help and handling text")
 	}
 }
+
+func TestEveryOptionHasAType(t *testing.T) {
+	known := map[string]bool{"flag": true, "number": true, "size": true, "age": true, "attributes": true, "copyflags": true, "dirflags": true,
+		"window": true, "yesno": true, "path": true, "names": true, "text": true}
+	for _, o := range All() {
+		if !known[o.Type] {
+			t.Errorf("%s has type %q", o.Token, o.Type)
+		}
+		if (o.Argument == "none") != (o.Type == "flag") || (o.Argument == "list") != (o.Type == "names") {
+			t.Errorf("%s: argument %q does not fit type %q", o.Token, o.Argument, o.Type)
+		}
+	}
+}

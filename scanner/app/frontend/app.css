@@ -79,7 +79,9 @@ body {
   color: var(--text);
   font: 13px/1.4 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   display: grid;
-  grid-template-rows: auto auto auto auto auto 1fr;
+  /* Seven rows: the new-device banner (SC7) is hidden most of the time, and the workspace is
+     pinned to the last row so the layout is the same with or without it. */
+  grid-template-rows: auto auto auto auto auto auto 1fr;
   overflow: hidden;
 }
 button, input, select, textarea { font: inherit; color: inherit; }
@@ -141,6 +143,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .annotation-form label.check { display: flex; align-items: center; gap: 6px; }
 .drawer.comparison { width: min(580px, calc(100% - 32px)); }
 .drawer.target-sets { width: min(480px, calc(100% - 32px)); }
+.drawer.open-with { width: min(520px, calc(100% - 32px)); }
 .comparison .close { float: right; }
 .target-sets .close { float: right; }
 .target-sets select { width: 100%; }
@@ -193,7 +196,7 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
 .filters select { width: 220px; }
 .check { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 
-.workspace { display: grid; grid-template-columns: 1fr auto; min-height: 0; border-top: 1px solid var(--line); }
+.workspace { display: grid; grid-column: 1; grid-row: 7; grid-template-columns: 1fr auto; min-height: 0; border-top: 1px solid var(--line); }
 .grid-wrap { overflow: auto; min-height: 0; position: relative; }
 /* Fixed layout: columns keep the widths the user set instead of stretching to
    fill the window; the table is exactly as wide as its columns. */
@@ -270,3 +273,27 @@ td.mono, .mono { font-family: var(--mono); font-size: 12px; }
 .modal-card h2 { margin: 0 0 8px; font-size: 16px; }
 
 .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--panel-2); border: 1px solid var(--line); padding: 8px 14px; border-radius: var(--radius); z-index: 50; }
+
+.open-with .close { float: right; }
+.open-with select, .open-with > input, .open-with textarea { width: 100%; }
+.open-with textarea { min-height: 80px; }
+.open-with > #ow-reset { margin: 0 0 10px; }
+.open-with [role=status]:empty { display: none; }
+.open-with .row input { width: 100%; }
+#ow-preview { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; margin: 0 0 8px; }
+#ow-preview:empty { display: none; }
+.open-with .target-set-actions #ow-save { margin-left: auto; }
+.menu.floating { position: fixed; top: 0; left: 0; min-width: 220px; max-width: 360px; }
+
+/* Scheduled rescans (SC7) */
+.banner { display: flex; align-items: flex-start; gap: 12px; padding: 8px 16px; background: var(--panel-2); border-bottom: 1px solid var(--line); border-left: 4px solid var(--medium); }
+.banner[hidden] { display: none; }
+.banner ul { list-style: none; margin: 0; padding: 0; flex: 1; display: grid; gap: 4px; min-width: 0; }
+.banner li { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; overflow-wrap: anywhere; }
+.banner li .link { padding: 0; }
+.schedule select { width: 100%; }
+.schedule [role=status]:empty { display: none; }
+.schedule .target-set-actions { justify-content: flex-end; }
+#schedule-state { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
+#schedule-stop { padding: 3px 9px; }
+.schedule p { margin: 0; }

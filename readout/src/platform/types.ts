@@ -54,6 +54,36 @@ export interface Arrival {
   pending?: PendingSession;
 }
 
+/** One line of the recent-files list. */
+export interface RecentEntry {
+  /** Stable key the platform understands (the desktop path; a generated id in the browser). */
+  id: string;
+  name: string;
+  /** Where it lives, shown beside the name (the folder path on the desktop). */
+  detail?: string;
+  /** The platform found that the file no longer exists. */
+  missing?: boolean;
+}
+
+/**
+ * The documents opened lately, newest first, kept where the platform keeps the session (the
+ * desktop's Rust side, the browser's IndexedDB). Every method is best effort and never throws,
+ * except open, which reports why a file could not be opened.
+ */
+export interface RecentFiles {
+  list(): Promise<RecentEntry[]>;
+  /** Puts the document first, or ignores a ref the platform cannot reopen. */
+  add(ref: FileRef): Promise<void>;
+  /**
+   * Opens an entry through the platform's own grant (a path the user opened before; a stored
+   * handle). Resolves null when the file no longer exists. With the open folder, a file inside it
+   * comes back with its folderPath set.
+   */
+  open(id: string, listing: Listing | null): Promise<OpenedFile | null>;
+  remove(id: string): Promise<void>;
+  clear(): Promise<void>;
+}
+
 /** The desktop window's own caption buttons (the native frame is off). */
 export interface WindowControls {
   minimize(): Promise<void>;
@@ -97,6 +127,11 @@ export interface Platform {
   kind: 'desktop' | 'web';
   /** Present when the app draws its own title bar. */
   window?: WindowControls;
+  /**
+   * The recent-files list. Absent where the platform cannot reopen a file later: a browser
+   * without the File System Access API has no handle to keep.
+   */
+  recent?: RecentFiles;
   /** Shows an open dialog. Resolves null when cancelled. */
   open(): Promise<OpenedFile | null>;
   /** Shows a folder dialog and lists its Markdown files. */
@@ -125,6 +160,12 @@ export interface Platform {
   saveAs(bytes: Uint8Array, suggestedName: string): Promise<FileRef | null>;
   /** Saves an export (HTML) through a save dialog or a download. */
   exportFile(bytes: Uint8Array, suggestedName: string, kind: 'html'): Promise<void>;
+  /**
+   * Puts rich text on the system clipboard: html as text/html (what Outlook, Teams and Word paste
+   * with formatting) and text as text/plain, in one clipboard entry. Rejects when the clipboard
+   * refuses the write. Called from a click, which is what browsers require.
+   */
+  copyRichText(html: string, text: string): Promise<void>;
   /** Opens an http, https or mailto address in the system browser. */
   openExternal(url: string): Promise<void>;
   /** Resolves an image path (decoded, relative to ref or folder-rooted) to an object URL. */

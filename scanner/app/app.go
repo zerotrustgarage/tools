@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/zerotrustgarage/tools/scanner/internal/inventory"
+	"github.com/zerotrustgarage/tools/scanner/internal/openwith"
 	"github.com/zerotrustgarage/tools/scanner/internal/probe"
 	"github.com/zerotrustgarage/tools/scanner/internal/report"
 	"github.com/zerotrustgarage/tools/scanner/internal/scan"
@@ -41,6 +42,16 @@ type Platform interface {
 	OpenURL(url string)
 	OpenFile(title, filterName, pattern string) (string, error)
 	Launch(action, ip string) (string, error)
+	// LaunchProgram starts an installed program with an exact argument vector
+	// (argv[0] is the executable). It never involves a shell.
+	LaunchProgram(argv []string) error
+	// PowerSaving reports whether Windows battery saver is on. A scheduled
+	// rescan skips its cycle while it is (SC7). False when unknown.
+	PowerSaving() bool
+	// Alert tells the technician about new devices found by a scheduled
+	// rescan (SC7): it flashes the taskbar button and, if toast is set, sends
+	// a Windows notification. The text is counts and addresses only.
+	Alert(title, body string, toast bool)
 }
 
 // App is bound to the UI: its exported methods are callable from JavaScript.
@@ -62,11 +73,15 @@ type App struct {
 	revision      uint64
 	savedRevision uint64
 	filename      string
+	openWith      []openwith.Command // validated "Open with" commands from the technician's settings (SC10)
+	sched         scheduleState      // scheduled rescans (SC7), see schedule.go
 }
 
 // NewApp returns an App; startup supplies the platform.
 func NewApp() *App {
-	return &App{ctx: context.Background(), annotations: map[string]scan.Annotation{}, wake: sendWake}
+	a := &App{ctx: context.Background(), annotations: map[string]scan.Annotation{}, wake: sendWake}
+	a.initSchedules()
+	return a
 }
 
 func (a *App) setPlatform(ctx context.Context, p Platform) {
@@ -222,8 +237,20 @@ func (a *App) StartScan(req ScanRequest) (int, error) {
 	cfg := plan.Config()
 
 	ctx, cancel := context.WithCancel(a.ctx)
-	a.mu.Lock()
-	if a.running { // lost a race with another StartScan
+	// A manual scan takes priority over a scheduled rescan: stop it, wait for it
+	// to end, and only then start, so the two never overlap (SC7).
+	for attempt := 0; ; attempt++ {
+		if err := a.preemptScheduled(); err != nil {
+			cancel()
+			return 0, err
+		}
+		a.mu.Lock()
+		if !a.sched.active || attempt >= 3 {
+			break
+		}
+		a.mu.Unlock() // a scheduled rescan started in the gap; stop it too
+	}
+	if a.running || a.sched.active { // lost a race with another StartScan
 		a.mu.Unlock()
 		cancel()
 		return 0, errors.New("a scan is already running")

@@ -150,7 +150,48 @@ diagnostic output in the app. Programs use fixed system paths and numeric result
 as commands. A public address loaded from a file requires authorization before these connection actions.
 Wake-on-LAN asks before sending one UDP magic packet and is limited to directly connected internal IPv4 networks;
 it can use the last known MAC of an offline favorite. Nothing is installed on the scanned device, and no credentials
-are collected by Scanner for these actions. Scheduled scans and custom command templates remain planned.
+are collected by Scanner for these actions. Scheduled scans remain planned.
+
+## Scheduled rescans
+
+Open **Target sets**, select a saved set, and use **Scheduled rescan** to rescan it every 15 minutes to 24 hours
+(each cycle gets a little random jitter). It is off for every set until you turn it on.
+
+- It runs only while ZTG Scanner is open. It installs no Windows service, scheduled task or startup entry, and
+  nothing runs when the app is closed or before the window has loaded. The first rescan comes one interval after
+  you turn the schedule on or start the app, never at launch.
+- Only private and link-local addresses (the scope guard's internal ranges). A schedule that includes a public
+  address is refused, because scanning public space needs fresh authorization each time and a schedule cannot hold
+  one. Host names are refused too, since a name can point somewhere else later.
+- It uses the scan mode and probes selected in Settings when you apply the schedule, so a Gentle set stays gentle
+  and keeps its pacing. SNMP is never used: passphrases are not stored, so a schedule cannot carry them.
+- Rescans never overlap. A cycle that falls due while you scan manually, or while Windows battery saver is on, is
+  skipped. Starting a manual scan stops a scheduled rescan in progress. Metered connections are not detected.
+- The first rescan records a baseline. Each later one is compared with the previous rescan of the same set using the
+  same identity rules as **Compare with…** (unique stable MAC, then address); a device that is new is announced
+  once. Changing a set's targets or the scan mode starts a new baseline.
+- A banner in the window lists the new devices (counts and addresses) with a **Show changes** button, the taskbar
+  button flashes and the window title shows the count. Optionally Windows also shows a notification; its text is
+  counts and addresses only, never a name a device reported.
+- Results stay local, in the same JSON format as a saved scan: the latest result of each schedule is kept in
+  `ZTG Scanner\scheduled` under your local application data folder and replaced by each completed rescan.
+  A stopped rescan keeps nothing. Turning a schedule off deletes its file. Scheduled rescans never change the
+  inventory on screen. Nothing is sent anywhere.
+
+## Open with commands
+
+Choose **Settings**, then **Open with commands** to define up to 20 commands of your own, for example PuTTY, mstsc
+or an RMM console link. A program command is the full path to an installed `.exe` plus one argument per line; a web
+command is an `https://` address. Use `{ip}` for the device address and `{hostname}` for its reported name, for
+example `-ssh` and `admin@{hostname}` as two arguments. **Preview** shows exactly what would run for a test address
+and name without starting anything. Choose a command from **Open with** in the device pane, or right-click a result.
+
+Commands are stored only in the current Windows user's desktop preferences and are never written to scan files or
+exports. Each argument stays one argument and no shell is involved. If a device has no valid DNS hostname, commands
+that use `{hostname}` are unavailable for it rather than adjusted. `cmd.exe`, PowerShell and other shells or script
+hosts are refused, there is no password placeholder, and obvious password options such as `-pw` are refused: let the
+program or site ask for the credential. A web address needs a fixed `https://` host, and values placed in its path or
+query are URL-escaped. A public address needs the same authorization as the other connection actions.
 
 ## Saved target sets
 

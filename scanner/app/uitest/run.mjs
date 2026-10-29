@@ -112,7 +112,7 @@ async function targetSetTests(scheme) {
   assert.ok(!JSON.stringify(stored).includes("passphrase"));
   assert.equal((await page.evaluate(() => window.__calls)).filter(c => ["StartScan", "DeviceAction", "OpenWeb"].includes(c[0])).length, 0,
     "saving a target set must not scan, probe or authorize a public target");
-  assert.equal(await page.locator("#target-sets option").count(), 1);
+  assert.equal(await page.locator("#target-set-list option").count(), 1);
   assert.equal(await page.locator("#target-sets img, #target-sets svg").count(), 0, "saved labels must be inserted as text");
   assert.equal(await page.evaluate(() => window.__pwned), undefined);
 
@@ -287,6 +287,340 @@ async function targetSetTests(scheme) {
   assert.equal(await page.locator("#target-set-list option").count(), 0);
   assert.equal(await page.isVisible("#target-set-reset"), false);
   assert.deepEqual(errors, [], "target set page errors");
+  await page.close();
+}
+
+async function scheduleTests(scheme) {
+  const page = await browser.newPage({ viewport: { width: 1320, height: 820 }, colorScheme: scheme });
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => m.type() === "error" && /Content Security Policy/i.test(m.text()) && errors.push(m.text()));
+  await page.addInitScript({ path: join(here, "mock.js") });
+  await page.goto(url);
+  await page.waitForFunction(() => document.getElementById("targets")?.value === "192.168.50.0/24");
+  const calls = () => page.evaluate(() => window.__calls);
+  const schedules = () => page.evaluate(() => JSON.parse(localStorage.getItem("ztg-scanner:schedules") || "null"));
+  const lastSet = async () => (await calls()).filter((c) => c[0] === "SetSchedules").at(-1)[1];
+  const saveSet = async (site, name, targets) => {
+    await page.fill("#target-set-site", site);
+    await page.fill("#target-set-name", name);
+    await page.fill("#target-set-targets", targets);
+    await page.click("#target-set-save");
+    await page.waitForFunction((n) => document.getElementById("target-set-status").textContent.includes("saved") && [...document.querySelectorAll("#target-set-list option")].some((o) => o.textContent.endsWith(n)), name);
+  };
+  const select = async (name) => {
+    const value = await page.evaluate((n) => [...document.querySelectorAll("#target-set-list option")].find((o) => o.textContent.endsWith(n)).value, name);
+    await page.selectOption("#target-set-list", value);
+  };
+
+  // Off by default: nothing is stored or sent until the technician turns a schedule on.
+  assert.equal(await schedules(), null);
+  assert.deepEqual(await lastSet(), []);
+  assert.equal(await page.isHidden("#schedule-state"), true);
+  await page.click("#target-sets-btn");
+  await page.waitForSelector("#target-sets:not([hidden])");
+  assert.equal(await page.isDisabled("#schedule-apply"), true, "no saved set selected: nothing to schedule");
+  assert.match(await page.textContent("#schedule-status"), /Choose a saved set/);
+  const help = await page.textContent("#schedule-help");
+  for (const want of ["only while ZTG Scanner is open", "installs no Windows service, scheduled task or startup entry", "never SNMP", "public range is never rescanned automatically"]) {
+    assert.ok(help.includes(want), "help text missing: " + want);
+  }
+  await saveSet("Clinic", "Main LAN", "10.20.0.0/24");
+  await saveSet("Other", "Public", "8.8.8.8");
+  await saveSet("Lab", "Names", "printer.lan");
+  await select("Main LAN");
+  assert.equal(await page.isChecked("#schedule-enabled"), false);
+  assert.equal(await page.isChecked("#schedule-toast"), false, "the Windows notification writes to the user registry, so it is opt-in");
+
+  // Enable: validated first, stored without targets, and sent to the app with the set's targets.
+  await page.check("#schedule-enabled");
+  await page.selectOption("#schedule-interval", "15");
+  await page.click("#schedule-apply");
+  await page.waitForFunction(() => document.getElementById("schedule-status").textContent.startsWith("Schedule saved."));
+  let stored = await schedules();
+  assert.equal(stored.schedules.length, 1);
+  const sched = stored.schedules[0];
+  assert.deepEqual([sched.site, sched.name, sched.interval_minutes, sched.desktop_toast, sched.scan.mode, sched.scan.probes.snmp], ["Clinic", "Main LAN", 15, false, "default", false]);
+  assert.ok(!("targets" in sched), "targets come from the saved set, not the schedule");
+  assert.ok(!JSON.stringify(stored).includes("passphrase") && !JSON.stringify(stored).includes("allow_public"));
+  const sent = await lastSet();
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].targets, "10.20.0.0/24");
+  assert.equal(sent[0].interval_minutes, 15);
+  assert.equal(await page.isVisible("#schedule-state"), true);
+  assert.match(await page.textContent("#schedule-state"), /Scheduled rescans on: 1/);
+  assert.match(await page.textContent("#schedule-status"), /Next rescan at about/);
+  assert.match(await page.textContent("#schedule-folder"), /ZTG Scanner/);
+  if (shots) await page.screenshot({ path: join(shots, `schedule-${scheme}.png`) });
+
+  // A public range, and a host name, are refused with the reason; nothing is saved or sent.
+  const before = (await calls()).filter((c) => c[0] === "SetSchedules").length;
+  await select("Public");
+  assert.equal(await page.isChecked("#schedule-enabled"), false);
+  await page.check("#schedule-enabled");
+  await page.click("#schedule-apply");
+  await page.waitForFunction(() => document.getElementById("schedule-status").textContent.startsWith("Not scheduled:"));
+  const refusal = await page.textContent("#schedule-status");
+  assert.match(refusal, /private and link-local addresses only/);
+  assert.match(refusal, /fresh authorization/);
+  assert.equal(await page.isChecked("#schedule-enabled"), false, "a refused schedule must not look enabled");
+  assert.equal((await schedules()).schedules.length, 1);
+  assert.equal((await calls()).filter((c) => c[0] === "SetSchedules").length, before, "a refused schedule must not reach the app");
+  await select("Names");
+  await page.check("#schedule-enabled");
+  await page.click("#schedule-apply");
+  await page.waitForFunction(() => /host name/.test(document.getElementById("schedule-status").textContent));
+  assert.equal((await schedules()).schedules.length, 1);
+
+  // A schedule follows the scan mode chosen in Settings when it is applied: gentle stays gentle, without SNMP.
+  await page.click("#target-sets-close");
+  await page.click("#settings-btn");
+  await page.check("#snmp-on");
+  await page.check("#mode-gentle");
+  await page.click("#settings-close");
+  await page.click("#target-sets-btn");
+  await select("Main LAN");
+  await page.check("#schedule-enabled");
+  await page.click("#schedule-apply");
+  await page.waitForFunction(() => document.getElementById("schedule-status").textContent.startsWith("Schedule saved."));
+  const gentle = (await schedules()).schedules[0];
+  assert.deepEqual([gentle.scan.mode, gentle.scan.ports, gentle.scan.concurrency, gentle.scan.timeout_ms, gentle.scan.probes.snmp], ["gentle", "", 0, 0, false]);
+  assert.match(await page.textContent("#schedule-status"), /gentle mode/);
+  await page.click("#target-sets-close");
+  await page.click("#settings-btn");
+  await page.check("#mode-default");
+  await page.click("#settings-close");
+
+  // It persists: after a reload the app is given the schedule again, with the set's targets.
+  await page.reload();
+  await page.waitForFunction(() => document.getElementById("targets")?.value === "192.168.50.0/24");
+  await page.waitForFunction(() => window.__calls.some((c) => c[0] === "SetSchedules" && c[1].length === 1));
+  const again = await lastSet();
+  assert.deepEqual([again[0].site, again[0].name, again[0].targets, again[0].scan.mode], ["Clinic", "Main LAN", "10.20.0.0/24", "gentle"]);
+  await page.waitForSelector("#schedule-state:not([hidden])");
+
+  // The scheduled rescan is running: the status bar says so and the stop button reaches the app.
+  await page.evaluate(() => window.__emit("schedule:status", [{ key: "clinic\u0000main lan", site: "Clinic", name: "Main LAN", interval_minutes: 15, running: true, skipped: 0 }]));
+  await page.waitForSelector("#schedule-stop:not([hidden])");
+  assert.match(await page.textContent("#schedule-state"), /Scheduled rescan running: Clinic · Main LAN/);
+  await page.click("#schedule-stop");
+  assert.ok((await calls()).some((c) => c[0] === "StopScheduled"));
+
+  // New devices: a banner with counts and addresses (text only), the window title, and a way to see the changes.
+  const title = await page.title();
+  const hostileSite = '<img src=x onerror="window.__pwned=1">';
+  await page.evaluate((site) => window.__emit("schedule:notice", { key: "clinic\u0000main lan", site, name: "Main LAN", new_count: 2, addresses: ["10.20.0.50", "10.20.0.51"], up: 12, at: "2026-10-29T10:00:00Z", title: "ZTG Scanner: 2 new devices", text: "10.20.0.50, 10.20.0.51" }), hostileSite);
+  await page.waitForSelector("#schedule-banner:not([hidden])");
+  const banner = await page.textContent("#schedule-banner-list");
+  assert.ok(banner.includes("2 new devices") && banner.includes("10.20.0.50, 10.20.0.51") && banner.includes("Main LAN"), banner);
+  assert.equal(await page.locator("#schedule-banner img").count(), 0, "labels must be inserted as text");
+  assert.equal(await page.evaluate(() => window.__pwned), undefined);
+  assert.deepEqual((await calls()).filter((c) => c[0] === "WindowSetTitle").at(-1), ["WindowSetTitle", title + ": 2 new devices"]);
+  if (shots) await page.screenshot({ path: join(shots, `schedule-banner-${scheme}.png`), clip: { x: 0, y: 0, width: 1320, height: 200 } });
+  // A second schedule's notice is listed beside the first, not instead of it.
+  await page.evaluate(() => window.__emit("schedule:notice", { key: "lab\u0000floor", site: "Lab", name: "Floor", new_count: 1, addresses: ["10.30.0.9"], up: 4, at: "2026-10-29T10:05:00Z", title: "ZTG Scanner: 1 new device", text: "10.30.0.9" }));
+  assert.equal(await page.locator("#schedule-banner-list li").count(), 2);
+  assert.deepEqual((await calls()).filter((c) => c[0] === "WindowSetTitle").at(-1), ["WindowSetTitle", title + ": 3 new devices"]);
+  await page.click("#schedule-banner-list li:first-child button");
+  await page.waitForSelector("#comparison:not([hidden])");
+  assert.ok((await calls()).some((c) => c[0] === "ScheduleChanges" && c[1] === "clinic\u0000main lan"));
+  assert.match(await page.textContent("#comparison-source"), /^Previous rescan of Clinic/);
+  assert.match(await page.textContent("#comparison-list"), /New: 10\.0\.0\.50/);
+  assert.equal(await page.locator("#comparison img").count(), 0, "device names must be inserted as text");
+  assert.equal(await page.evaluate(() => window.__pwned), undefined);
+  await page.click("#comparison-close");
+  await page.click("#schedule-banner-dismiss");
+  assert.equal(await page.isHidden("#schedule-banner"), true);
+  assert.deepEqual((await calls()).filter((c) => c[0] === "WindowSetTitle").at(-1), ["WindowSetTitle", title]);
+
+  // The layout is the same with the banner showing: the grid keeps its height.
+  const gridHeight = () => page.evaluate(() => document.querySelector(".workspace").getBoundingClientRect().height);
+  const without = await gridHeight();
+  await page.evaluate(() => window.__emit("schedule:notice", { key: "k", site: "S", name: "N", new_count: 1, addresses: ["10.0.0.1"], up: 1, at: "", title: "ZTG Scanner: 1 new device", text: "10.0.0.1" }));
+  const withBanner = await gridHeight();
+  assert.ok(withBanner > 100 && withBanner < without, "the workspace must shrink, not move off screen, when the banner shows");
+  await page.click("#schedule-banner-dismiss");
+
+  // Turning it off removes it from storage and from the app.
+  await page.click("#target-sets-btn");
+  await select("Main LAN");
+  assert.equal(await page.isChecked("#schedule-enabled"), true);
+  await page.uncheck("#schedule-enabled");
+  await page.click("#schedule-apply");
+  await page.waitForFunction(() => document.getElementById("schedule-status").textContent.startsWith("Schedule turned off."));
+  assert.deepEqual((await schedules()).schedules, []);
+  assert.deepEqual(await lastSet(), []);
+  assert.equal(await page.isHidden("#schedule-state"), true);
+
+  // Deleting a saved set stops its schedule.
+  await page.check("#schedule-enabled");
+  await page.click("#schedule-apply");
+  await page.waitForFunction(() => document.getElementById("schedule-status").textContent.startsWith("Schedule saved."));
+  assert.equal((await lastSet()).length, 1);
+  await page.click("#target-set-delete");
+  await page.waitForSelector("#modal:not([hidden])");
+  await page.click("#modal-ok");
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem("ztg-scanner:schedules")).schedules.length === 0);
+  assert.deepEqual(await lastSet(), []);
+
+  // Malformed stored schedules are not trusted: scheduling is blocked until they are reset.
+  await page.evaluate(() => localStorage.setItem("ztg-scanner:schedules", '{"version":1,"schedules":[{"site":"x","name":"y","interval_minutes":1,"desktop_toast":true,"scan":{}}]}'));
+  await page.reload();
+  await page.waitForFunction(() => document.getElementById("targets")?.value === "192.168.50.0/24");
+  await page.click("#target-sets-btn");
+  await page.selectOption("#target-set-list", { index: 0 });
+  await page.waitForFunction(() => document.getElementById("schedule-status").textContent.includes("malformed format"));
+  assert.equal(await page.isDisabled("#schedule-apply"), true);
+  assert.equal(await page.isVisible("#schedule-reset"), true);
+  assert.equal((await calls()).filter((c) => c[0] === "SetSchedules").length, 0, "nothing is scheduled from malformed data");
+  await page.click("#schedule-reset");
+  await page.waitForSelector("#modal:not([hidden])");
+  await page.click("#modal-ok");
+  await page.waitForFunction(() => localStorage.getItem("ztg-scanner:schedules") === null);
+  assert.equal(await page.isVisible("#schedule-reset"), false);
+  assert.equal(await page.isDisabled("#schedule-apply"), false);
+
+  assert.deepEqual(errors, [], "schedule page errors");
+  await page.close();
+}
+
+async function openWithTests(scheme) {
+  const page = await browser.newPage({ viewport: { width: 1320, height: 820 }, colorScheme: scheme });
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => m.type() === "error" && /Content Security Policy/i.test(m.text()) && errors.push(m.text()));
+  await page.addInitScript({ path: join(here, "mock.js") });
+  await page.goto(url);
+  await page.waitForFunction(() => document.getElementById("targets")?.value === "192.168.50.0/24");
+  const calls = () => page.evaluate(() => window.__calls);
+  const stored = () => page.evaluate(() => JSON.parse(localStorage.getItem("ztg-scanner:open-with")));
+  await page.click("#scan-btn");
+  await page.waitForFunction(() => document.getElementById("status-text").textContent.startsWith("Done:"));
+
+  // No commands yet: the menu says so and offers the editor.
+  await page.click('#rows tr[data-ip="192.168.50.20"]');
+  await page.click('#detail button[data-action="open-with"]');
+  await page.waitForSelector("#openwith-menu:not([hidden]) #openwith-manage");
+  assert.match(await page.textContent("#openwith-menu"), /No commands yet/);
+  await page.click("#openwith-manage");
+  await page.waitForSelector("#open-with:not([hidden])");
+
+  // Add a program command; the preview shows the exact argument vector, one argument per line.
+  await page.fill("#ow-name", "PuTTY");
+  await page.fill("#ow-program", "C:\\Program Files\\PuTTY\\putty.exe");
+  await page.fill("#ow-args", "-ssh\nadmin@{hostname}\n");
+  await page.fill("#ow-test-host", "srv-01.lab.lan");
+  await page.click("#ow-preview-btn");
+  await page.waitForFunction(() => document.getElementById("ow-preview").textContent.includes("srv-01.lab.lan"));
+  const preview = await page.textContent("#ow-preview");
+  assert.match(preview, /program {2}\[C:\\Program Files\\PuTTY\\putty.exe\]/);
+  assert.match(preview, /arg 1 {4}\[-ssh\]/);
+  assert.match(preview, /arg 2 {4}\[admin@srv-01.lab.lan\]/);
+  assert.equal((await calls()).filter((c) => c[0] === "OpenWith").length, 0, "preview must not launch");
+  await page.fill("#ow-test-host", "-oProxyCommand=calc");
+  await page.click("#ow-preview-btn");
+  await page.waitForFunction(() => document.getElementById("ow-preview").textContent.startsWith("Not usable"));
+  await page.fill("#ow-test-host", "srv-01.lab.lan");
+  await page.click("#ow-save");
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem("ztg-scanner:open-with") || "{}").commands?.length === 1);
+  assert.deepEqual(await stored(), { version: 1, commands: [{ name: "PuTTY", kind: "program", program: "C:\\Program Files\\PuTTY\\putty.exe", args: ["-ssh", "admin@{hostname}"] }] });
+
+  // A URL command, and a refused shell, which saves nothing.
+  await page.click("#ow-new");
+  await page.fill("#ow-name", "RMM console");
+  await page.selectOption("#ow-kind", "url");
+  assert.equal(await page.isVisible("#ow-program"), false);
+  await page.fill("#ow-url", "https://rmm.example.com/console?ip={ip}&name={hostname}");
+  await page.click("#ow-save");
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem("ztg-scanner:open-with") || "{}").commands?.length === 2);
+  await page.click("#ow-new");
+  await page.fill("#ow-name", "Shell");
+  await page.fill("#ow-program", "C:\\Windows\\System32\\cmd.exe");
+  await page.fill("#ow-args", "/c\n{ip}");
+  await page.click("#ow-save");
+  await page.waitForFunction(() => /shell or script host/.test(document.getElementById("ow-status").textContent));
+  assert.equal((await stored()).commands.length, 2, "a refused command must not be stored");
+  assert.equal(await page.locator("#ow-list option").count(), 2);
+
+  // Edit: selecting fills the form; saving under the same name replaces in place.
+  await page.selectOption("#ow-list", { index: 0 });
+  assert.equal(await page.inputValue("#ow-name"), "PuTTY");
+  assert.equal(await page.inputValue("#ow-args"), "-ssh\nadmin@{hostname}");
+  await page.fill("#ow-args", "-ssh\n-P\n22\nadmin@{hostname}");
+  await page.click("#ow-save");
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem("ztg-scanner:open-with")).commands[0].args.length === 4);
+  assert.equal((await stored()).commands.length, 2);
+  await page.click("#open-with-close");
+
+  // Survives a reload and is handed to the app again before any menu is built.
+  await page.reload();
+  await page.waitForFunction(() => document.getElementById("targets")?.value === "192.168.50.0/24");
+  await page.click("#scan-btn");
+  await page.waitForFunction(() => document.getElementById("status-text").textContent.startsWith("Done:"));
+
+  // The row menu, from the Open with button and from a right click. A name that is a valid DNS name enables
+  // both commands; a device with no name has the hostname commands disabled with the reason, and still lists them.
+  await page.click('#rows tr[data-ip="192.168.50.20"]');
+  await page.click('#detail button[data-action="open-with"]');
+  await page.waitForSelector('#openwith-menu button[data-command="PuTTY"]');
+  assert.equal(await page.isDisabled('#openwith-menu button[data-command="PuTTY"]'), false);
+  if (shots) await page.screenshot({ path: join(shots, `open-with-menu-${scheme}.png`) });
+  await page.click('#openwith-menu button[data-command="PuTTY"]');
+  await page.waitForFunction(() => window.__calls.some((c) => c[0] === "OpenWith"));
+  assert.deepEqual((await calls()).filter((c) => c[0] === "OpenWith").at(-1), ["OpenWith", "PuTTY", "192.168.50.20", false]);
+  assert.equal(await page.isHidden("#openwith-menu"), true, "menu closes after a choice");
+  await page.waitForFunction(() => document.getElementById("toast").textContent === "Opened PuTTY for 192.168.50.20");
+
+  await page.click('#rows tr[data-ip="192.168.50.120"]', { button: "right" });
+  await page.waitForSelector('#openwith-menu button[data-command="PuTTY"]');
+  assert.equal(await page.isDisabled('#openwith-menu button[data-command="PuTTY"]'), true);
+  assert.match(await page.textContent('#openwith-menu button[data-command="PuTTY"]'), /not a valid DNS name/);
+  assert.equal(await page.isDisabled('#openwith-menu button[data-command="RMM console"]'), true);
+  assert.equal(await page.evaluate(() => document.querySelector('#rows tr.selected')?.dataset.ip), "192.168.50.120");
+  const before = (await calls()).filter((c) => c[0] === "OpenWith").length;
+  await page.click('#openwith-menu button[data-command="PuTTY"]', { force: true, timeout: 1000 }).catch(() => {});
+  assert.equal((await calls()).filter((c) => c[0] === "OpenWith").length, before, "an unavailable command must not launch");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.isHidden("#openwith-menu"), true);
+
+  // Device-reported text is only ever text, even in the menu's reasons and the toast.
+  assert.equal(await page.locator("#openwith-menu img").count(), 0);
+  assert.equal(await page.evaluate(() => window.__pwned), undefined);
+
+  // Delete needs a confirmation.
+  await page.click("#settings-btn");
+  await page.click("#open-with-edit");
+  await page.selectOption("#ow-list", { index: 1 });
+  await page.click("#ow-delete");
+  await page.waitForSelector("#modal:not([hidden])");
+  await page.click("#modal-cancel");
+  assert.equal((await stored()).commands.length, 2);
+  await page.click("#ow-delete");
+  await page.click("#modal-ok");
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem("ztg-scanner:open-with")).commands.length === 1);
+  if (shots) await page.screenshot({ path: join(shots, `open-with-editor-${scheme}.png`) });
+
+  // Stored data that the app refuses leaves no command active and offers a reset; nothing is silently dropped.
+  await page.evaluate(() => localStorage.setItem("ztg-scanner:open-with", JSON.stringify({ version: 1, commands: [{ name: "Shell", kind: "program", program: "C:\\Windows\\System32\\cmd.exe", args: ["/c"] }] })));
+  await page.reload();
+  await page.waitForFunction(() => document.getElementById("targets")?.value === "192.168.50.0/24");
+  await page.click("#scan-btn");
+  await page.waitForFunction(() => document.getElementById("status-text").textContent.startsWith("Done:"));
+  await page.click('#rows tr[data-ip="192.168.50.20"]');
+  await page.click('#detail button[data-action="open-with"]');
+  await page.waitForSelector("#openwith-menu #openwith-manage");
+  assert.match(await page.textContent("#openwith-menu"), /could not be loaded/);
+  assert.equal(await page.locator("#openwith-menu button[data-command]").count(), 0);
+  await page.click("#openwith-manage");
+  assert.equal(await page.isVisible("#ow-reset"), true);
+  assert.equal(await page.isDisabled("#ow-save"), false);
+  await page.click("#ow-reset");
+  await page.click("#modal-ok");
+  await page.waitForFunction(() => localStorage.getItem("ztg-scanner:open-with") === null);
+  assert.equal(await page.isVisible("#ow-reset"), false);
+
+  assert.equal((await calls()).filter((c) => ["StartScan"].includes(c[0])).length >= 1, true);
+  assert.deepEqual(errors, [], "open with page errors");
   await page.close();
 }
 
@@ -659,6 +993,10 @@ try {
     console.log(`ok  ${scheme} target sets`);
     await gentleTests(scheme);
     console.log(`ok  ${scheme} gentle mode`);
+    await openWithTests(scheme);
+    console.log(`ok  ${scheme} open with`);
+    await scheduleTests(scheme);
+    console.log(`ok  ${scheme} scheduled rescans`);
   }
 } catch (e) {
   failed = true;

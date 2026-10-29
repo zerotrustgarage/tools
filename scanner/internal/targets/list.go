@@ -138,3 +138,19 @@ func isNumericDotted(s string) bool {
 	}
 	return true
 }
+
+// IsHostnameSpec reports whether a normalized target specification is a host
+// name rather than an address, a CIDR block or an address range. It follows the
+// same order as expansion, so a spec it calls a name is resolved by DNS.
+func IsHostnameSpec(spec string) bool {
+	if strings.Contains(spec, "/") {
+		return false
+	}
+	if i := strings.IndexByte(spec, '-'); i > 0 {
+		if start, err := netip.ParseAddr(spec[:i]); err == nil && start.Is4() {
+			return false
+		}
+	}
+	_, err := netip.ParseAddr(spec)
+	return err != nil
+}
