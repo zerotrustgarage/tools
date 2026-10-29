@@ -1,5 +1,6 @@
 import { LISTED_EXTENSIONS, resolveInFolder, skipFolder } from '../core/paths';
 import { writeRichText } from './clipboard';
+import { createRecentFiles } from './recent-web';
 import { FileTooLargeError, type Arrival, type FileRef, type Listing, type OpenedFile, type Platform } from './types';
 
 // Browser build. Files never leave the machine: they are read and written locally through the
@@ -98,6 +99,7 @@ async function folderFile(listing: Listing, folderPath: string): Promise<{ file:
 const SESSION_DB = 'ztg-readout';
 const SESSION_STORE = 'session';
 const SESSION_KEY = 'last';
+const RECENT_KEY = 'recent';
 
 interface StoredSession {
   folder?: FileSystemDirectoryHandle;
@@ -153,6 +155,16 @@ async function restore(session: StoredSession): Promise<Arrival | null> {
 
 export const webPlatform: Platform = {
   kind: 'web',
+
+  // Only handles from the File System Access API can be opened again, so a browser without it
+  // (Firefox, Safari) has no recent-files list; the button is not shown there.
+  recent:
+    typeof indexedDB !== 'undefined' && picker.showOpenFilePicker
+      ? createRecentFiles({
+          read: () => withSessionStore<unknown>('readonly', (store) => store.get(RECENT_KEY)),
+          write: async (value) => void (await withSessionStore('readwrite', (store) => store.put(value, RECENT_KEY))),
+        })
+      : undefined,
 
   async open() {
     if (!picker.showOpenFilePicker) {

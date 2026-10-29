@@ -18,11 +18,12 @@ import { postprocess } from '../core/postprocess';
 import { renderMarkdown } from '../core/render';
 import { blobUrlToDataUrl, buildRichText, fragmentForRange, isEmptyFragment } from '../core/richtext';
 import { DEFAULT_BOUNDS, type SearchMatch } from '../core/search';
-import type { Arrival, FileRef, Listing, OpenedFile, PendingSession, Platform } from '../platform/types';
+import type { Arrival, FileRef, Listing, OpenedFile, PendingSession, Platform, RecentEntry } from '../platform/types';
 import { el, icon } from './dom';
 import { createEditor, documentText, scrollToLine, type JumpOptions } from './editor';
 import { runFormat, type FormatCommand } from './format';
 import { OutlinePanel } from './outline';
+import { RecentPanel } from './recent';
 import { SearchPanel } from './search';
 import { Sidebar } from './sidebar';
 import { splitter } from './splitter';
@@ -145,6 +146,19 @@ export class App {
     open: (path, match) => void this.openSearchHit(path, match),
     onClose: () => this.closeSearch(),
   });
+  private readonly recent = new RecentPanel({
+    open: (entry) => void this.openRecent(entry),
+    remove: (entry) => void this.removeRecent(entry),
+    clear: () => void this.clearRecent(),
+    onClose: () => this.closeRecent(),
+  });
+  /** Entries a failed open found gone this session, for platforms that cannot tell beforehand. */
+  private readonly recentMissing = new Set<string>();
+  private readonly recentButton = el(
+    'button',
+    { class: 'text-button', type: 'button', title: 'Recent files (Ctrl+Shift+E)', 'aria-pressed': 'false', 'aria-label': 'Recent files' },
+    'Recent',
+  );
   private readonly searchButton = el('button', { class: 'text-button', type: 'button', title: 'Search the open folder (Ctrl+Shift+F)', 'aria-pressed': 'false', disabled: '' }, 'Search');
   private readonly outlineButton = el('button', { class: 'text-button', type: 'button', title: 'Outline: the headings of this document', 'aria-pressed': 'false' }, 'Outline');
 
@@ -225,6 +239,7 @@ export class App {
     this.copyRichButton.addEventListener('click', () => void this.copyRichText());
     this.outlineButton.addEventListener('click', () => this.toggleOutline());
     this.searchButton.addEventListener('click', () => this.toggleSearch());
+    this.recentButton.addEventListener('click', () => this.toggleRecent());
 
     const top = el(
       'header',
@@ -238,6 +253,7 @@ export class App {
         button('New', 'New document (Ctrl+N)', () => void this.newDocument(), 'new'),
         button('Open', 'Open file (Ctrl+O)', () => void this.open(), 'open'),
         button('Open folder', 'Open folder or repository (Ctrl+Shift+O)', () => void this.openFolder(), 'open-folder'),
+        ...(this.platform.recent ? [this.recentButton] : []),
         button('Save', 'Save (Ctrl+S)', () => void this.save(false), 'save'),
         button('Save as', 'Save as (Ctrl+Shift+S)', () => void this.save(true), 'save-as'),
         el('span', { class: 'divider' }),
@@ -306,7 +322,7 @@ export class App {
     });
     paneSplitter.classList.add('splitter-panes');
     this.panes.append(this.editorHost, paneSplitter, this.previewPane);
-    this.workspace.append(this.sidebar.element, sidebarSplitter, this.outline.element, this.search.element, this.panes, this.dropOverlay);
+    this.workspace.append(this.sidebar.element, sidebarSplitter, this.outline.element, this.search.element, this.recent.element, this.panes, this.dropOverlay);
     if (this.platform.window) {
       this.root.classList.add('has-titlebar');
       this.root.append(titleBar(this.platform.window, APP_NAME));
@@ -669,6 +685,7 @@ export class App {
     this.pendingFragment = fragment;
     const decoded = decodeDocument(file.bytes);
     this.load(file.ref, decoded.text, decoded.format, file.bytes);
+    this.noteRecent(file.ref);
   }
 
   private async arrive(arrival: Arrival, startup: boolean): Promise<void> {
@@ -818,6 +835,7 @@ export class App {
       const name = this.doc.ref?.name ?? 'Untitled.md';
       const ref = as || !this.doc.ref ? await this.platform.saveAs(bytes, name) : await this.platform.save(this.doc.ref, bytes, name);
       if (!ref) return false;
+      const previous = this.doc.ref;
       // Saving somewhere else makes the file independent of the open folder.
       const kept = ref === this.doc.ref ? ref : { ...ref, folderPath: undefined };
       this.doc = { ...this.doc, ref: kept, savedText: text, converted: false };
@@ -828,6 +846,8 @@ export class App {
       this.updateDirty();
       this.notify(null);
       this.rememberSession();
+      // A file saved under a new name or place is a document the reader will want again.
+      if (ref !== previous) this.noteRecent(kept);
       return true;
     } catch (error) {
       this.notify(`Could not save: ${message(error)}`);
@@ -911,6 +931,11 @@ export class App {
       this.openSearch();
       return;
     }
+    if (key === 'e' && event.shiftKey && this.platform.recent) {
+      event.preventDefault();
+      this.openRecentPanel(true);
+      return;
+    }
     const actions: Record<string, () => Promise<unknown>> = {
       s: () => this.save(event.shiftKey),
       o: () => (event.shiftKey ? this.openFolder() : this.open()),
@@ -980,6 +1005,7 @@ export class App {
 
   private openOutline(): void {
     this.closeSearch();
+    this.closeRecent();
     this.outline.show(true);
     this.outlineButton.setAttribute('aria-pressed', 'true');
     this.refreshOutline();
@@ -991,6 +1017,90 @@ export class App {
     this.outline.show(false);
     this.outlineButton.setAttribute('aria-pressed', 'false');
     if (hadFocus) this.view.focus();
+  }
+
+  // ---- recent files -------------------------------------------------------------------------
+
+  /** Records a document the reader opened or saved. Best effort; the platform decides what it can keep. */
+  private noteRecent(ref: FileRef | null): void {
+    const recent = this.platform.recent;
+    if (!recent || !ref) return;
+    void recent.add(ref).then(() => (this.recent.hidden ? undefined : this.refreshRecent()));
+  }
+
+  private toggleRecent(): void {
+    if (this.recent.hidden) this.openRecentPanel(false);
+    else this.closeRecent();
+  }
+
+  /** Shows the panel; from the keyboard it takes focus so the list can be used at once. */
+  private openRecentPanel(focus: boolean): void {
+    if (!this.platform.recent) return;
+    this.closeOutline();
+    this.closeSearch();
+    this.recent.show(true);
+    this.recentButton.setAttribute('aria-pressed', 'true');
+    void this.refreshRecent().then(() => {
+      if (focus) this.recent.focus();
+    });
+  }
+
+  private closeRecent(): void {
+    const hadFocus = this.recent.element.contains(document.activeElement);
+    this.recent.show(false);
+    this.recentButton.setAttribute('aria-pressed', 'false');
+    if (hadFocus) this.view.focus();
+  }
+
+  private async refreshRecent(): Promise<void> {
+    const recent = this.platform.recent;
+    if (!recent) return;
+    const entries = await recent.list();
+    for (const id of this.recentMissing) if (!entries.some((e) => e.id === id)) this.recentMissing.delete(id);
+    this.recent.update(entries.map((e): RecentEntry => (this.recentMissing.has(e.id) ? { ...e, missing: true } : e)));
+  }
+
+  /** Opens an entry the way Open does: unsaved edits are asked about first, then the folder gives way. */
+  private async openRecent(entry: RecentEntry): Promise<void> {
+    const recent = this.platform.recent;
+    if (!recent) return;
+    if (!(await this.confirmDiscard())) return;
+    try {
+      let file = await recent.open(entry.id, this.listing);
+      if (!file) {
+        this.recentMissing.add(entry.id);
+        this.notify(`${entry.name} no longer exists. Remove it from the recent files if you do not need it.`);
+        await this.refreshRecent();
+        return;
+      }
+      this.recentMissing.delete(entry.id);
+      const listing = this.listing;
+      if (listing && file.ref.folderPath !== undefined && listing.files.includes(file.ref.folderPath)) {
+        // A file of the open folder stays in it, with the file list beside it.
+        this.show(file, null, true);
+      } else {
+        file = { ...file, ref: { ...file.ref, folderPath: undefined } };
+        this.setListing(null);
+        this.show(file, null, false);
+      }
+      this.notify(null);
+      this.closeRecent();
+      this.view.focus();
+    } catch (error) {
+      this.notify(`Could not open ${entry.name}: ${message(error)}`);
+    }
+  }
+
+  private async removeRecent(entry: RecentEntry): Promise<void> {
+    await this.platform.recent?.remove(entry.id);
+    this.recentMissing.delete(entry.id);
+    await this.refreshRecent();
+  }
+
+  private async clearRecent(): Promise<void> {
+    await this.platform.recent?.clear();
+    this.recentMissing.clear();
+    await this.refreshRecent();
   }
 
   // ---- folder search ----------------------------------------------------------------------
@@ -1006,6 +1116,7 @@ export class App {
       return;
     }
     this.closeOutline();
+    this.closeRecent();
     this.search.show(true);
     this.searchButton.setAttribute('aria-pressed', 'true');
   }
