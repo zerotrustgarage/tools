@@ -14,6 +14,8 @@ export interface SplitterOptions {
   /** Called once a drag or key press is finished, to persist the size. */
   commit: () => void;
   reset: () => void;
+  /** The smallest and largest size, in pixels, for aria-valuemin and aria-valuemax. */
+  range?: () => { min: number; max: number };
   /** +1 when dragging right grows the pane, -1 when it shrinks it. */
   direction?: 1 | -1;
 }
@@ -31,7 +33,16 @@ export function splitter(options: SplitterOptions): HTMLElement {
     title: `${options.label}: drag to resize, double-click to reset`,
     tabindex: '0',
   });
-  const sync = (size: number) => handle.setAttribute('aria-valuenow', String(Math.round(size)));
+  const sync = (size: number) => {
+    const range = options.range?.();
+    if (range) {
+      handle.setAttribute('aria-valuemin', String(Math.round(range.min)));
+      handle.setAttribute('aria-valuemax', String(Math.round(range.max)));
+    }
+    handle.setAttribute('aria-valuenow', String(Math.round(size)));
+  };
+  // A separator that takes focus must say where it stands before anything moves it.
+  handle.addEventListener('focus', () => sync(options.current()));
 
   handle.addEventListener('pointerdown', (event) => {
     if (event.button !== 0) return;

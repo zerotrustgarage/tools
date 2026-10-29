@@ -17,6 +17,7 @@ import { readFile, mkdir } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { contrastFailures, focusIndicator } from './measure.mjs';
 
 // createRequire honors NODE_PATH, so a global playwright install works.
 const { chromium } = createRequire(import.meta.url)('playwright');
@@ -98,6 +99,53 @@ const heading = (n) => `## Section ${n}`;
 const filler = (n) => Array.from({ length: 45 }, (_, i) => `Line ${n}.${i + 1} of filler text.`).join('\n\n');
 const OUTLINE_DOC = ['# Outline test', '', heading(1), '', filler(1), '', heading(2), '', filler(2), '', '### Last section', '', filler(3), '', 'The end.', ''].join('\n');
 const lineOf = (text, line) => text.split('\n').indexOf(line) + 1;
+
+// A document with every kind of rendered content, for the accessibility scenarios.
+const A11Y_DOC = [
+  '# Heading one',
+  '',
+  'Body text with a [link](https://example.com), `inline code`, **bold**, *italic* and ~~struck~~ words.',
+  '',
+  '###### Heading six',
+  '',
+  '> A quotation.',
+  '',
+  '> [!NOTE]',
+  '> A note.',
+  '',
+  '> [!TIP]',
+  '> A tip.',
+  '',
+  '> [!IMPORTANT]',
+  '> Important.',
+  '',
+  '> [!WARNING]',
+  '> A warning.',
+  '',
+  '> [!CAUTION]',
+  '> Be careful.',
+  '',
+  '| Control | Status |',
+  '|:--------|:------:|',
+  '| AC.L2-3.1.1 | Met |',
+  '',
+  '- [x] Done',
+  '- [ ] Open',
+  '',
+  '```js',
+  'const answer = 42; // a comment',
+  "function f(x) { return 'text' + x; }",
+  '```',
+  '',
+  '```json',
+  '{ "tenant": "example", "score": 87.5 }',
+  '```',
+  '',
+  'Footnote reference[^1] and a wiki link [[Other]].',
+  '',
+  '[^1]: The footnote.',
+  '',
+].join('\n');
 
 const BOM = [0xef, 0xbb, 0xbf];
 const bytesOf = (text) => [...new TextEncoder().encode(text)];
@@ -181,6 +229,47 @@ async function openFolder(page, files = FOLDER, root = 'proj') {
   await button(page, 'Open folder or repository (Ctrl+Shift+O)').click();
   await page.waitForSelector('.tree-file', { state: 'attached' });
 }
+/**
+ * Presses Tab from the top of the page until focus comes back around, and reports the focus
+ * indicator of every stop. The editor swallows Tab, so Escape (tab-focus mode) leaves it first.
+ */
+async function tabWalk(page, max = 140) {
+  await page.evaluate(() => {
+    window.__walked = new WeakSet();
+    document.activeElement?.blur();
+  });
+  const stops = [];
+  for (let i = 0; i < max; i++) {
+    if (await page.evaluate(() => Boolean(document.activeElement?.closest?.('.cm-content')))) await page.keyboard.press('Escape');
+    await page.keyboard.press('Tab');
+    const fresh = await page.evaluate(() => {
+      const e = document.activeElement;
+      if (!e || e === document.body || window.__walked.has(e)) return false;
+      window.__walked.add(e);
+      return true;
+    });
+    if (!fresh) break;
+    // CodeMirror marks the editor as focused a moment after the focus event.
+    if (await page.evaluate(() => Boolean(document.activeElement?.matches('.cm-content')))) await page.waitForSelector('.cm-editor.cm-focused');
+    stops.push(await focusIndicator(page));
+  }
+  return stops;
+}
+/** The browser's accessibility tree (Chromium): role, name and properties of every node a screen reader can reach. */
+async function axNodes(page) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Accessibility.enable');
+  const { nodes } = await cdp.send('Accessibility.getFullAXTree');
+  await cdp.detach();
+  return nodes
+    .filter((n) => !n.ignored)
+    .map((n) => ({ role: n.role?.value ?? '', name: (n.name?.value ?? '').trim(), props: Object.fromEntries((n.properties ?? []).map((p) => [p.name, p.value?.value])) }));
+}
+// Roles that must carry a name wherever they appear (a task list's display-only checkbox is read
+// together with its item's text and is left out).
+const NAMED_ROLES = ['button', 'link', 'textbox', 'searchbox', 'treeitem', 'tree', 'separator', 'dialog', 'region', 'complementary', 'toolbar', 'navigation'];
+const unnamed = (nodes) => nodes.filter((n) => NAMED_ROLES.includes(n.role) && n.name === '').map((n) => n.role);
+const active = (page, selector) => page.evaluate((s) => document.activeElement?.matches(s) ?? false, selector);
 const paneWidth = (page, selector) => page.evaluate((s) => document.querySelector(s).getBoundingClientRect().width, selector);
 const luminance = (rgb) => {
   const [r, g, b] = rgb.match(/\d+(\.\d+)?/g).slice(0, 3).map(Number);
@@ -424,8 +513,8 @@ const scenarios = [
     assert.deepEqual(listed, ['README.md', 'docs/guide/setup.md', 'docs/intro.md', 'notes/todo.markdown']);
 
     for (const folder of ['docs', 'docs/guide']) {
-      const summary = page.locator(`summary[title="${folder}"]`);
-      if (!(await summary.evaluate((n) => n.parentElement.open))) await summary.click();
+      const item = page.locator(`.tree-folder[data-path="${folder}"]`);
+      if ((await item.getAttribute('aria-expanded')) !== 'true') await item.locator('> .tree-row').click();
     }
     await page.locator('.tree-file[data-path="docs/guide/setup.md"]').click();
     await page.locator('.markdown-body h1', { hasText: 'Setup' }).waitFor();
@@ -714,6 +803,353 @@ const scenarios = [
     assert.equal(await page.locator('.recent-panel').isHidden(), true);
   }],
 
+  ['accessibility: contrast of every surface (WCAG 2.1 AA)', async (page, scheme) => {
+    await boot(page);
+    const failures = {};
+    const measure = async (state) => {
+      await page.waitForTimeout(150);
+      failures[state] = await contrastFailures(page);
+    };
+    await openFolder(page, { ...FOLDER, 'proj/docs/a11y.md': A11Y_DOC });
+    await page.locator('.tree-file[data-path="docs/a11y.md"]').click();
+    await page.locator('.markdown-body h1', { hasText: 'Heading one' }).waitFor();
+    await measure('split view with folder tree');
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+f');
+    await page.locator('.cm-search').waitFor();
+    await measure('editor find panel');
+    await page.keyboard.press('Escape');
+    await button(page, 'Outline').click();
+    await page.waitForSelector('.outline-item');
+    await measure('outline panel');
+    await button(page, 'Outline').click();
+    await button(page, 'Search').click();
+    await page.locator('input[aria-label="Search text in the open folder"]').fill('needle');
+    await page.locator('.search-hit').first().waitFor();
+    await measure('search results');
+    await button(page, 'Search').click();
+    await button(page, 'Recent files').click();
+    await page.locator('.recent-item').first().waitFor();
+    await measure('recent files');
+    await button(page, 'Recent files').click();
+    await button(page, 'Preview view').click();
+    await measure('preview only');
+    await button(page, 'Edit view').click();
+    await measure('edit only');
+    // A banner and a dialog.
+    await openFile(page, 'e/mixed.md', [...bytesOf('# Mixed\r\ntwo\r\nthree\nfour\r\n')]);
+    await banner(page).getByRole('button', { name: 'Convert line endings' }).waitFor();
+    await measure('banner');
+    await banner(page).getByRole('button', { name: 'Convert line endings' }).click();
+    await page.locator('dialog.modal').waitFor({ state: 'visible' });
+    await measure('dialog');
+    const all = Object.entries(failures).flatMap(([state, list]) => list.map((line) => `[${state}] ${line}`));
+    if (process.env.A11Y_DUMP) console.log(`--- ${scheme}\n${all.join('\n')}`);
+    assert.deepEqual(all, [], 'contrast failures');
+  }],
+
+  ['accessibility: every focusable element shows a focus indicator', async (page) => {
+    await boot(page);
+    await openFolder(page, { ...FOLDER, 'proj/docs/a11y.md': A11Y_DOC });
+    await page.locator('.tree-file[data-path="docs/a11y.md"]').click();
+    await page.locator('.markdown-body h1', { hasText: 'Heading one' }).waitFor();
+    const problems = [];
+    const walk = async (state) => {
+      const stops = await tabWalk(page);
+      assert.ok(stops.length > 8, `${state}: the walk found ${stops.length} stops`);
+      for (const s of stops) {
+        if (!s.visible) problems.push(`[${state}] no focus indicator: ${s.name}`);
+        else if (s.ratio < 3 || s.width < 2) problems.push(`[${state}] weak focus indicator (${s.ratio.toFixed(2)}:1, ${s.width}px): ${s.name}`);
+      }
+    };
+    await walk('workspace');
+    await button(page, 'Outline').click();
+    await page.waitForSelector('.outline-item');
+    await walk('outline');
+    await button(page, 'Outline').click();
+    await button(page, 'Search').click();
+    await page.locator('input[aria-label="Search text in the open folder"]').fill('needle');
+    await page.locator('.search-hit').first().waitFor();
+    await walk('search');
+    await button(page, 'Search').click();
+    await button(page, 'Recent files').click();
+    await page.locator('.recent-item').first().waitFor();
+    await walk('recent files');
+    if (process.env.A11Y_DUMP) console.log(problems.join('\n'));
+    assert.deepEqual(problems, []);
+  }],
+
+  ['accessibility: landmarks, roles and names (screen reader tree)', async (page) => {
+    await boot(page);
+    await openFolder(page, { ...FOLDER, 'proj/docs/a11y.md': A11Y_DOC });
+    await page.locator('.tree-file[data-path="docs/a11y.md"]').click();
+    await page.locator('.markdown-body h1', { hasText: 'Heading one' }).waitFor();
+    const check = async (state) => {
+      const nodes = await axNodes(page);
+      assert.deepEqual(unnamed(nodes), [], `${state}: every control, landmark and region has a name`);
+      return nodes;
+    };
+    let nodes = await check('workspace');
+    const count = (role, name) => nodes.filter((n) => n.role === role && (name === undefined || n.name === name)).length;
+    assert.equal(count('banner'), 1, 'the top bar is the banner');
+    assert.equal(count('main'), 1, 'one main');
+    assert.equal(count('contentinfo'), 1, 'the status bar is the footer');
+    assert.equal(count('complementary', 'Folder'), 1, 'the folder sidebar is a named complementary');
+    assert.equal(count('toolbar', 'Formatting'), 1);
+    assert.equal(count('tree', 'Markdown files'), 1);
+    assert.equal(count('region', 'Preview of the document'), 1);
+    assert.equal(count('textbox', 'Markdown source'), 1, 'the editor');
+    assert.ok(count('separator') >= 2, 'both dividers are separators');
+    assert.equal(count('navigation'), 0, 'no unnamed navigation landmark');
+    for (const name of ['Open file (Ctrl+O)', 'Save (Ctrl+S)', 'Edit view', 'Split view', 'Preview view', 'Export as HTML', 'Close folder', 'Bold (Ctrl+B)', 'Check for updates'])
+      assert.ok(count('button', name) >= 1, `button "${name}"`);
+    assert.ok(nodes.some((n) => n.role === 'button' && n.name.startsWith('Theme:')), 'the theme button names its state');
+
+    // The split view toggle says which view is on.
+    assert.equal(await button(page, 'Split view').getAttribute('aria-pressed'), 'true');
+
+    // The dividers say where they stand.
+    const sep = page.locator('.splitter-sidebar');
+    await sep.focus();
+    const [min, max, now] = await Promise.all(['aria-valuemin', 'aria-valuemax', 'aria-valuenow'].map((a) => sep.getAttribute(a)));
+    assert.ok(Number(min) < Number(now) && Number(now) <= Number(max), `divider range ${min} to ${max}, now ${now}`);
+
+    // Panels are named complementary regions too.
+    await button(page, 'Outline').click();
+    await page.waitForSelector('.outline-item');
+    nodes = await check('outline');
+    assert.equal(nodes.filter((n) => n.role === 'complementary' && n.name === 'Outline').length, 1);
+    await button(page, 'Outline').click();
+    await button(page, 'Search').click();
+    await page.locator('input[aria-label="Search text in the open folder"]').fill('needle');
+    await page.locator('.search-hit').first().waitFor();
+    nodes = await check('search');
+    assert.equal(nodes.filter((n) => n.role === 'complementary' && n.name === 'Search folder').length, 1);
+    await button(page, 'Search').click();
+    await button(page, 'Recent files').click();
+    await page.locator('.recent-item').first().waitFor();
+    nodes = await check('recent files');
+    assert.equal(nodes.filter((n) => n.role === 'complementary' && n.name === 'Recent files').length, 1);
+    await button(page, 'Recent files').click();
+
+    // The unsaved mark can be read, and the cursor position is not a live region.
+    await page.locator('.cm-content').click();
+    await page.keyboard.type('x');
+    await page.locator('.dirty-dot').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('.dirty-dot').textContent(), 'Unsaved changes');
+    assert.equal(await page.locator('.status-bar').evaluate((n) => n.closest('[aria-live], [role=status], [role=alert]') === null && n.querySelector('[aria-live], [role=status], [role=alert]') === null), true, 'typing changes no live region');
+  }],
+
+  ['accessibility: banners and changes are announced politely, typing is not', async (page) => {
+    await boot(page);
+    const live = page.locator('[role=status][aria-live=polite]').filter({ hasNot: page.locator('.nothing') }).first();
+    const said = () => page.evaluate(() => [...document.querySelectorAll('[role=status]')].map((n) => n.textContent).join('|'));
+    // A banner is said when it appears, though the banner element is not itself a live region.
+    assert.equal(await page.locator('.banner').getAttribute('role'), null);
+    await openFile(page, 'e/mixed.md', [...bytesOf('# Mixed\r\ntwo\r\nthree\nfour\r\n')]);
+    await banner(page).getByRole('button', { name: 'Convert line endings' }).waitFor();
+    await page.waitForFunction(() => document.querySelector('.app > [role=status]')?.textContent.includes('Convert line endings'));
+    assert.ok((await live.count()) >= 1);
+    // Saving and changing a setting are said; each keystroke is not.
+    await openFile(page, 'e/plain.md', '# Plain\n');
+    await page.waitForFunction(() => document.querySelector('.app > [role=status]')?.textContent === 'Opened plain.md');
+    await page.locator('.cm-content').click();
+    const before = await page.locator('.app > [role=status]').textContent();
+    await page.keyboard.type('hello world');
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator('.app > [role=status]').textContent(), before, 'typing is silent');
+    await page.evaluate(() => window.__fs.queueSave('e/plain.md'));
+    await button(page, 'Save (Ctrl+S)').click();
+    await page.waitForFunction(() => document.querySelector('.app > [role=status]')?.textContent === 'Saved plain.md');
+    await button(page, /^Theme:/).click().catch(async () => page.getByRole('button', { name: /^Theme:/ }).click());
+    await page.waitForFunction(() => /^Theme: /.test(document.querySelector('.app > [role=status]')?.textContent ?? ''));
+    assert.ok((await said()).length > 0);
+  }],
+
+  ['accessibility: the folder tree follows the WAI-ARIA tree pattern', async (page) => {
+    await boot(page);
+    await openFolder(page);
+    await page.waitForSelector('.markdown-body h1');
+    const items = page.locator('.tree [role=treeitem]');
+    const focused = () => page.evaluate(() => document.activeElement?.getAttribute('data-path'));
+    const press = (key) => page.keyboard.press(key);
+    const expanded = (path) => page.locator(`.tree-folder[data-path="${path}"]`).getAttribute('aria-expanded');
+
+    // Roles and levels: docs is open by default, docs/guide is not.
+    assert.equal(await page.locator('.tree[class] [role=tree]').count(), 1);
+    const attrs = async (path) => page.locator(`.tree [data-path="${path}"]`).evaluate((n) => [n.getAttribute('aria-level'), n.getAttribute('aria-setsize'), n.getAttribute('aria-posinset'), n.getAttribute('aria-expanded'), n.getAttribute('aria-selected')]);
+    assert.deepEqual(await attrs('docs'), ['1', '3', '1', 'true', null]);
+    assert.deepEqual(await attrs('notes'), ['1', '3', '2', 'false', null]);
+    assert.deepEqual(await attrs('README.md'), ['1', '3', '3', null, 'true']);
+    assert.deepEqual(await attrs('docs/guide'), ['2', '2', '1', 'false', null]);
+    assert.deepEqual(await attrs('docs/intro.md'), ['2', '2', '2', null, 'false']);
+    assert.equal(await page.locator('.tree [role=group]').first().getAttribute('role'), 'group');
+    assert.equal(await page.locator('.tree-file[data-path="docs/guide/setup.md"]').isHidden(), true, 'a closed folder hides its items');
+    assert.equal(await page.locator('.tree [role=treeitem][tabindex="0"]').count(), 1, 'one tab stop');
+    assert.equal(await page.locator('.tree-file[data-path="README.md"]').getAttribute('tabindex'), '0', 'the open file holds it');
+
+    // Tab from the filter reaches the tree on the open file; Shift+Tab goes back.
+    await page.locator('input[aria-label="Filter files"]').focus();
+    await press('Tab');
+    assert.equal(await focused(), 'README.md');
+    await press('Home');
+    assert.equal(await focused(), 'docs');
+    await press('ArrowDown');
+    assert.equal(await focused(), 'docs/guide');
+    assert.equal(await expanded('docs/guide'), 'false');
+    await press('ArrowRight');
+    assert.equal(await expanded('docs/guide'), 'true', 'Right opens a closed folder');
+    assert.equal(await focused(), 'docs/guide', 'and stays on it');
+    await press('ArrowRight');
+    assert.equal(await focused(), 'docs/guide/setup.md', 'Right on an open folder enters it');
+    await press('ArrowRight');
+    assert.equal(await focused(), 'docs/guide/setup.md', 'Right on a file does nothing');
+    await press('ArrowLeft');
+    assert.equal(await focused(), 'docs/guide', 'Left on a file goes to its folder');
+    await press('ArrowLeft');
+    assert.equal(await expanded('docs/guide'), 'false', 'Left on an open folder closes it');
+    await press('ArrowLeft');
+    assert.equal(await focused(), 'docs', 'Left on a closed folder goes to its parent');
+    await press('ArrowLeft');
+    assert.equal(await expanded('docs'), 'false');
+    assert.deepEqual(await items.evaluateAll((n) => n.filter((i) => !i.closest('[role=group][hidden]')).map((i) => i.dataset.path)), ['docs', 'notes', 'README.md']);
+    await press('End');
+    assert.equal(await focused(), 'README.md');
+    await press('ArrowDown');
+    assert.equal(await focused(), 'README.md', 'Down stops at the end');
+    await press('ArrowUp');
+    assert.equal(await focused(), 'notes');
+    await press('Space');
+    assert.equal(await expanded('notes'), 'true', 'Space opens a folder');
+    await press('Enter');
+    assert.equal(await expanded('notes'), 'false', 'Enter closes it');
+
+    // Type-ahead jumps to the next visible name that starts with the letters; one letter cycles.
+    await press('Home');
+    await press('ArrowRight');
+    await press('i');
+    assert.equal(await focused(), 'docs/intro.md');
+    await press('n');
+    assert.equal(await focused(), 'docs/intro.md', 'letters typed together make one prefix ("in")');
+    await page.waitForTimeout(800);
+    await press('n');
+    assert.equal(await focused(), 'notes', 'a letter after a pause starts again');
+    await page.waitForTimeout(800);
+    await press('r');
+    assert.equal(await focused(), 'README.md');
+
+    // Enter opens a file, which becomes the selected item; focus stays on the tree.
+    await press('ArrowUp');
+    await press('ArrowUp');
+    await press('ArrowDown');
+    await page.waitForTimeout(800);
+    await press('i');
+    assert.equal(await focused(), 'docs/intro.md');
+    await press('Enter');
+    await page.locator('.markdown-body h1', { hasText: 'Intro' }).waitFor();
+    assert.equal(await docTitle(page).textContent(), 'docs/intro.md');
+    assert.deepEqual(await attrs('docs/intro.md'), ['2', '2', '2', null, 'true']);
+    assert.deepEqual(await attrs('README.md'), ['1', '3', '3', null, 'false']);
+    assert.equal(await page.locator('.tree-file[data-path="docs/intro.md"]').getAttribute('aria-current'), 'page');
+    assert.equal(await focused(), 'docs/intro.md');
+    assert.equal(await page.locator('.tree [role=treeitem][tabindex="0"]').count(), 1);
+
+    // Tab leaves the tree in one stroke; Shift+Tab comes back to the same item.
+    await press('Tab');
+    assert.equal(await page.evaluate(() => document.activeElement.closest('.tree') === null), true);
+    await press('Shift+Tab');
+    assert.equal(await focused(), 'docs/intro.md');
+
+    // Names are the file or folder name; the path is the tooltip.
+    assert.equal(await page.getByRole('treeitem', { name: 'intro.md' }).count(), 1);
+    assert.equal(await page.getByRole('treeitem', { name: 'docs', exact: true }).getAttribute('aria-expanded'), 'true');
+
+    // The filter lists matches as a flat tree, and Down from the field enters it.
+    const filter = page.locator('input[aria-label="Filter files"]');
+    await filter.fill('setup');
+    assert.deepEqual(await items.evaluateAll((n) => n.map((i) => [i.dataset.path, i.getAttribute('aria-level'), i.getAttribute('aria-label')])), [['docs/guide/setup.md', '1', 'docs/guide/setup.md']]);
+    await press('ArrowDown');
+    assert.equal(await focused(), 'docs/guide/setup.md');
+    await press('Enter');
+    await page.locator('.markdown-body h1', { hasText: 'Setup' }).waitFor();
+    await filter.fill('');
+    assert.equal(await expanded('docs/guide'), 'true', 'the folders above the open file are open again');
+
+    // A click opens a file and a click on a folder toggles it, as before.
+    await page.locator('.tree-folder[data-path="notes"] > .tree-row').click();
+    assert.equal(await expanded('notes'), 'true');
+    assert.equal(await focused(), 'notes');
+  }],
+
+  ['accessibility: dialogs are labelled, trap focus and return it', async (page) => {
+    await boot(page);
+    await openFile(page, 'e/mixed.md', [...bytesOf('# Mixed\r\ntwo\r\nthree\nfour\r\n')]);
+    const opener = banner(page).getByRole('button', { name: 'Convert line endings' });
+    await opener.waitFor();
+    await opener.focus();
+    await page.keyboard.press('Enter');
+    const dialog = page.locator('dialog.modal');
+    await dialog.waitFor({ state: 'visible' });
+    const nodes = await axNodes(page);
+    assert.equal(nodes.filter((n) => n.role === 'dialog' && n.name === 'Convert line endings?').length, 1, 'the dialog is named by its heading');
+    assert.equal(await dialog.getAttribute('aria-describedby'), 'confirm-body');
+    assert.equal(await page.evaluate(() => document.activeElement.closest('dialog') !== null), true, 'focus moves into the dialog');
+    // Tab and Shift+Tab stay inside, however long they are held.
+    for (const key of ['Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'Shift+Tab', 'Shift+Tab', 'Shift+Tab', 'Shift+Tab']) {
+      await page.keyboard.press(key);
+      assert.equal(await page.evaluate(() => document.activeElement.closest('dialog') !== null), true, `${key} stays in the dialog`);
+    }
+    // The page behind it cannot take focus.
+    await page.evaluate(() => document.querySelector('.top-bar button:not(:disabled)').focus());
+    assert.equal(await page.evaluate(() => document.activeElement.closest('dialog') !== null), true, 'the page behind is inert');
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached' });
+    assert.equal(await active(page, 'button.banner-action'), true, 'Escape returns focus to the button that opened it');
+    assert.equal(await docTitle(page).textContent(), 'mixed.md (read-only)', 'Escape declined');
+
+    // Cancel by button returns focus the same way.
+    await page.keyboard.press('Enter');
+    await dialog.waitFor({ state: 'visible' });
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await dialog.waitFor({ state: 'detached' });
+    assert.equal(await active(page, 'button.banner-action'), true, 'Cancel returns focus too');
+  }],
+
+  ['accessibility: the editor can be left by keyboard (Escape, then Tab)', async (page) => {
+    await boot(page);
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Tab');
+    assert.ok((await editorText(page)).includes('\t') || (await editorText(page)).startsWith('  '), 'Tab indents while typing');
+    assert.equal(await active(page, '.cm-content'), true);
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Tab');
+    assert.equal(await active(page, '.cm-content'), false, 'Escape then Tab leaves the editor');
+    // The preview can be scrolled from the keyboard.
+    await button(page, 'Preview view').click();
+    await page.locator('.preview-pane').focus();
+    assert.equal(await active(page, '.preview-pane'), true);
+  }],
+
+  ['accessibility: the format bar is one tab stop with arrow keys', async (page) => {
+    await boot(page);
+    const bar = page.locator('.format-bar');
+    const stops = bar.locator('button[tabindex="0"]');
+    assert.equal(await stops.count(), 1);
+    await bar.locator('button').first().focus();
+    await page.keyboard.press('ArrowRight');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.format), 'italic');
+    await page.keyboard.press('End');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.format), 'rule');
+    await page.keyboard.press('ArrowRight');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.format), 'bold', 'wraps around');
+    await page.keyboard.press('ArrowLeft');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.format), 'rule');
+    assert.equal(await stops.count(), 1, 'still one tab stop');
+    await page.keyboard.press('Home');
+    await page.keyboard.press('Tab');
+    assert.equal(await page.evaluate(() => document.activeElement.closest('.format-bar') === null), true, 'Tab leaves the bar');
+  }],
+
   ['the page carries its CSP and the violation listener works', async (page, _scheme, problems) => {
     await boot(page);
     const policy = await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content');
@@ -779,6 +1215,16 @@ const harnessScenarios = [
     const color = await bar.evaluate((n) => getComputedStyle(n).backgroundColor);
     const l = luminance(color);
     assert.ok(scheme === 'dark' ? l < 0.3 : l > 0.7, `title bar ${color} fits ${scheme}`);
+    // The window controls are a named group, each with a visible focus ring, and the bar is legible.
+    assert.equal((await axNodes(page)).filter((n) => n.role === 'group' && n.name === 'Window controls').length, 1);
+    assert.deepEqual(await contrastFailures(page), [], 'title bar contrast');
+    for (const label of ['Minimize', 'Maximize', 'Close']) {
+      await page.getByRole('button', { name: label, exact: true }).focus();
+      await page.keyboard.press('Shift+Tab');
+      await page.keyboard.press('Tab');
+      const ring = await focusIndicator(page);
+      assert.ok(ring.visible && ring.ratio >= 3 && ring.width >= 2, `${label} focus ring ${JSON.stringify(ring)}`);
+    }
     // The close caption turns red on hover (Windows 11 behavior).
     await page.getByRole('button', { name: 'Close', exact: true }).hover();
     const hover = await page.getByRole('button', { name: 'Close', exact: true }).evaluate((n) => getComputedStyle(n).backgroundColor);

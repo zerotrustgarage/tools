@@ -1,4 +1,4 @@
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+import { defaultKeymap, history, historyKeymap, indentWithTab, temporarilySetTabFocusMode } from '@codemirror/commands';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { HighlightStyle, bracketMatching, syntaxHighlighting } from '@codemirror/language';
 import { languages } from '@codemirror/language-data';
@@ -49,7 +49,8 @@ const markdownHighlight = HighlightStyle.define([
  */
 const ztgEditorTheme = EditorView.theme({
   '&': { height: '100%', flex: '1', backgroundColor: 'var(--panel)', color: 'var(--text)', fontSize: '14px' },
-  '&.cm-focused': { outline: 'none' },
+  // The editor shows where focus is with an inset ring (the caret alone is easy to lose).
+  '&.cm-focused': { outline: '2px solid var(--focus)', outlineOffset: '-2px' },
   '.cm-scroller': {
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace",
     lineHeight: '1.6',
@@ -58,7 +59,7 @@ const ztgEditorTheme = EditorView.theme({
   '.cm-line': { padding: '0 16px' },
   '.cm-gutters': {
     backgroundColor: 'var(--panel)',
-    color: 'var(--dim2)',
+    color: 'var(--dim)',
     border: 'none',
     borderRight: '1px solid var(--line)',
   },
@@ -77,7 +78,7 @@ const ztgEditorTheme = EditorView.theme({
   '.cm-panel input, .cm-panel button, .cm-panel select': {
     color: 'var(--text)',
     backgroundColor: 'var(--panel)',
-    border: '1px solid var(--line)',
+    border: '1px solid var(--dim2)',
     borderRadius: '4px',
   },
   '.cm-panel.cm-search label': { color: 'var(--dim)' },
@@ -131,6 +132,9 @@ export function createEditorState(options: Omit<EditorOptions, 'parent'>): Edito
       EditorView.lineWrapping,
       markdown({ base: markdownLanguage, codeLanguages: languages }),
       syntaxHighlighting(markdownHighlight),
+      // Tab indents here, so Escape followed by Tab (for two seconds) leaves the editor by keyboard
+      // (WCAG 2.1.2); Ctrl+M toggles the same mode. Escape still does what it did (closes the find panel).
+      keymap.of([{ key: 'Escape', run: (view) => (temporarilySetTabFocusMode(view), false) }]),
       keymap.of([...formattingKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
       readOnlyCompartment.of([EditorState.readOnly.of(options.readOnly), EditorView.editable.of(!options.readOnly)]),
       EditorView.contentAttributes.of({ spellcheck: 'true', 'aria-label': 'Markdown source' }),

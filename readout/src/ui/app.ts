@@ -25,6 +25,7 @@ import { isolateHistory } from '@codemirror/commands';
 import { createEditor, documentText, scrollToLine, type JumpOptions } from './editor';
 import { runFormat, type FormatCommand } from './format';
 import { OutlinePanel } from './outline';
+import { rovingToolbar } from './roving';
 import { RecentPanel } from './recent';
 import { SearchPanel } from './search';
 import { Sidebar } from './sidebar';
@@ -108,13 +109,19 @@ export class App {
 
   private readonly root = el('div', { class: 'app' });
   private readonly titleEl = el('span', { class: 'doc-title' });
-  private readonly dirtyEl = el('span', { class: 'dirty-dot', title: 'Unsaved changes', hidden: '' });
-  private readonly banner = el('div', { class: 'banner', role: 'status', hidden: '' });
+  private readonly dirtyEl = el('span', { class: 'dirty-dot', title: 'Unsaved changes', hidden: '' }, el('span', { class: 'sr-only' }, 'Unsaved changes'));
+  /** The banner is read out by the announcer below, so it is not a live region itself (a region that starts hidden is often missed). */
+  private readonly banner = el('div', { class: 'banner', hidden: '' });
+  /** Polite and always present: banners, saves and setting changes are said here, never keystrokes. */
+  private readonly announcer = el('div', { class: 'sr-only', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true' });
+  private announceTimer: number | undefined;
   private readonly editorHost = el('div', { class: 'pane editor-pane' });
   private readonly preview = el('article', { class: 'markdown-body', 'aria-label': 'Preview' });
   /** Folded callouts and <details> the reader opened or closed in this document, by position. */
   private readonly folds = new Map<number, boolean>();
-  private readonly previewPane = el('div', { class: 'pane preview-pane' }, this.preview);
+  // A scrollable region the keyboard can reach (arrow keys, Page Up and Down) even when the
+  // document has no link in it.
+  private readonly previewPane = el('div', { class: 'pane preview-pane', role: 'region', 'aria-label': 'Preview of the document', tabindex: '0' }, this.preview);
   private readonly panes = el('div', { class: 'panes' });
   private readonly workspace = el('main', { class: 'workspace' });
   private readonly dropOverlay = el('div', { class: 'drop-overlay', hidden: '', 'aria-hidden': 'true' }, el('div', { class: 'drop-card' }, 'Drop a Markdown file or folder to open it, or an image to add it'));
@@ -235,6 +242,7 @@ export class App {
       this.theme = this.theme === 'auto' ? 'light' : this.theme === 'light' ? 'dark' : 'auto';
       store('ztg-readout-theme', this.theme);
       this.applyTheme();
+      this.announce(this.themeButton.title);
     });
     this.backButton.addEventListener('click', () => void this.back());
     // A click on the button must not clear the selection in the preview that it is about to copy.
@@ -296,7 +304,7 @@ export class App {
     }
 
     const s = this.status;
-    const statusBar = el('footer', { class: 'status-bar' }, s.cursor, s.words, el('span', { class: 'spacer' }),
+    const statusBar = el('footer', { class: 'status-bar', 'aria-label': 'Document status' }, s.cursor, s.words, el('span', { class: 'spacer' }),
       button('Check for updates', 'Check for updates', () => showUpdateDialog({
         tool: 'readout', current: appVersion, openExternal: url => this.platform.openExternal(url),
       })), s.encoding, s.eol);
@@ -304,6 +312,7 @@ export class App {
       this.measure = this.measure === 'readable' ? 'full' : 'readable';
       store('ztg-readout-measure', this.measure);
       this.applyMeasure();
+      this.announce(this.measureButton.title);
     });
     this.applyMeasure();
 
@@ -314,6 +323,7 @@ export class App {
       apply: (px) => this.setSidebarWidth(px),
       commit: () => store('ztg-readout-sidebar-width', String(Math.round(this.sidebarWidth))),
       reset: () => this.setSidebarWidth(SIDEBAR_DEFAULT),
+      range: () => ({ min: SIDEBAR_MIN, max: this.sidebarMax() }),
     });
     sidebarSplitter.classList.add('splitter-sidebar');
     const paneSplitter = splitter({
@@ -322,6 +332,7 @@ export class App {
       apply: (px) => this.setEditorWidth(px),
       commit: () => store('ztg-readout-editor-fraction', this.editorFraction.toFixed(4)),
       reset: () => this.setEditorWidth(this.panes.getBoundingClientRect().width * EDITOR_FRACTION_DEFAULT),
+      range: () => ({ min: PANE_MIN, max: Math.max(PANE_MIN, this.panes.getBoundingClientRect().width - PANE_MIN) }),
     });
     paneSplitter.classList.add('splitter-panes');
     this.panes.append(this.editorHost, paneSplitter, this.previewPane);
@@ -330,17 +341,25 @@ export class App {
       this.root.classList.add('has-titlebar');
       this.root.append(titleBar(this.platform.window, APP_NAME));
     }
-    this.root.append(top, this.formatBar, this.banner, this.workspace, statusBar);
+    this.root.append(top, this.formatBar, this.banner, this.workspace, statusBar, this.announcer);
+    new MutationObserver(() => {
+      if (!this.banner.hidden) this.announce(this.banner.textContent ?? '');
+    }).observe(this.banner, { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['hidden'] });
+    rovingToolbar(this.formatBar);
     this.applySizes();
     return this.root;
   }
 
   // ---- pane sizes -----------------------------------------------------------------------
 
+  private sidebarMax(): number {
+    const available = this.workspace.getBoundingClientRect().width || window.innerWidth;
+    return Math.max(SIDEBAR_MIN, Math.min(available * 0.6, available - 2 * PANE_MIN));
+  }
+
   /** Clamps and applies the sidebar width; keeps room for the panes beside it. */
   private setSidebarWidth(px: number): number {
-    const available = this.workspace.getBoundingClientRect().width || window.innerWidth;
-    const max = Math.max(SIDEBAR_MIN, Math.min(available * 0.6, available - 2 * PANE_MIN));
+    const max = this.sidebarMax();
     this.sidebarWidth = Math.min(Math.max(px, SIDEBAR_MIN), max);
     this.root.style.setProperty('--sidebar-width', `${Math.round(this.sidebarWidth)}px`);
     return this.sidebarWidth;
@@ -393,6 +412,14 @@ export class App {
     if (mode !== 'preview') this.view?.requestMeasure();
   }
 
+  /** Says text politely to a screen reader. The region is cleared first so the same text can be said twice. */
+  private announce(text: string): void {
+    window.clearTimeout(this.announceTimer);
+    this.announcer.textContent = '';
+    if (text === '') return;
+    this.announceTimer = window.setTimeout(() => (this.announcer.textContent = text), 60);
+  }
+
   private notify(text: string | null): void {
     this.banner.hidden = text === null;
     this.banner.textContent = text ?? '';
@@ -436,6 +463,7 @@ export class App {
     this.status.cursor.textContent = 'Ln 1, Col 1';
     this.updateFormatStatus();
     this.sidebar.select(ref?.folderPath);
+    if (ref) this.announce(`Opened ${ref.name}`);
     this.updateWords();
     this.updateDirty();
     this.setMode(this.mode);
@@ -906,6 +934,7 @@ export class App {
       this.sidebar.select(kept.folderPath);
       this.updateDirty();
       this.notify(null);
+      this.announce(`Saved ${kept.name}`);
       this.rememberSession();
       // A file saved under a new name or place is a document the reader will want again.
       if (ref !== previous) this.noteRecent(kept);
@@ -1386,7 +1415,7 @@ let openDialogs = 0;
  */
 function linkedFileDialog(check: LinkedFileCheck): Promise<boolean> {
   return new Promise((resolve) => {
-    const dialog = el('dialog', { class: 'modal', 'aria-label': 'Open linked file' }) as HTMLDialogElement;
+    const dialog = el('dialog', { class: 'modal', 'aria-labelledby': 'linked-file-title', 'aria-describedby': 'linked-file-body' }) as HTMLDialogElement;
     const open = el('button', { type: 'button', class: 'text-button' }, 'Open');
     const cancel = el('button', { type: 'button', class: 'primary' }, 'Cancel');
     let answer = false;
@@ -1396,8 +1425,8 @@ function linkedFileDialog(check: LinkedFileCheck): Promise<boolean> {
     });
     cancel.addEventListener('click', () => dialog.close());
     dialog.append(
-      el('h2', {}, 'Open linked file?'),
-      el('p', {}, 'This link points to a file that is not Markdown. Readout will hand it to the program your system uses for this type of file. Readout does not run programs.'),
+      el('h2', { id: 'linked-file-title' }, 'Open linked file?'),
+      el('p', { id: 'linked-file-body' }, 'This link points to a file that is not Markdown. Readout will hand it to the program your system uses for this type of file. Readout does not run programs.'),
       el('p', { class: 'linked-file' }, el('code', {}, check.path)),
       el('p', {}, `Type: ${check.kind}`),
       el('div', { class: 'modal-actions' }, open, cancel),
@@ -1412,14 +1441,38 @@ function linkedFileDialog(check: LinkedFileCheck): Promise<boolean> {
     });
     openDialogs++;
     document.body.append(dialog);
+    trapTab(dialog);
     dialog.showModal();
     cancel.focus();
   });
 }
 
+/**
+ * A modal dialog makes the page behind it inert, but a browser lets Tab run on into its own
+ * toolbar. Tab on the last control and Shift+Tab on the first wrap inside the dialog, so focus
+ * stays put in every shell. When the dialog closes the browser returns focus to the control
+ * that opened it.
+ */
+function trapTab(dialog: HTMLDialogElement): void {
+  dialog.addEventListener('keydown', (event) => {
+    if (event.key !== 'Tab') return;
+    const controls = [...dialog.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter((c) => !(c as HTMLButtonElement).disabled);
+    const first = controls[0];
+    const last = controls[controls.length - 1];
+    if (!first || !last) return;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+}
+
 function confirmDialog(title: string, body: string, choices: string[]): Promise<string | null> {
   return new Promise((resolve) => {
-    const dialog = el('dialog', { class: 'modal' }) as HTMLDialogElement;
+    const dialog = el('dialog', { class: 'modal', 'aria-labelledby': 'confirm-title', 'aria-describedby': 'confirm-body' }) as HTMLDialogElement;
     const buttons = choices.map((choice, i) => {
       const b = el('button', { type: 'button', class: i === 0 ? 'primary' : 'text-button' }, choice);
       b.addEventListener('click', () => {
@@ -1428,7 +1481,7 @@ function confirmDialog(title: string, body: string, choices: string[]): Promise<
       });
       return b;
     });
-    dialog.append(el('h2', {}, title), el('p', {}, body), el('div', { class: 'modal-actions' }, ...buttons));
+    dialog.append(el('h2', { id: 'confirm-title' }, title), el('p', { id: 'confirm-body' }, body), el('div', { class: 'modal-actions' }, ...buttons));
     dialog.addEventListener('cancel', () => resolve(null));
     dialog.addEventListener('close', () => {
       openDialogs--;
@@ -1436,6 +1489,7 @@ function confirmDialog(title: string, body: string, choices: string[]): Promise<
     });
     openDialogs++;
     document.body.append(dialog);
+    trapTab(dialog);
     dialog.showModal();
     buttons[0]?.focus();
   });
