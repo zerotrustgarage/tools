@@ -1,10 +1,14 @@
 import type { EditorView } from '@codemirror/view';
 import {
   NEW_DOCUMENT_FORMAT,
+  canConvertLineEndings,
+  convertDocument,
   decodeDocument,
   encodeDocument,
+  majorityEnding,
   readOnlyReason,
   type DocumentFormat,
+  type LineEnding,
 } from '../core/document';
 import { exportHtml } from '../core/export';
 import { extractOutline } from '../core/outline';
@@ -68,11 +72,17 @@ interface DocumentState {
   readOnly: string | null;
   /** The saved text, so undoing back to it clears the unsaved marker. */
   savedText: string;
+  /**
+   * True after the reader converted the line endings and until the next save. The converted text
+   * differs from the file on disk even when the editor's text equals savedText, so the document
+   * stays unsaved (and a save is possible) whatever is typed or undone afterwards.
+   */
+  converted: boolean;
 }
 
 export class App {
   private view!: EditorView;
-  private doc: DocumentState = { ref: null, format: NEW_DOCUMENT_FORMAT, readOnly: null, savedText: '' };
+  private doc: DocumentState = { ref: null, format: NEW_DOCUMENT_FORMAT, readOnly: null, savedText: '', converted: false };
   private listing: Listing | null = null;
   private history: FileRef[] = [];
   private pendingFragment: string | null = null;
@@ -379,13 +389,36 @@ export class App {
 
   private load(ref: FileRef | null, text: string, format: DocumentFormat, bytes: Uint8Array | null = null): void {
     const readOnly = readOnlyReason(format);
-    this.doc = { ref, format, readOnly, savedText: text };
+    this.doc = { ref, format, readOnly, savedText: text, converted: false };
+    this.mountEditor(text, format, readOnly !== null);
+    // The editor's own text is the reference for "unsaved": a mixed file is shown with LF
+    // between every line, which is not the raw text it was decoded from.
+    this.doc.savedText = documentText(this.view.state);
+    this.showReadOnly();
+    this.syncLine = 0;
+    this.refreshOutline();
+    this.folds.clear();
+    this.previewPane.scrollTo({ top: 0 });
+    this.status.cursor.textContent = 'Ln 1, Col 1';
+    this.updateFormatStatus();
+    this.sidebar.select(ref?.folderPath);
+    this.updateWords();
+    this.updateDirty();
+    this.setMode(this.mode);
+    this.schedulePreview(0);
+    this.rememberSession();
+    this.watcher.rebase(bytes);
+    this.watcher.sync();
+  }
+
+  /** Replaces the editor with one holding text. The caller sets this.doc first. */
+  private mountEditor(text: string, format: DocumentFormat, readOnly: boolean): void {
     this.view?.destroy();
     this.view = createEditor({
       parent: this.editorHost,
       text,
       format,
-      readOnly: readOnly !== null,
+      readOnly,
       onChange: () => {
         this.updateDirty();
         this.schedulePreview(PREVIEW_DELAY_MS);
@@ -398,23 +431,90 @@ export class App {
       },
       onScroll: (line) => this.syncPreview(line),
     });
-    this.notify(readOnly);
-    this.syncLine = 0;
-    this.refreshOutline();
-    this.folds.clear();
-    this.previewPane.scrollTo({ top: 0 });
-    this.status.cursor.textContent = 'Ln 1, Col 1';
+  }
+
+  private updateFormatStatus(): void {
+    const format = this.doc.format;
     this.status.encoding.textContent = format.validUtf8 ? (format.bom ? 'UTF-8 with BOM' : 'UTF-8') : 'Not UTF-8';
     this.status.encoding.title = 'Saved exactly as opened';
-    this.status.eol.textContent = format.mixedEndings ? 'Mixed line endings' : format.eol === '\r\n' ? 'CRLF' : 'LF';
-    this.sidebar.select(ref?.folderPath);
-    this.updateWords();
-    this.updateDirty();
+    const eol = format.mixedEndings ? 'Mixed line endings' : format.eol === '\r\n' ? 'CRLF' : 'LF';
+    this.status.eol.textContent = this.doc.converted ? `${eol} (converted, not saved)` : eol;
+  }
+
+  // ---- line endings (the rules live in core/document.ts) -----------------------------------
+
+  /**
+   * The banner for a read-only document. A file that is read-only only because its line endings
+   * are mixed offers the conversion; one that is not valid UTF-8 never does.
+   */
+  private showReadOnly(): void {
+    const reason = this.doc.readOnly;
+    if (reason === null || !canConvertLineEndings(this.doc.format)) {
+      this.notify(reason);
+      return;
+    }
+    const convert = el('button', { type: 'button', class: 'text-button banner-action' }, 'Convert line endings');
+    convert.addEventListener('click', () => void this.convertLineEndings());
+    this.banner.replaceChildren(`${reason} `, convert);
+    this.banner.hidden = false;
+  }
+
+  /**
+   * Asks which ending to use (the file's majority ending first) and converts the open document.
+   * The edit is in memory only: the document becomes editable and unsaved, and the file on disk
+   * is not touched until the reader saves.
+   */
+  private async convertLineEndings(): Promise<void> {
+    const { format } = this.doc;
+    if (!this.doc.readOnly || !canConvertLineEndings(format)) return;
+    const counts = format.endings;
+    const parts = counts
+      ? ([
+          [counts.crlf, 'CRLF'],
+          [counts.lf, 'LF'],
+          [counts.cr, 'CR'],
+        ] as const)
+          .filter(([n]) => n > 0)
+          .map(([n, name]) => `${n.toLocaleString()} ${name}`)
+          .join(', ')
+      : '';
+    const first: LineEnding = counts ? majorityEnding(counts) : '\n';
+    const names: Record<LineEnding, string> = { '\n': 'LF', '\r\n': 'CRLF' };
+    const other: LineEnding = first === '\n' ? '\r\n' : '\n';
+    // Say "most lines" only when one of the two is really the larger; a tie has no majority.
+    const clear = counts !== undefined && counts.crlf !== counts.lf;
+    const label = (eol: LineEnding) => `Convert to ${names[eol]}${clear && eol === first ? ' (most lines)' : ''}`;
+    const before = this.doc;
+    const choice = await confirmDialog(
+      'Convert line endings?',
+      `${this.doc.ref?.name ?? 'This file'} mixes line endings${parts ? ` (${parts})` : ''}. Every line ending will become one ending, and the document becomes editable. Nothing is written until you save.`,
+      [label(first), label(other), 'Cancel'],
+    );
+    // The reader may have opened another file, or the file may have reloaded, behind the dialog.
+    if (choice === null || choice === 'Cancel' || this.doc !== before) return;
+    this.applyConversion(choice === label(first) ? first : other);
+  }
+
+  private applyConversion(target: LineEnding): void {
+    if (!this.doc.readOnly || !canConvertLineEndings(this.doc.format)) return;
+    // The editor holds the lines joined by LF (a mixed file is split on every ending to show it).
+    const converted = convertDocument(documentText(this.view.state), this.doc.format, target);
+    const selection = this.view.state.selection;
+    const scrollTop = this.view.scrollDOM.scrollTop;
+    this.doc = { ...this.doc, format: converted.format, readOnly: null, savedText: converted.text, converted: true };
+    this.mountEditor(converted.text, converted.format, false);
+    // Same lines, same offsets: the cursor and the scroll position carry over.
+    this.view.dispatch({ selection });
+    this.view.scrollDOM.scrollTop = scrollTop;
+    this.updateFormatStatus();
     this.setMode(this.mode);
-    this.schedulePreview(0);
-    this.rememberSession();
-    this.watcher.rebase(bytes);
-    this.watcher.sync();
+    this.updateDirty();
+    this.updateWords();
+    this.refreshOutline();
+    this.notify(
+      `Line endings converted to ${target === '\r\n' ? 'CRLF' : 'LF'}. The file on disk is unchanged until you save.`,
+    );
+    this.view.focus();
   }
 
   // ---- external changes (the decisions live in core/reload.ts) ----------------------------
@@ -456,7 +556,8 @@ export class App {
         const top = this.previewPane.scrollTop;
         this.load(this.doc.ref, decoded.text, decoded.format, bytes);
         this.previewPane.scrollTop = top;
-        this.notify(this.doc.readOnly ?? `${this.doc.ref?.name ?? 'The file'} changed on disk and was reloaded.`);
+        if (this.doc.readOnly) this.showReadOnly();
+        else this.notify(`${this.doc.ref?.name ?? 'The file'} changed on disk and was reloaded.`);
       },
       resolveConflict: async (bytes) => {
         void bytes;
@@ -510,7 +611,7 @@ export class App {
   }
 
   private get dirty(): boolean {
-    return documentText(this.view.state) !== this.doc.savedText;
+    return this.doc.converted || documentText(this.view.state) !== this.doc.savedText;
   }
 
   private updateDirty(): void {
@@ -692,7 +793,7 @@ export class App {
   /** Resolves true when the document was written. */
   private async save(as: boolean): Promise<boolean> {
     if (this.doc.readOnly) {
-      this.notify(this.doc.readOnly);
+      this.showReadOnly();
       return false;
     }
     const text = documentText(this.view.state);
@@ -704,7 +805,8 @@ export class App {
       if (!ref) return false;
       // Saving somewhere else makes the file independent of the open folder.
       const kept = ref === this.doc.ref ? ref : { ...ref, folderPath: undefined };
-      this.doc = { ...this.doc, ref: kept, savedText: text };
+      this.doc = { ...this.doc, ref: kept, savedText: text, converted: false };
+      this.updateFormatStatus();
       this.watcher.rebase(bytes);
       this.watcher.sync();
       this.sidebar.select(kept.folderPath);

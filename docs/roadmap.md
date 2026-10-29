@@ -67,7 +67,7 @@ These actions were completed by the repository owner. New release workflows stil
 | RD12 | Export to DOCX and to PDF with bookmarks without the print dialog; a ZTG-branded print template (header, footer, client name) | Medium | Typora (Pandoc) |
 | RD13 | Paste or drop an image into a document: save it beside the file and insert a relative link | Medium | Typora, Obsidian |
 | RD14 | Remote images: a per-document "Load remote images" choice; they are never fetched today, by design | Medium | Email clients |
-| RD15 | Convert line endings, for files with mixed endings that now open read-only | Medium | VS Code |
+| RD15 | **Built**: Convert line endings, offered for files with mixed endings that open read-only. An explicit choice of LF or CRLF (the majority ending first) normalizes the text in memory and leaves the document editable and unsaved; nothing is written until Save, BOM and other characters are kept, invalid UTF-8 is never converted, and an unsaved conversion is protected by the usual disk-change prompt (`readout/src/core/document.ts`, `readout/src/ui/app.ts`). Also fixes a mixed file showing as unsaved when opened | Medium | VS Code |
 | RD16 | Links to non-Markdown files (PDF, scripts) open in the default app after a confirmation | Medium | VS Code |
 | RD17 | Focus and typewriter modes | Low | Typora |
 | RD18 | Two-way scroll sync (preview to editor) | Low | MarkText |

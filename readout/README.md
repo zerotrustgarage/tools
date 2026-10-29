@@ -107,6 +107,13 @@ file without edits reproduces it byte for byte, and an edit changes only what yo
 - A missing final newline stays missing.
 - Files with mixed line endings or invalid UTF-8 open read-only, with a note saying why, so
   saving cannot alter them.
+- A file that is read-only only because its line endings are mixed offers Convert line endings in
+  the note. The dialog asks for LF or CRLF (the ending most of the file's lines use comes first),
+  turns every ending into the chosen one in the editor, and makes the document editable and
+  unsaved. The file on disk is not touched until you save, and the byte order mark and every
+  other character are kept. A file that is not valid UTF-8 is never converted. If the file
+  changes on disk while a conversion is unsaved, you are asked what to do, as with any unsaved
+  edit.
 - Formatting buttons insert or remove only their own markers.
 
 `test/roundtrip.test.ts` holds this to a corpus of real-world files.
