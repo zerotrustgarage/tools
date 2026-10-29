@@ -288,7 +288,7 @@ func (a *App) StartScan(req ScanRequest) (int, error) {
 // the CLI uses, so both front ends resolve gentle mode identically. Default
 // mode keeps this app's own clamping and is otherwise unchanged.
 func planFromRequest(req ScanRequest, addrs []netip.Addr) (scan.Plan, error) {
-	pr := scan.PlanRequest{Mode: req.Mode, Targets: addrs, Probes: req.Probes}
+	pr := scan.PlanRequest{Mode: req.Mode, Targets: addrs, Probes: req.Probes, AllowPublic: req.AllowPublic}
 	if err := scan.ValidMode(req.Mode); err != nil {
 		return scan.Plan{}, err
 	}
@@ -460,7 +460,16 @@ func (a *App) OpenWeb(ip string, port int) error {
 			if s.TLS != nil {
 				scheme = "https"
 			}
-			a.platform.OpenURL(fmt.Sprintf("%s://%s/", scheme, net.JoinHostPort(ip, strconv.Itoa(port))))
+			host := ip
+			if addr, err := netip.ParseAddr(ip); err == nil && addr.Is6() {
+				// A zone names an interface of this computer; browsers do not take
+				// one (RFC 6874 is not implemented by them), so a link-local
+				// address is not opened. Global and unique local addresses are.
+				if addr.Zone() != "" {
+					return errors.New("a link-local IPv6 address cannot be opened in a browser; use one of the device's other addresses")
+				}
+			}
+			a.platform.OpenURL(fmt.Sprintf("%s://%s/", scheme, net.JoinHostPort(host, strconv.Itoa(port))))
 			return nil
 		}
 	}

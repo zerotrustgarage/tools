@@ -54,9 +54,12 @@ async function gentleTests(scheme) {
   for (const id of ["#ports", "#concurrency", "#timeout", "#snmp-on", "#snmp-user"]) {
     assert.equal(await page.isDisabled(id), true, id + " must be disabled in gentle mode");
   }
-  for (const key of ["banners", "netbios", "mdns", "ssdp", "wsd", "llmnr", "smb", "favicon", "snmp"]) {
+  for (const key of ["banners", "netbios", "mdns", "ssdp", "wsd", "llmnr", "smb", "favicon", "snmp", "ipv6_ping"]) {
     assert.equal(await page.isChecked(`[data-probe="${key}"]`), false, key + " shown on in gentle mode");
   }
+  // Gentle mode reads the neighbor table the system already has; it never sends the multicast echo.
+  assert.equal(await page.isChecked('[data-probe="ipv6"]'), true, "IPv6 neighbor table stays on in gentle mode");
+  assert.ok(summary.includes("IPv6 multicast echo"), "gentle summary must name the skipped echo: " + summary);
   assert.equal(await page.isChecked('[data-probe="ports"]'), true);
   assert.equal(await page.isVisible("#gentle-info"), true);
   if (shots) await page.screenshot({ path: join(shots, `gentle-${scheme}.png`) });
@@ -70,7 +73,7 @@ async function gentleTests(scheme) {
   assert.equal(req.timeout_ms, 0);
   assert.equal(req.probes.snmp, false);
   assert.equal(req.snmp, null);
-  assert.deepEqual(req.probes, { ports: true, banners: false, reverse_dns: true, netbios: false, mdns: false, ssdp: false, wsd: false, llmnr: false, smb: false, favicon: false, snmp: false });
+  assert.deepEqual(req.probes, { ports: true, banners: false, reverse_dns: true, netbios: false, mdns: false, ssdp: false, wsd: false, llmnr: false, smb: false, favicon: false, snmp: false, ipv6: true, ipv6_ping: false });
   // Back to default restores the user's own probe choices and fields.
   await page.click("#settings-btn");
   await page.check("#mode-default");
@@ -103,6 +106,10 @@ async function identificationTests(scheme) {
     assert.equal(await page.isChecked(`[data-probe="${key}"]`), true, key + " should take the default for old saved settings");
   }
   assert.equal(await page.isChecked('[data-probe="mdns"]'), false, "a probe the user switched off stays off");
+  for (const key of ["ipv6", "ipv6_ping"]) {
+    assert.equal(await page.locator(`[data-probe="${key}"]`).count(), 1, key + " toggle missing");
+    assert.equal(await page.isChecked(`[data-probe="${key}"]`), true, key + " should take the default for old saved settings");
+  }
   await page.uncheck('[data-probe="smb"]');
   await page.uncheck('[data-probe="wsd"]');
   await page.click("#settings-close");
@@ -140,6 +147,81 @@ async function identificationTests(scheme) {
   }
   await page.check('#columns-menu input[data-col="smb"]');
   assert.match(await page.textContent('#rows tr[data-ip="192.168.50.20"]'), /3\.0\.2/);
+  assert.deepEqual(errors, [], "page errors");
+  await page.close();
+}
+
+// SC3: IPv6 addresses seen in the neighbor table, and devices found only over IPv6. Device text
+// stays text, the grid sorts IPv4 before IPv6, and connection actions are offered for IPv4 only.
+async function ipv6Tests(scheme) {
+  const page = await browser.newPage({ viewport: { width: 1320, height: 820 }, colorScheme: scheme });
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await page.addInitScript(() => {
+    window.__extraHosts = [
+      { ip: "192.168.50.90", status: "up", name: "dual-stack", type: "Linux server", mac: "00:1b:21:aa:bb:90", vendor: "Intel Corporate", evidence: ["icmp", "arp"], ipv6: ["fe80::5a%Ethernet", "fd00::5a", "2001:db8:1::5a"], services: [{ port: 22, name: "ssh" }] },
+      { ip: "fe80::2a%Ethernet", status: "up", name: '<img src=x onerror="window.__pwned=1">lock', type: "Unknown device", type_reason: "no identifying evidence", mac: "02:aa:bb:cc:dd:01", mac_randomized: true, evidence: ["ndp", "icmp6"], ipv6: ["fe80::2a%Ethernet", "fd00::2a"], services: [{ port: 22, name: "ssh" }, { port: 80, name: "http", http: { status: 200, title: "Lock" } }] },
+      { ip: "fd00::7", status: "up", name: "ula-only", type: "Unknown device", mac: "02:aa:bb:cc:dd:02", evidence: ["ndp"], ipv6: ["fd00::7"] },
+    ];
+  });
+  await page.addInitScript({ path: join(here, "mock.js") });
+  await page.goto(url);
+  await page.waitForFunction(() => document.getElementById("targets")?.value === "192.168.50.0/24");
+  await page.click("#settings-btn");
+  for (const key of ["ipv6", "ipv6_ping"]) {
+    assert.equal(await page.isChecked(`[data-probe="${key}"]`), true, key + " is on by default");
+  }
+  await page.click("#settings-close");
+  await page.click("#scan-btn");
+  await page.waitForSelector("#rows tr:nth-child(8)");
+  await page.waitForFunction(() => document.getElementById("status-text").textContent.startsWith("Done:"));
+  const req = (await page.evaluate(() => window.__calls)).find((c) => c[0] === "StartScan")[1];
+  assert.equal(req.probes.ipv6, true);
+  assert.equal(req.probes.ipv6_ping, true);
+
+  // Sorted by IP address (the default): every IPv4 address first, then IPv6 in numeric order.
+  const order = async () => page.evaluate(() => [...document.querySelectorAll("#rows tr")].map((tr) => tr.dataset.ip));
+  let ips = await order();
+  const asc = ips.filter((ip) => !ip.includes(":"));
+  assert.equal(ips.slice(0, asc.length).join(), asc.join(), "IPv4 addresses first: " + ips);
+  assert.deepEqual(ips.slice(asc.length), ["fd00::7", "fe80::2a%Ethernet"], "IPv6 in numeric order: " + ips);
+  assert.deepEqual(asc, [...asc].sort((a, b) => a.split(".").reduce((x, o) => x * 256 + Number(o), 0) - b.split(".").reduce((x, o) => x * 256 + Number(o), 0)));
+
+  await page.click('#grid th[data-col="ip"]'); // the other direction reverses it exactly
+  assert.deepEqual(await order(), [...ips].reverse());
+  await page.click('#grid th[data-col="ip"]');
+  assert.deepEqual(await order(), ips);
+
+  // An IPv6-only device: its name is text, the other addresses are listed, actions are IPv4 only.
+  await page.click('#rows tr[data-ip="fe80::2a%Ethernet"]');
+  await page.waitForSelector("#detail:not([hidden])");
+  const lock = await page.textContent("#detail");
+  assert.ok(lock.includes('<img src=x onerror="window.__pwned=1">lock'), "markup must show as text");
+  assert.ok(lock.includes("fe80::2a%Ethernet") && lock.includes("fd00::2a") && lock.includes("ndp, icmp6"), lock);
+  assert.equal(await page.locator("#detail img").count(), 0);
+  assert.equal(await page.evaluate(() => window.__pwned), undefined);
+  for (const action of ["ping", "traceroute", "ssh", "rdp", "wake", "open-with"]) {
+    assert.equal(await page.isDisabled(`#detail [data-action="${action}"]`), true, action + " must be off for an IPv6-only device");
+  }
+  assert.equal(await page.locator('#detail button:has-text("Open in browser")').count(), 0, "a zoned address cannot be opened in a browser");
+  assert.equal(await page.locator("#detail [data-ipv6]").count(), 1, "the other IPv6 address is listed, the primary once");
+
+  // A dual-stack IPv4 device keeps its actions and lists its IPv6 addresses.
+  await page.click('#rows tr[data-ip="192.168.50.90"]');
+  assert.equal(await page.isDisabled('#detail [data-action="ssh"]'), false);
+  assert.equal(await page.locator("#detail [data-ipv6]").count(), 3);
+  assert.ok((await page.textContent("#detail")).includes("2001:db8:1::5a"));
+  assert.equal(await page.locator("#detail").getAttribute("hidden"), null);
+
+  // The optional column and the search cover IPv6 addresses.
+  await page.click("#columns-btn");
+  assert.equal(await page.isChecked('#columns-menu input[data-col="ipv6"]'), false, "the IPv6 column starts hidden");
+  await page.check('#columns-menu input[data-col="ipv6"]');
+  assert.match(await page.textContent('#rows tr[data-ip="192.168.50.90"] td[data-col="ipv6"]'), /fe80::5a%Ethernet fd00::5a 2001:db8:1::5a/);
+  await page.keyboard.press("Escape");
+  await page.fill("#filter", "2001:db8:1::5a");
+  await page.waitForFunction(() => document.querySelectorAll("#rows tr").length === 1);
+  assert.equal((await order()).join(), "192.168.50.90");
   assert.deepEqual(errors, [], "page errors");
   await page.close();
 }
@@ -1058,6 +1140,8 @@ try {
     console.log(`ok  ${scheme} gentle mode`);
     await identificationTests(scheme);
     console.log(`ok  ${scheme} identification probes`);
+    await ipv6Tests(scheme);
+    console.log(`ok  ${scheme} IPv6 neighbors`);
     await openWithTests(scheme);
     console.log(`ok  ${scheme} open with`);
     await scheduleTests(scheme);

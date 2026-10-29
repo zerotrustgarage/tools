@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/netip"
 	"os"
 	"path/filepath"
 	"sort"
@@ -525,8 +524,8 @@ func (a *App) executeScheduled(ctx context.Context, key string, cfg ScheduleConf
 		if len(listed) == noticeAddressesMax {
 			break
 		}
-		if parsed, err := netip.ParseAddr(ip); err == nil && parsed.Is4() {
-			listed = append(listed, parsed.String())
+		if text, ok := schedule.NoticeAddress(ip); ok {
+			listed = append(listed, text)
 		}
 	}
 	return run, &ScheduleNotice{Key: key, Site: cfg.Site, Name: cfg.Name, NewCount: len(newOnes), Addresses: listed, Up: sum.Up,

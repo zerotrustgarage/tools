@@ -154,9 +154,21 @@ import { showUpdateDialog } from "./updates.js";
 
   // ---------- derived fields ----------
 
-  function ipNum(ip) {
-    return ip.split(".").reduce((a, o) => a * 256 + Number(o), 0);
+  // ipKey is a string that sorts addresses in numeric order: every IPv4 address
+  // before every IPv6 one, and IPv6 by its expanded value (a zone sorts last).
+  function ipKey(ip) {
+    const z = ip.indexOf("%");
+    const bare = z < 0 ? ip : ip.slice(0, z);
+    const zone = z < 0 ? "" : ip.slice(z);
+    if (!bare.includes(":")) return "4" + bare.split(".").map((o) => (Number(o) || 0).toString(16).padStart(2, "0")).join("");
+    const [head, tail] = bare.split("::");
+    const h = head ? head.split(":") : [];
+    const t = tail ? tail.split(":") : [];
+    const fill = tail === undefined ? [] : Array(Math.max(0, 8 - h.length - t.length)).fill("0");
+    return "6" + [...h, ...fill, ...t].map((g) => g.padStart(4, "0")).join("") + zone;
   }
+  const isIPv6 = (ip) => ip.includes(":");
+  const cmpKey = (x, y) => (x < y ? -1 : x > y ? 1 : 0);
   const sevRank = { high: 3, medium: 2, info: 1 };
   const ports = (h) => (h.services || []).map((s) => s.port);
   const vendorOf = (h) => (h.mac_randomized ? "(private MAC)" : h.vendor || "");
@@ -176,7 +188,7 @@ import { showUpdateDialog } from "./updates.js";
       cell: (h) => el("span", { class: "dot " + (h.status === "up" ? "up" : ""), title: h.status }) },
     { key: "name", label: "Name", width: 190, text: (h) => h.name || "",
       cell: (h) => el("span", null, h.favorite ? el("span", { class: "favorite-mark", "aria-label": "Favorite", text: "★ " }) : null, h.name || "") },
-    { key: "ip", label: "IP address", width: 132, mono: true, text: (h) => h.ip, sort: (h) => ipNum(h.ip) },
+    { key: "ip", label: "IP address", width: 132, mono: true, text: (h) => h.ip, sort: (h) => ipKey(h.ip) },
     { key: "type", label: "Type", width: 190, text: (h) => h.type || "", tip: (h) => h.type_reason },
     { key: "flags", label: "Findings", width: 160, sort: (h) => -worst(h), cell: findingBadges,
       text: (h) => (h.findings || []).map((f) => f.severity + ":" + f.code).join(" ") },
@@ -184,6 +196,7 @@ import { showUpdateDialog } from "./updates.js";
     { key: "mac", label: "MAC address", width: 140, mono: true, text: (h) => h.mac || "" },
     { key: "ports", label: "Open ports", width: 150, mono: true, text: (h) => ports(h).join(" "), sort: (h) => ports(h).length },
     // Optional columns, hidden until chosen in the Columns menu.
+    { key: "ipv6", label: "IPv6 addresses", width: 260, hidden: true, mono: true, text: (h) => (h.ipv6 || []).join(" ") },
     { key: "dns", label: "DNS name", width: 200, hidden: true, text: (h) => h.dns_name || "" },
     { key: "netbios", label: "NetBIOS name", width: 150, hidden: true, text: (h) => (h.netbios && h.netbios.computer) || "" },
     { key: "workgroup", label: "Workgroup", width: 120, hidden: true, text: (h) => (h.netbios && h.netbios.workgroup) || "" },
@@ -245,7 +258,7 @@ import { showUpdateDialog } from "./updates.js";
   function matches(h, q) {
     if (!q) return true;
     const hay = [
-      h.ip, h.name, h.mac, h.vendor, h.type, h.dns_name, h.notes, ...(h.tags || []),
+      h.ip, ...(h.ipv6 || []), h.name, h.mac, h.vendor, h.type, h.dns_name, h.notes, ...(h.tags || []),
       h.netbios && h.netbios.computer, h.netbios && h.netbios.workgroup,
       h.mdns && h.mdns.hostname, llmnrName(h), h.wsd && h.wsd.name, h.upnp && h.upnp.manufacturer, h.upnp && h.upnp.model_name,
       h.snmp && h.snmp.sys_name, h.snmp && h.snmp.model, h.snmp && h.snmp.serial, h.snmp && h.snmp.sys_location,
@@ -267,7 +280,7 @@ import { showUpdateDialog } from "./updates.js";
       .filter((h) => (showDown || h.status === "up") && (!type || h.type === type) && (!findingsOnly || (h.findings || []).length) && (!$("favorites-only").checked || h.favorite) && matches(h, q))
       .sort((a, b) => {
         const x = key(a), y = key(b);
-        return (x < y ? -1 : x > y ? 1 : ipNum(a.ip) - ipNum(b.ip)) * state.sortDir;
+        return (x < y ? -1 : x > y ? 1 : cmpKey(ipKey(a.ip), ipKey(b.ip))) * state.sortDir;
       });
   }
 
@@ -454,7 +467,7 @@ import { showUpdateDialog } from "./updates.js";
     return el("div", { class: "svc" },
       el("div", { class: "svc-head" },
         el("span", { class: "mono", text: s.port + "/" + s.name }),
-        web && api ? el("button", { class: "link", text: "Open in browser", onclick: () => api.OpenWeb(h.ip, s.port).catch((e) => toast(String(e))) }) : null),
+        web && api && !h.ip.includes("%") ? el("button", { class: "link", text: "Open in browser", onclick: () => api.OpenWeb(h.ip, s.port).catch((e) => toast(String(e))) }) : null),
       kv([
         ["Product", s.product],
         ["Banner", s.banner],
@@ -489,6 +502,7 @@ import { showUpdateDialog } from "./updates.js";
       el("button", { class: "ghost close", "aria-label": "Close details", text: "✕", onclick: () => select(null) }),
       el("h2", { text: h.name || h.ip }),
       el("div", { class: "muted mono" }, h.ip, " ", copyButton(h.ip)),
+      ...(h.ipv6 || []).filter((a) => a !== h.ip).map((a) => el("div", { class: "muted mono", "data-ipv6": a }, a, " ", copyButton(a))),
       deviceActions(h),
       ...section("Device", kv([
         ["Type", h.type],
@@ -571,16 +585,20 @@ import { showUpdateDialog } from "./updates.js";
   }
 
   function deviceActions(h) {
+    // The connection actions take an IPv4 address; a device found only over IPv6
+    // is listed and probed, but not offered them.
+    const v6only = isIPv6(h.ip);
     const buttons = [
       ["ping", "Ping", true], ["traceroute", "Trace route", true],
       ["ssh", "SSH", h.status === "up" && ports(h).includes(22)],
       ["rdp", "RDP", h.status === "up" && ports(h).includes(3389)],
     ].map(([action, label, enabled]) => el("button", {
-      type: "button", "data-action": action, text: label, disabled: !enabled,
+      type: "button", "data-action": action, text: label, disabled: !enabled || v6only,
+      title: v6only ? "Connection actions need an IPv4 address" : null,
       onclick: () => runAction(action, h.ip),
     }));
     buttons.push(el("button", {
-      type: "button", "data-action": "open-with", "aria-haspopup": "menu", text: "Open with ▾", disabled: !api,
+      type: "button", "data-action": "open-with", "aria-haspopup": "menu", text: "Open with ▾", disabled: !api || v6only,
       onclick: (e) => {
         e.stopPropagation();
         const r = e.currentTarget.getBoundingClientRect();
@@ -588,7 +606,7 @@ import { showUpdateDialog } from "./updates.js";
       },
     }));
     const wakeMAC = h.mac || h.last_known_mac;
-    buttons.push(el("button", { type: "button", "data-action": "wake", text: "Wake-on-LAN", disabled: !wakeMAC || h.mac_randomized,
+    buttons.push(el("button", { type: "button", "data-action": "wake", text: "Wake-on-LAN", disabled: !wakeMAC || h.mac_randomized || v6only,
       onclick: async () => {
         if (!await confirmDialog("Send Wake-on-LAN?", "Send one wake packet for " + h.ip + " (" + (h.mac ? "MAC " : "last known MAC ") + wakeMAC + ") on its directly connected network?", "Send wake packet")) return;
         try { await api.WakeOnLAN(h.ip); toast("Wake packet sent. The device must support and enable Wake-on-LAN."); }
@@ -1407,6 +1425,7 @@ import { showUpdateDialog } from "./updates.js";
             if (field === "smb_dialect") return (host.smb && host.smb.dialect) || "unknown";
             if (field === "smb_signing") return signingOf(host.smb) || "unknown";
             if (field === "favicon") return faviconSummary(host) || "unknown";
+            if (field === "ipv6") return (host.ipv6 || []).filter((a) => /^fe[89ab]/i.test(a)).map((a) => a.replace(/%.*/, "")).sort().join(" ") || "unknown";
             if (["model", "serial", "firmware", "software"].includes(field)) {
               const key = field === "firmware" ? "firmware_rev" : field === "software" ? "software_rev" : field;
               return (host.snmp && host.snmp[key]) || "unknown";
@@ -1581,7 +1600,7 @@ import { showUpdateDialog } from "./updates.js";
       $("gentle-summary").textContent = "Settings: " + g.concurrency + " hosts at a time, " + g.port_concurrency +
         " connections per host, at most " + g.probes_per_second + " probe starts per second in total, " +
         g.timeout_ms + " ms connect timeout, TCP ports " + g.ports.join(", ") +
-        ". Service banners, NetBIOS, mDNS, UPnP, WS-Discovery, LLMNR, SMB, favicon and SNMP probes are skipped.";
+        ". Service banners, NetBIOS, mDNS, UPnP, WS-Discovery, LLMNR, SMB, favicon and SNMP probes and the IPv6 multicast echo are skipped.";
       $("gentle-tradeoff").textContent = g.tradeoff;
     }
     // Show the probes that will really run, not stale checkboxes.
