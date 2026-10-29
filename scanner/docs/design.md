@@ -323,7 +323,7 @@ Boundaries, each tested (`internal/schedule`, `app/schedule_test.go`, `app/uites
   (`FlashWindowEx` on the Wails window) and the UI puts the count in the window title. If the schedule allows it, a
   native Windows toast is sent through Wails v2's own notification API (`runtime.SendNotification`), which adds no
   dependency. The toast and the title text are built by `schedule.NoticeText` from counts and re-parsed IPv4
-  addresses only (at most five named); a name a device reported is never part of it. Wails sets the toast service up
+  addresses only (at most five named); a name a device reported is never part of it. The toast is off by default for each schedule (the in-app banner and taskbar flash always run). Wails sets the toast service up
   the first time a toast is needed, not at launch, and doing so registers the app for notifications in the current
   user's registry (HKCU), including a COM activation entry that starts the executable if the technician clicks a
   notification after the app has closed.

@@ -991,7 +991,7 @@ import { showUpdateDialog } from "./updates.js";
     const usable = !!entry && !state.schedulesError;
     $("schedule-enabled").checked = !!sched;
     $("schedule-interval").value = String(sched ? sched.interval_minutes : 60);
-    $("schedule-toast").checked = sched ? sched.desktop_toast : true;
+    $("schedule-toast").checked = sched ? sched.desktop_toast : false;
     for (const id of ["schedule-enabled", "schedule-interval", "schedule-toast", "schedule-apply"]) $(id).disabled = !usable || state.scheduleBusy;
     $("schedule-reset").hidden = !state.schedulesError;
     const folder = (state.scheduleStatuses.find((s) => s.folder) || {}).folder;

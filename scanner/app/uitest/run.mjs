@@ -330,6 +330,7 @@ async function scheduleTests(scheme) {
   await saveSet("Lab", "Names", "printer.lan");
   await select("Main LAN");
   assert.equal(await page.isChecked("#schedule-enabled"), false);
+  assert.equal(await page.isChecked("#schedule-toast"), false, "the Windows notification writes to the user registry, so it is opt-in");
 
   // Enable: validated first, stored without targets, and sent to the app with the set's targets.
   await page.check("#schedule-enabled");
@@ -339,7 +340,7 @@ async function scheduleTests(scheme) {
   let stored = await schedules();
   assert.equal(stored.schedules.length, 1);
   const sched = stored.schedules[0];
-  assert.deepEqual([sched.site, sched.name, sched.interval_minutes, sched.desktop_toast, sched.scan.mode, sched.scan.probes.snmp], ["Clinic", "Main LAN", 15, true, "default", false]);
+  assert.deepEqual([sched.site, sched.name, sched.interval_minutes, sched.desktop_toast, sched.scan.mode, sched.scan.probes.snmp], ["Clinic", "Main LAN", 15, false, "default", false]);
   assert.ok(!("targets" in sched), "targets come from the saved set, not the schedule");
   assert.ok(!JSON.stringify(stored).includes("passphrase") && !JSON.stringify(stored).includes("allow_public"));
   const sent = await lastSet();

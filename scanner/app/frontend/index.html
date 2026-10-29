@@ -178,7 +178,7 @@
           <option value="720">12 hours</option><option value="1440">24 hours</option>
         </select>
       </label>
-      <label class="check"><input type="checkbox" id="schedule-toast" checked> Also show a Windows notification for new devices</label>
+      <label class="check"><input type="checkbox" id="schedule-toast"> Also show a Windows notification for new devices (off by default: the first one registers ZTG Scanner for notifications in your Windows user registry)</label>
       <p id="schedule-help" class="muted small">Runs only while ZTG Scanner is open on this computer. It installs no Windows service, scheduled task or startup entry, and nothing runs when the app is closed. Only private and link-local addresses: a public range is never rescanned automatically, and host names are not accepted. It uses the scan mode and probes chosen in Settings when you apply it, and never SNMP. The first rescan records a baseline; later ones report new devices. A cycle is skipped while you scan manually or Windows battery saver is on. Results stay in a folder on this computer.</p>
       <p id="schedule-folder" class="muted small" hidden></p>
       <p id="schedule-status" class="muted small" role="status" aria-live="polite"></p>
