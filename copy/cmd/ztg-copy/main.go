@@ -15,6 +15,7 @@ import (
 	"github.com/zerotrustgarage/tools/copy/internal/catalog"
 	"github.com/zerotrustgarage/tools/copy/internal/job"
 	"github.com/zerotrustgarage/tools/copy/internal/private"
+	"github.com/zerotrustgarage/tools/copy/internal/rcj"
 	copyrun "github.com/zerotrustgarage/tools/copy/internal/run"
 	"github.com/zerotrustgarage/tools/copy/internal/template"
 	"github.com/zerotrustgarage/tools/copy/internal/update"
@@ -37,7 +38,7 @@ func main() {
 
 func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-		fmt.Fprintln(out, "ZTG Copy\n\nCommands:\n  flags [--search TEXT] [--json]\n  explain [--json] 'robocopy SOURCE DESTINATION [options]'\n  import [--output FILE] 'robocopy SOURCE DESTINATION [options]'\n  validate JOB.json\n  plan [--report DIRECTORY] JOB.json\n  run [--report DIRECTORY] [--native-exit] JOB.json\n  template list|show|save|command|run|export|import\n  bits flags|command|validate|export\n  version\n  check-updates [--json]\n\nInitial copy runner: existing local fixed-drive folders, DAT only, no reparse points or destructive options. Desktop and full roadmap features are in development.\nCommands never invoke a shell. Printed commands use direct Windows process quoting.")
+		fmt.Fprintln(out, "ZTG Copy\n\nCommands:\n  flags [--search TEXT] [--json]\n  explain [--json] 'robocopy SOURCE DESTINATION [options]'\n  import [--output FILE] 'robocopy SOURCE DESTINATION [options]'\n  import --rcj [--json] [--output JOB.json --accept] FILE.rcj   (explain --rcj FILE.rcj also works)\n  export --rcj [--encoding auto|utf8|utf16] JOB.json FILE.rcj\n  validate JOB.json\n  plan [--report DIRECTORY] JOB.json\n  run [--report DIRECTORY] [--native-exit] JOB.json\n  template list|show|save|command|run|export|import\n  bits flags|command|validate|export\n  version\n  check-updates [--json]\n\nInitial copy runner: existing local fixed-drive folders, DAT only, no reparse points or destructive options. Desktop and full roadmap features are in development.\nCommands never invoke a shell. Printed commands use direct Windows process quoting.")
 		return nil
 	}
 	switch args[0] {
@@ -53,6 +54,8 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 		return flagsCommand(args[1:], out, errOut)
 	case "explain", "import":
 		return commandImport(args[0], args[1:], out, errOut)
+	case "export":
+		return exportCommand(args[1:], out, errOut)
 	case "validate":
 		if len(args) != 2 {
 			return errors.New("usage: ztg-copy validate JOB.json")
@@ -105,8 +108,19 @@ func commandImport(command string, args []string, out, errOut io.Writer) error {
 	fs.SetOutput(errOut)
 	asJSON := fs.Bool("json", false, "output structured explanation")
 	output := fs.String("output", "", "import: write a new job file; refuses overwrite")
+	asRCJ := fs.Bool("rcj", false, "read a Robocopy job file (.RCJ) instead of a command; nothing is run")
+	accept := fs.Bool("accept", false, "with --rcj and --output: save after reviewing the explanation")
 	if err := fs.Parse(args); err != nil {
 		return helpError(err)
+	}
+	if *asRCJ {
+		if fs.NArg() != 1 {
+			return errors.New("pass one .RCJ file; flags go before it")
+		}
+		return rcjImport(command, fs.Arg(0), *output, *accept, *asJSON, out)
+	}
+	if *accept {
+		return errors.New("--accept is only used with --rcj")
 	}
 	if fs.NArg() != 1 {
 		return errors.New("pass one quoted Robocopy command; options go before it")
@@ -131,6 +145,77 @@ func commandImport(command string, args []string, out, errOut io.Writer) error {
 	return explain(j, out, false)
 }
 
+func rcjImport(command, name, output string, accept, asJSON bool, out io.Writer) error {
+	if command == "explain" && output != "" {
+		return errors.New("--output is only supported by import")
+	}
+	f, err := os.Open(name)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return errors.New("the job file must be a regular file")
+	}
+	data, err := io.ReadAll(io.LimitReader(f, rcj.MaxBytes+1))
+	if err != nil {
+		return err
+	}
+	r, err := rcj.ParseBytes(data)
+	if err != nil {
+		return err
+	}
+	if err := explainWithNotes(r.Job, r.Notes, out, asJSON); err != nil {
+		return err
+	}
+	if command != "import" || output == "" {
+		return nil
+	}
+	if !accept {
+		return errors.New("review the explanation above, then repeat with --accept to save the imported job")
+	}
+	if err := private.WriteNew(output, r.Job); err != nil {
+		return err
+	}
+	fmt.Fprintln(out, "Saved", output)
+	return nil
+}
+
+func exportCommand(args []string, out, errOut io.Writer) error {
+	fs := flag.NewFlagSet("export", flag.ContinueOnError)
+	fs.SetOutput(errOut)
+	asRCJ := fs.Bool("rcj", false, "write a Robocopy job file (.RCJ)")
+	encoding := fs.String("encoding", "auto", "auto (ASCII, UTF-16LE when needed), utf8 or utf16")
+	if err := fs.Parse(args); err != nil {
+		return helpError(err)
+	}
+	if !*asRCJ || fs.NArg() != 2 {
+		return errors.New("usage: ztg-copy export --rcj [--encoding auto|utf8|utf16] JOB.json FILE.rcj")
+	}
+	j, err := readJob(fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	text, err := rcj.Format(j)
+	if err != nil {
+		return err
+	}
+	data, err := rcj.Encode(text, *encoding)
+	if err != nil {
+		return err
+	}
+	if err := private.WriteNewBytes(fs.Arg(1), data); err != nil {
+		return err
+	}
+	fmt.Fprintln(out, "Wrote", fs.Arg(1))
+	fmt.Fprintln(out, "No credentials are written. ZTG Copy does not run Robocopy for this; to have the installed Robocopy check the file, run robocopy /JOB:FILE /QUIT yourself.")
+	return nil
+}
+
 type explainedOption struct {
 	Argument string          `json:"argument"`
 	Known    bool            `json:"known"`
@@ -138,6 +223,10 @@ type explainedOption struct {
 }
 
 func explain(j job.Job, out io.Writer, asJSON bool) error {
+	return explainWithNotes(j, nil, out, asJSON)
+}
+
+func explainWithNotes(j job.Job, notes []job.Issue, out io.Writer, asJSON bool) error {
 	command, err := j.Command()
 	if err != nil {
 		return err
@@ -164,7 +253,8 @@ func explain(j job.Job, out io.Writer, asJSON bool) error {
 			Command string            `json:"direct_process_command"`
 			Options []explainedOption `json:"options"`
 			Issues  []job.Issue       `json:"issues"`
-		}{j, command, options, issues})
+			Notes   []job.Issue       `json:"import_notes,omitempty"`
+		}{j, command, options, issues, notes})
 	}
 	fmt.Fprintf(out, "Source: %s\nDestination: %s\nDirect Windows process command:\n%s\n", j.Source, j.Destination, command)
 	fmt.Fprintln(out, "Absent defaults: /E /DCOPY:DAT /R:2 /W:5 /XJ. Preview and convergence are required by the runner.")
@@ -183,6 +273,9 @@ func explain(j job.Job, out io.Writer, asJSON bool) error {
 	}
 	for _, issue := range issues {
 		fmt.Fprintf(out, "%s %s: %s\n", strings.ToUpper(issue.Severity), issue.Argument, issue.Message)
+	}
+	for _, note := range notes {
+		fmt.Fprintf(out, "IMPORT %s %s: %s\n", strings.ToUpper(note.Severity), note.Argument, note.Message)
 	}
 	fmt.Fprintln(out, "Static explanation only. Installed-engine support, filesystem guards and transport are not probed.")
 	return nil

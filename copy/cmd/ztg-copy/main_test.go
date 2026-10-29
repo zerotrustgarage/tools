@@ -84,3 +84,81 @@ func TestTemplateRunUsesGuards(t *testing.T) {
 		t.Fatalf("template bypassed execution policy: %v", err)
 	}
 }
+
+func TestRCJImportExport(t *testing.T) {
+	var out, errOut bytes.Buffer
+	runCLI := func(args ...string) error {
+		out.Reset()
+		errOut.Reset()
+		return run(context.Background(), args, &out, &errOut)
+	}
+	dir := t.TempDir()
+	file := filepath.Join(dir, "in.rcj")
+	text := "::\n\t/SD:C:\\data dir\t:: source\n\t/DD:D:\\backup\n\t/IF\n\t\t*.txt\n\t/S\n\t/MIR\n\t/FUTURE:1\n\t/REG\n"
+	if err := os.WriteFile(file, []byte(text), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCLI("explain", "--rcj", file); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Source: C:\\data dir", "/FUTURE:1: UNKNOWN", "hidden option", "destructive", "not recognized"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("explanation lacks %q:\n%s", want, out.String())
+		}
+	}
+	saved := filepath.Join(dir, "job.json")
+	if err := runCLI("import", "--rcj", "--output", saved, file); err == nil || !strings.Contains(err.Error(), "--accept") {
+		t.Fatalf("saved without acceptance: %v", err)
+	}
+	if _, err := os.Stat(saved); err == nil {
+		t.Fatal("job file written before acceptance")
+	}
+	if err := runCLI("import", "--rcj", "--accept", "--output", saved, file); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(saved)
+	var j job.Job
+	if err := json.Unmarshal(data, &j); err != nil || j.Source != `C:\data dir` || len(j.Options) != 4 {
+		t.Fatalf("%s %v", data, err)
+	}
+	if err := runCLI("import", "--rcj", "--accept", "--output", saved, file); err == nil {
+		t.Fatal("import overwrote an existing job")
+	}
+	if err := runCLI("import", "--accept", "robocopy C:\\a D:\\b"); err == nil {
+		t.Fatal("--accept without --rcj")
+	}
+	// The unsafe job cannot be exported; a clean one round trips through the CLI.
+	if err := runCLI("export", "--rcj", saved, filepath.Join(dir, "bad.rcj")); err == nil {
+		t.Fatal("exported a job with /REG and unknown options")
+	}
+	clean := filepath.Join(dir, "clean.json")
+	if err := os.WriteFile(clean, []byte(`{"schema":1,"name":"nightly","source":"C:\\data dir","destination":"D:\\backup","files":["*.txt"],"options":["/S","/XD","cache dir"]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	exported := filepath.Join(dir, "clean.rcj")
+	if err := runCLI("export", "--rcj", clean, exported); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCLI("export", "--rcj", clean, exported); err == nil {
+		t.Fatal("export overwrote a file")
+	}
+	if err := runCLI("export", "--rcj", "--encoding", "latin1", clean, filepath.Join(dir, "x.rcj")); err == nil {
+		t.Fatal("accepted an unknown encoding")
+	}
+	if err := runCLI("export", clean, filepath.Join(dir, "y.rcj")); err == nil {
+		t.Fatal("export without --rcj")
+	}
+	body, _ := os.ReadFile(exported)
+	if !strings.Contains(string(body), "/SD:\"C:\\data dir\"") || strings.Contains(strings.ToUpper(string(body)), "/REG") {
+		t.Fatalf("%s", body)
+	}
+	if err := runCLI("explain", "--json", "--rcj", exported); err != nil || !strings.Contains(out.String(), `"name": "nightly"`) {
+		t.Fatalf("%s %v", out.String(), err)
+	}
+	if err := runCLI("explain", "--rcj", filepath.Join(dir, "missing.rcj")); err == nil {
+		t.Fatal("read a missing file")
+	}
+	if err := runCLI("explain", "--rcj", dir); err == nil {
+		t.Fatal("read a directory")
+	}
+}

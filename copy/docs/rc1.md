@@ -1,6 +1,6 @@
 # RC1 implementation and remaining acceptance
 
-The initial CLI implements flags, explain, import, validate, plan, run, version, check-updates
+The initial CLI implements flags, explain, import, export, validate, plan, run, version, check-updates
 and template list/show/save/command/run/export/import. Examples and exact restrictions are in
 [the README](../README.md). This is an unsigned development preview, not a completed RC1 or
 production support claim.
@@ -9,6 +9,14 @@ production support claim.
 
 - Embedded 97-option catalog checked against flags.md; searchable help, tags, symmetric conflicts,
   implications and the security-copy requirement.
+- RCJ import and export (October 29, 2026; design section 9.4, `internal/rcj`): `explain --rcj`, `import --rcj`
+  (explained first, saved only with `--output --accept`) and `export --rcj`. Bounded size and lines; UTF-16, UTF-8 and
+  ANSI input; `::` comments; `/SD` `/DD` `/NOSD` `/NODD` `/IF`; every other switch goes through the catalog, so
+  unknown, hidden (`/REG`, `/JOB`, `/SAVE`, `/DEBUG`) and badly valued switches are kept and flagged. Export refuses jobs
+  with errors (never writes `/REG`), writes the safe defaults and no credentials, and reads back to the same job
+  arguments (property tests over generated jobs and a fuzz target, `FuzzRCJReader`).
+- Typed option values from the catalog `type` field (`job.CheckValue`): numbers, sizes with units, day counts or
+  dates, attribute and copy flag letters, run windows, y or n, and log paths. Hidden options are job errors.
 - Strict schema-versioned jobs. Unknown switches survive import and are flagged. Unknown fields
   and password fields are rejected.
 - Windows argument tokenization/rendering, fuzzed round trips and a native Windows tokenizer check.
@@ -49,7 +57,12 @@ are treated as completed bytes.
 - Accurate activity/rate/stall metrics and replayable clock interfaces. Progress is currently phase
   status and final totals, with no percentage or ETA claim. The roadmap's minute-long ETA accuracy
   criterion has not been met.
-- Broader option/type/preset validation and RCJ import/export from the design.
+- RCJ on real Windows: the layout and quoting are a conservative reading because the design and sources give no
+  grammar and the repository has no real sample (design section 9.4). Needed: `robocopy /JOB:file /QUIT` accepting an
+  exported file in each encoding mode, a `/SAVE:` capture read back by `import --rcj`, and non-ASCII behavior. Wire
+  `FuzzRCJReader` into `.github/workflows/copy.yml` (its seeds already run under `go test`).
+- Preset validation: design section 9.2 lists seven presets but the designer has three buttons; the listed option
+  sets validate (tests), but presets are not data yet. The desktop app has no RCJ import or export action.
 - More Windows releases/locales and optimized-copy fixtures as tracked in rc0.md.
 - Broader diagnostic format/locale coverage and the remaining run-record metadata required by
   design section 10. Grouped native-log error headers are implemented; other diagnostic formats
