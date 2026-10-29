@@ -30,6 +30,8 @@ type Service struct {
 	Banner  string    `json:"banner,omitempty"`
 	HTTP    *HTTPInfo `json:"http,omitempty"`
 	TLS     *TLSInfo  `json:"tls,omitempty"`
+	// Favicon is set only on a web service whose /favicon.ico was fingerprinted.
+	Favicon *FaviconInfo `json:"favicon,omitempty"`
 }
 
 // HTTPInfo is what the root page of a web server says about itself.
