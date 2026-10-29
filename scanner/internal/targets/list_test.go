@@ -75,3 +75,14 @@ func TestNormalizeListLimits(t *testing.T) {
 		t.Fatal("normalized output exceeding byte limit accepted")
 	}
 }
+
+func TestIsHostnameSpec(t *testing.T) {
+	for spec, want := range map[string]bool{
+		"10.0.0.1": false, "10.0.0.0/24": false, "10.0.0.1-50": false, "10.0.0.1-10.0.1.9": false,
+		"printer.lan": true, "my-host": true, "lab-1.example.com": true, "2001:db8::1": false,
+	} {
+		if got := IsHostnameSpec(spec); got != want {
+			t.Errorf("IsHostnameSpec(%q) = %v, want %v", spec, got, want)
+		}
+	}
+}
