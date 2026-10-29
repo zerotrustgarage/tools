@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"
+	"golang.org/x/net/ipv6"
 )
 
 type replyKey struct {
@@ -31,6 +32,9 @@ type unixPinger struct {
 	conn   *icmp.PacketConn
 	pc     *ipv4.PacketConn
 	raw    bool
+	conn6  *icmp.PacketConn // IPv6 echo (icmp_unix6.go); nil where unavailable
+	pc6    *ipv6.PacketConn
+	raw6   bool
 	id     int
 	mu     sync.Mutex
 	seq    int
@@ -64,6 +68,7 @@ func newPinger() (Pinger, error) {
 		_ = p.pc.SetControlMessage(ipv4.FlagTTL, true) // best effort
 	}
 	go p.readLoop()
+	p.start6()
 	return p, nil
 }
 
@@ -80,6 +85,9 @@ func (p *unixPinger) Close() error {
 		return nil
 	default:
 		close(p.closed)
+	}
+	if p.conn6 != nil {
+		_ = p.conn6.Close()
 	}
 	return p.conn.Close()
 }
@@ -151,6 +159,9 @@ func addrOf(a net.Addr) (netip.Addr, bool) {
 }
 
 func (p *unixPinger) Ping(ctx context.Context, addr netip.Addr, timeout time.Duration) (EchoReply, error) {
+	if addr.Is6() && !addr.Is4In6() {
+		return p.ping6(ctx, addr, timeout)
+	}
 	p.mu.Lock()
 	p.seq = (p.seq + 1) & 0xffff
 	key := replyKey{addr, p.seq}

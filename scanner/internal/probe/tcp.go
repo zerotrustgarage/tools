@@ -17,10 +17,29 @@ type PortResult struct {
 	Refused bool
 }
 
-// DialTCP opens a TCP connection to addr:port.
+// DialTCP opens a TCP connection to addr:port. An IPv6 address may carry a zone
+// (fe80::1%eth0), which names the interface a link-local address lives on.
 func DialTCP(ctx context.Context, addr netip.Addr, port int, timeout time.Duration) (net.Conn, error) {
 	d := net.Dialer{Timeout: timeout}
-	return d.DialContext(ctx, "tcp4", net.JoinHostPort(addr.String(), strconv.Itoa(port)))
+	return d.DialContext(ctx, tcpNetwork(addr), net.JoinHostPort(addr.String(), strconv.Itoa(port)))
+}
+
+// tcpNetwork pins the address family, so an IPv4 target never falls back to
+// IPv6 and the reverse.
+func tcpNetwork(addr netip.Addr) string {
+	if addr.Is6() && !addr.Is4In6() {
+		return "tcp6"
+	}
+	return "tcp4"
+}
+
+// hostHeader is addr as an HTTP Host value: IPv6 literals are bracketed and
+// never carry a zone (RFC 6874 forbids sending one).
+func hostHeader(addr netip.Addr) string {
+	if addr.Is6() && !addr.Is4In6() {
+		return "[" + addr.WithZone("").String() + "]"
+	}
+	return addr.String()
 }
 
 // ScanPorts tries a full TCP connect to each port (no raw packets, no

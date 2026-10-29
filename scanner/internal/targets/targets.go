@@ -57,11 +57,53 @@ var privatePrefixes = []netip.Prefix{
 	netip.MustParsePrefix("127.0.0.0/8"),    // loopback
 }
 
-// IsInternal reports whether addr is in the default-permitted scope.
-func IsInternal(addr netip.Addr) bool {
-	addr = addr.Unmap()
-	for _, p := range privatePrefixes {
+// internalPrefixes6 is the IPv6 space that is internal by its nature: link-local
+// (fe80::/10), unique local (fc00::/7, RFC 4193) and loopback. Any other global
+// unicast address is internal only inside a prefix the scanner itself is on.
+var internalPrefixes6 = []netip.Prefix{
+	netip.MustParsePrefix("fe80::/10"),
+	netip.MustParsePrefix("fc00::/7"),
+	netip.MustParsePrefix("::1/128"),
+}
+
+// MinOwnPrefixBits is the shortest on-link global prefix IsInternalOn honors.
+// A real on-link prefix is a /64 or longer; a caller that passes something
+// much wider (a /0 by mistake) must not turn the whole internet internal.
+const MinOwnPrefixBits = 48
+
+// IsInternal reports whether addr is in the default-permitted scope: for IPv4
+// the private, CGNAT, link-local and loopback ranges, for IPv6 link-local,
+// unique local and loopback space. A zone (fe80::1%eth0) is ignored. A global
+// IPv6 address is not internal here; see IsInternalOn.
+func IsInternal(addr netip.Addr) bool { return IsInternalOn(addr, nil) }
+
+// IsInternalOn is IsInternal plus the scanner's own on-link global IPv6
+// prefixes (own), which count as internal because a host there is on the
+// network the technician is attached to. Every other global IPv6 address is
+// public and needs the same authorization as public IPv4 space.
+func IsInternalOn(addr netip.Addr, own []netip.Prefix) bool {
+	addr = addr.Unmap().WithZone("")
+	if !addr.IsValid() {
+		return false
+	}
+	if addr.Is4() {
+		for _, p := range privatePrefixes {
+			if p.Contains(addr) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, p := range internalPrefixes6 {
 		if p.Contains(addr) {
+			return true
+		}
+	}
+	if !addr.IsGlobalUnicast() {
+		return false
+	}
+	for _, p := range own {
+		if p.Addr().Is6() && !p.Addr().Is4In6() && p.Bits() >= MinOwnPrefixBits && p.Masked().Contains(addr) {
 			return true
 		}
 	}
@@ -117,7 +159,7 @@ func expandOne(ctx context.Context, spec string, opt Options, max int, add func(
 			return fmt.Errorf("%s: not a valid CIDR block", spec)
 		}
 		if !p.Addr().Is4() {
-			return fmt.Errorf("%s: only IPv4 ranges can be swept", spec)
+			return fmt.Errorf("%s: only IPv4 ranges can be swept (IPv6 neighbors on the local link are found by neighbor discovery, not by sweeping a prefix)", spec)
 		}
 		p = p.Masked()
 		size := uint64(1) << (32 - p.Bits())
@@ -162,7 +204,7 @@ func expandOne(ctx context.Context, spec string, opt Options, max int, add func(
 	// Single address.
 	if a, err := netip.ParseAddr(spec); err == nil {
 		if !a.Unmap().Is4() {
-			return fmt.Errorf("%s: only IPv4 addresses are supported", spec)
+			return fmt.Errorf("%s: only IPv4 targets can be given (IPv6 neighbors on the local link are found by neighbor discovery)", spec)
 		}
 		return add(spec, a.Unmap())
 	}

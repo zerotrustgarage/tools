@@ -69,6 +69,9 @@ func (winPinger) Ping(ctx context.Context, addr netip.Addr, timeout time.Duratio
 	if err := ctx.Err(); err != nil {
 		return EchoReply{}, err
 	}
+	if addr.Is6() && !addr.Is4In6() {
+		return ping6(ctx, addr, timeout)
+	}
 	h, _, err := procIcmpCreateFile.Call()
 	if windows.Handle(h) == windows.InvalidHandle {
 		return EchoReply{}, fmt.Errorf("IcmpCreateFile: %w", err)

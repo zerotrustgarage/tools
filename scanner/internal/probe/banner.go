@@ -189,7 +189,7 @@ var titleRE = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
 
 func httpGet(c net.Conn, addr netip.Addr, timeout time.Duration) (*HTTPInfo, error) {
 	_ = c.SetDeadline(time.Now().Add(timeout))
-	req := fmt.Sprintf("GET / HTTP/1.1\r\nHost: %s\r\nUser-Agent: %s\r\nAccept: */*\r\nConnection: close\r\n\r\n", addr, UserAgent)
+	req := fmt.Sprintf("GET / HTTP/1.1\r\nHost: %s\r\nUser-Agent: %s\r\nAccept: */*\r\nConnection: close\r\n\r\n", hostHeader(addr), UserAgent)
 	if _, err := io.WriteString(c, req); err != nil {
 		return nil, err
 	}

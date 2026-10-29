@@ -76,7 +76,7 @@ func FetchFavicon(ctx context.Context, addr netip.Addr, port int, useTLS bool, t
 		}
 		conn = tc
 	}
-	req := fmt.Sprintf("GET /favicon.ico HTTP/1.1\r\nHost: %s\r\nUser-Agent: %s\r\nAccept: image/*,*/*;q=0.5\r\nConnection: close\r\n\r\n", addr, UserAgent)
+	req := fmt.Sprintf("GET /favicon.ico HTTP/1.1\r\nHost: %s\r\nUser-Agent: %s\r\nAccept: image/*,*/*;q=0.5\r\nConnection: close\r\n\r\n", hostHeader(addr), UserAgent)
 	if _, err := io.WriteString(conn, req); err != nil {
 		return nil, err
 	}
