@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,17 +60,22 @@ func Read(r io.Reader) (Document, error) {
 	if d.Tool != "ztg-scanner" && d.Tool != "ztg-scanner-desktop" {
 		return d, fmt.Errorf("this is not a ZTG Scanner export")
 	}
+	if d.Summary.IPv6Only < 0 || d.Summary.IPv6Only > len(d.Hosts) {
+		return d, fmt.Errorf("scan file exceeds inventory limits")
+	}
 	if len(d.Site) > 200 || strings.ContainsAny(d.Site, "\r\n\x00") || len(d.Hosts) > targets.DefaultMaxHosts || len(d.Annotations) > targets.DefaultMaxHosts || len(d.Targets) > targets.DefaultMaxHosts {
 		return d, fmt.Errorf("scan file exceeds inventory limits")
 	}
 	seen := map[string]bool{}
 	for i := range d.Hosts {
 		h := &d.Hosts[i]
-		ip, err := netip.ParseAddr(h.IP)
-		if err != nil || !ip.Is4() || ip.String() != h.IP || seen[h.IP] {
-			return d, fmt.Errorf("invalid or duplicate IPv4 address %q", h.IP)
+		if _, ok := scan.ParseHostAddr(h.IP); !ok || seen[h.IP] {
+			return d, fmt.Errorf("invalid or duplicate IP address %q", h.IP)
 		}
 		seen[h.IP] = true
+		if err := checkIPv6List(h.IPv6); err != nil {
+			return d, err
+		}
 		if h.Status != "up" && h.Status != "down" {
 			return d, fmt.Errorf("invalid host status")
 		}
@@ -119,6 +123,23 @@ func Read(r io.Reader) (Document, error) {
 		}
 	}
 	return d, nil
+}
+
+// checkIPv6List holds a host's IPv6 address list (SC3) to the bounds the engine
+// writes: at most MaxIPv6PerDevice distinct canonical IPv6 addresses.
+func checkIPv6List(list []string) error {
+	if len(list) > scan.MaxIPv6PerDevice {
+		return fmt.Errorf("too many IPv6 addresses")
+	}
+	seen := map[string]bool{}
+	for _, text := range list {
+		a, ok := scan.ParseHostAddr(text)
+		if !ok || !a.Is6() || seen[text] {
+			return fmt.Errorf("invalid or duplicate IPv6 address %q", text)
+		}
+		seen[text] = true
+	}
+	return nil
 }
 
 // sanitizeSC11 re-applies the bounds and character checks to the fields the SC11

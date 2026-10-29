@@ -57,6 +57,7 @@ a { color:var(--info); text-decoration:none } a:hover { text-decoration:underlin
 </header>
 <div class="grid">
 <div class="metric"><small>Requested addresses</small><strong>{{.Summary.Total}}</strong></div>
+{{if .Summary.IPv6Only}}<div class="metric"><small>IPv6-only devices (neighbor table)</small><strong>{{.Summary.IPv6Only}}</strong></div>{{end}}
 <div class="metric"><small>Recorded observations</small><strong>{{.Recorded}}</strong></div>
 <div class="metric"><small>Observed responsive</small><strong>{{.Up}}</strong></div>
 <div class="metric"><small>Observed unresponsive</small><strong>{{.Down}}</strong></div>
@@ -73,7 +74,8 @@ a { color:var(--info); text-decoration:none } a:hover { text-decoration:underlin
 </tbody></table></div></section>
 <section><h2>Device details</h2>{{range .Hosts}}<article class="field host" id="{{.Anchor}}"><h3>{{.IP}} · {{.Name}}</h3>
 <div class="fields">
-<div class="field"><b>Classification reason</b>{{.TypeReason}}</div><div class="field"><b>Evidence</b>{{range .Evidence}}{{.}}<br>{{end}}</div>
+{{if .IPv6}}<div class="field"><b>IPv6 addresses (neighbor table, same MAC address)</b>{{range .IPv6}}{{.}}<br>{{end}}</div>
+{{end}}<div class="field"><b>Classification reason</b>{{.TypeReason}}</div><div class="field"><b>Evidence</b>{{range .Evidence}}{{.}}<br>{{end}}</div>
 <div class="field"><b>DNS / NetBIOS / mDNS / UPnP</b>{{.Discovery}}{{if .NetBIOS}}<br>Workgroup: {{.NetBIOS.Workgroup}}{{end}}{{if .UPnP}}<br>UPnP name: {{.UPnP.FriendlyName}}{{end}}</div>
 <div class="field"><b>Model / serial / firmware / location</b>{{.Model}}{{if .SNMP}}<br>Serial: {{.SNMP.Serial}}<br>Firmware: {{.Firmware}}<br>Location: {{.SNMP.SysLocation}}{{end}}{{if .UPnP}}<br>UPnP model: {{.UPnP.ModelName}} {{.UPnP.ModelNumber}}{{end}}</div>
 <div class="field"><b>WS-Discovery / SMB2 / favicon (device-reported)</b>{{.Extra}}</div>

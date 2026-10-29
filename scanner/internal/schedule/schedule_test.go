@@ -313,4 +313,10 @@ func TestNoticeTextHasOnlyCountsAndAddresses(t *testing.T) {
 	if strings.ContainsAny(body, "<>\n%") {
 		t.Fatalf("unsafe text in notification: %q", body)
 	}
+	// An IPv6-only device is a new device too; its address is named without the zone.
+	title, body = NoticeText([]string{"10.0.0.5", "fe80::2a%eth0", "fd00::2a", "ff02::1", "::", "::ffff:10.0.0.9", "fe80::1%bad zone%"}, 5)
+	// (A junk zone is dropped with every other zone; the address itself is valid.)
+	if title != "ZTG Scanner: 4 new devices" || body != "10.0.0.5, fe80::2a, fd00::2a, fe80::1" {
+		t.Fatalf("%q %q", title, body)
+	}
 }
