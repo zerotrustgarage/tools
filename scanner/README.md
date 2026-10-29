@@ -9,7 +9,7 @@ remote access software, and nothing installed on the hosts it scans. The design,
 [docs/design.md](docs/design.md).
 
 Status: engine and CLI (S1), Windows desktop app (S2), SNMPv3 inventory (S3) and the packaging and release
-pipeline (S4) are built. Owner signing setup is complete; the first signed Scanner release still needs a successful run of
+pipeline (S4) are built, as is IPv6 neighbor discovery on the local link (SC3; the macOS build is still open). Owner signing setup is complete; the first signed Scanner release still needs a successful run of
 the release workflow, using the shared identity in [../docs/signing.md](../docs/signing.md). Actions, site inventories and scan comparisons (S5) are built.
 
 ## Usage
@@ -52,6 +52,8 @@ Scan flags (`ztg-scanner scan -h`):
 | `--no-llmnr`         | off             | Skip the LLMNR name query to on-link hosts                     |
 | `--no-smb`           | off             | Skip the SMB2 NEGOTIATE on hosts with TCP 445 open             |
 | `--no-favicon`       | off             | Skip the `/favicon.ico` fingerprint (needs service banners)    |
+| `--no-ipv6`          | off             | Skip IPv6 neighbor discovery (the local link's neighbor table) |
+| `--no-ipv6-ping`     | off             | Do not send the one ICMPv6 echo to ff02::1 before reading it   |
 | `--mode M`           | default         | `default` or `gentle` (lower rate, fewer probes; see below)    |
 | `--concurrency N`    | 128             | Hosts scanned in parallel                                      |
 | `--timeout D`        | 800ms           | TCP connect timeout                                            |
@@ -63,6 +65,14 @@ Scan flags (`ztg-scanner scan -h`):
 
 SNMPv3 passphrases are prompted for with echo off, or read from `ZTG_SNMP_AUTH_PASS` and `ZTG_SNMP_PRIV_PASS` for
 unattended runs. They are never accepted as flags and never written to output.
+
+### IPv6 on the local link
+
+IPv6 hosts are not swept (a /64 cannot be). Scanner reads the system's IPv6 neighbor table for the links your IPv4
+targets are on, optionally after one ICMPv6 echo to `ff02::1`, links each neighbor to the IPv4 device with the same MAC
+address, and lists neighbors that match no IPv4 device as devices of their own (`fe80::2a%Ethernet`). Only link-local,
+unique local and your own on-link prefixes are used; other global addresses need `--allow-public`. `--no-ipv6` turns
+it off and `--no-ipv6-ping` keeps the table but skips the echo. See [docs/design.md](docs/design.md), SC3.
 
 ### Gentle mode
 
@@ -78,7 +88,7 @@ setting uses the same definition, so both build the identical plan:
 | Echo requests per host  | 2                      | 1                                                              |
 | Connect timeout         | 800 ms                 | 1500 ms                                                        |
 | TCP ports               | 40 common ports        | 22, 80, 443, 445, 515, 631, 8080, 9100                         |
-| Other probes            | banners, NetBIOS, mDNS, SSDP, WS-Discovery, LLMNR, SMB2, favicon | none; reverse DNS and ICMP/ARP liveness only. SNMP is refused |
+| Other probes            | banners, NetBIOS, mDNS, SSDP, WS-Discovery, LLMNR, SMB2, favicon, IPv6 neighbors and its multicast echo | none; reverse DNS and ICMP/ARP liveness only, and a read of the IPv6 neighbor table (no packets; no multicast echo). SNMP is refused |
 
 `--concurrency` may only ask for fewer hosts (at most 4) and `--ports` only for a subset of the eight gentle ports;
 anything else is rejected with an error rather than silently clamped. `--timeout` is free (any positive value),
@@ -86,7 +96,7 @@ because it changes neither the rate nor the concurrency. Cancel (Ctrl-C, or Stop
 including while a scan is waiting for its next probe slot.
 
 The tradeoff: gentle scans are slower and identify less (no service banners, names from NetBIOS, mDNS, UPnP or LLMNR, no WS-Discovery,
-SMB2 or favicon identification, and no SNMP inventory). Gentle mode reduces the load a scan creates; it does not make a scan harmless to every device.
+SMB2 or favicon identification, no IPv6 multicast echo, and no SNMP inventory). Gentle mode reduces the load a scan creates; it does not make a scan harmless to every device.
 Get approval for fragile networks and watch them while you scan.
 
 ## What it learns

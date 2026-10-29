@@ -155,7 +155,7 @@ func TestGentlePlanFromFlagsMatchesTheSharedDefinition(t *testing.T) {
 	// own settings apply. The app test asserts this identical Plan.
 	want := scan.Plan{
 		Mode: scan.ModeGentle, Targets: targets, Ports: []int{22, 80, 443, 445, 515, 631, 8080, 9100},
-		Probes: scan.Probes{Ports: true, ReverseDNS: true}, Concurrency: 4, PortConcurrency: 2, PingAttempts: 1,
+		Probes: scan.Probes{Ports: true, ReverseDNS: true, IPv6: true}, Concurrency: 4, PortConcurrency: 2, PingAttempts: 1,
 		ConnectTimeout: 1500 * time.Millisecond, ProbeInterval: 100 * time.Millisecond,
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -241,5 +241,93 @@ func TestSC11FlagsDoNotChangeGentle(t *testing.T) {
 	p, err := scan.BuildPlan(req)
 	if err != nil || p.Probes.WSD || p.Probes.LLMNR || p.Probes.SMB || p.Probes.Favicon {
 		t.Fatalf("%+v %v", p.Probes, err)
+	}
+}
+
+func TestIPv6FlagsTurnDiscoveryOffIndependently(t *testing.T) {
+	targets := []netip.Addr{netip.MustParseAddr("10.0.0.1")}
+	base := planFlags{mode: scan.ModeDefault, concurrency: 128, timeout: 800 * time.Millisecond}
+	probesFor := func(mod func(f *planFlags)) scan.Probes {
+		f := base
+		mod(&f)
+		req, err := planRequest(f, targets)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return req.Probes
+	}
+	if all := scan.DefaultProbes; !all.IPv6 || !all.IPv6Ping {
+		t.Fatalf("IPv6 neighbor discovery is on by default, like the other identification probes: %+v", all)
+	}
+	if got := probesFor(func(f *planFlags) {}); got != scan.DefaultProbes {
+		t.Fatalf("no flags: %+v", got)
+	}
+	if got := probesFor(func(f *planFlags) { f.noIPv6 = true }); got.IPv6 || got.IPv6Ping {
+		t.Fatalf("--no-ipv6 must turn the multicast echo off too: %+v", got)
+	}
+	got := probesFor(func(f *planFlags) { f.noIPv6Ping = true })
+	if !got.IPv6 || got.IPv6Ping {
+		t.Fatalf("--no-ipv6-ping keeps the table and drops the echo: %+v", got)
+	}
+	if got := probesFor(func(f *planFlags) { f.noIPv6Ping, f.noPorts = true, true }); !got.IPv6 {
+		t.Fatalf("--no-ports leaves neighbor discovery on: %+v", got)
+	}
+}
+
+func TestIPv6AndGentleModeFromFlags(t *testing.T) {
+	targets := []netip.Addr{netip.MustParseAddr("10.0.0.1")}
+	req, err := planRequest(planFlags{mode: scan.ModeGentle}, targets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := scan.BuildPlan(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.Probes.IPv6 || p.Probes.IPv6Ping {
+		t.Fatalf("gentle mode reads the neighbor table and never sends the multicast echo: %+v", p.Probes)
+	}
+	req, _ = planRequest(planFlags{mode: scan.ModeGentle, noIPv6: true}, targets)
+	if p, _ = scan.BuildPlan(req); p.Probes.IPv6 {
+		t.Fatalf("--no-ipv6 in gentle mode: %+v", p.Probes)
+	}
+}
+
+func TestAllowPublicReachesThePlanForIPv6Neighbors(t *testing.T) {
+	targets := []netip.Addr{netip.MustParseAddr("10.0.0.1")}
+	for _, allow := range []bool{false, true} {
+		for _, mode := range []string{scan.ModeDefault, scan.ModeGentle} {
+			req, err := planRequest(planFlags{mode: mode, allowPublic: allow}, targets)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p, err := scan.BuildPlan(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p.AllowPublic != allow || p.Config().AllowPublic != allow {
+				t.Fatalf("mode %s allow %v: plan %v config %v", mode, allow, p.AllowPublic, p.Config().AllowPublic)
+			}
+		}
+	}
+}
+
+func TestScanHelpMentionsIPv6Flags(t *testing.T) {
+	var b bytes.Buffer
+	usage(&b)
+	if !strings.Contains(b.String(), "neighbor table") || !strings.Contains(b.String(), "--no-ipv6") {
+		t.Fatalf("usage: %s", b.String())
+	}
+	// The scan flags exist and parse (the targets are invalid on purpose, so nothing is scanned).
+	for _, flag := range []string{"--no-ipv6", "--no-ipv6-ping"} {
+		err := cmdScan([]string{flag, "--json", "--csv", "x"})
+		if err == nil || strings.Contains(err.Error(), "not defined") {
+			t.Fatalf("%s: %v", flag, err)
+		}
+	}
+	// IPv6 targets are refused with an explanation, never swept.
+	err := cmdScan([]string{"fd00::/64"})
+	if err == nil || !strings.Contains(err.Error(), "neighbor discovery") {
+		t.Fatalf("%v", err)
 	}
 }

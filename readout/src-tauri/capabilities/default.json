@@ -24,6 +24,8 @@
     "allow-export-html",
     "allow-open-external",
     "allow-read-image",
+    "allow-paste-image",
+    "allow-copy-dropped-image",
     "allow-resolve-link",
     "allow-inspect-link-file",
     "allow-open-link-file",

@@ -53,6 +53,9 @@ func LLMNRQuery(ctx context.Context, addr netip.Addr, timeout time.Duration) (*L
 }
 
 func llmnrQuery(ctx context.Context, addr netip.Addr, port int, timeout time.Duration) (*LLMNRInfo, error) {
+	if !addr.Is4() {
+		return nil, errors.New("LLMNR is queried over IPv4 only")
+	}
 	qname, err := reverseName(addr)
 	if err != nil {
 		return nil, err

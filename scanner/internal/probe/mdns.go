@@ -25,7 +25,11 @@ type MDNSInfo struct {
 // service list. Apple devices, Linux with Avahi, printers and many IoT
 // devices answer.
 func MDNSQuery(ctx context.Context, addr netip.Addr, timeout time.Duration) (*MDNSInfo, error) {
-	c, err := net.DialUDP("udp4", nil, &net.UDPAddr{IP: addr.AsSlice(), Port: 5353})
+	network := "udp4"
+	if addr.Is6() && !addr.Is4In6() {
+		network = "udp6"
+	}
+	c, err := net.DialUDP(network, nil, &net.UDPAddr{IP: addr.AsSlice(), Port: 5353, Zone: addr.Zone()})
 	if err != nil {
 		return nil, err
 	}
@@ -70,12 +74,29 @@ func MDNSQuery(ctx context.Context, addr netip.Addr, timeout time.Duration) (*MD
 	return info, nil
 }
 
+// reverseName is the PTR owner name of a: d.c.b.a.in-addr.arpa. for IPv4 and
+// the 32 reversed nibbles under ip6.arpa. for IPv6 (RFC 3596). A zone is not part
+// of the name.
 func reverseName(a netip.Addr) (string, error) {
-	if !a.Is4() {
-		return "", fmt.Errorf("IPv4 only")
+	a = a.Unmap().WithZone("")
+	switch {
+	case a.Is4():
+		b := a.As4()
+		return fmt.Sprintf("%d.%d.%d.%d.in-addr.arpa.", b[3], b[2], b[1], b[0]), nil
+	case a.Is6():
+		const hexd = "0123456789abcdef"
+		b := a.As16()
+		var sb strings.Builder
+		for i := 15; i >= 0; i-- {
+			sb.WriteByte(hexd[b[i]&0x0f])
+			sb.WriteByte('.')
+			sb.WriteByte(hexd[b[i]>>4])
+			sb.WriteByte('.')
+		}
+		sb.WriteString("ip6.arpa.")
+		return sb.String(), nil
 	}
-	b := a.As4()
-	return fmt.Sprintf("%d.%d.%d.%d.in-addr.arpa.", b[3], b[2], b[1], b[0]), nil
+	return "", fmt.Errorf("not an IP address")
 }
 
 func mdnsQuestion(id uint16, name string) ([]byte, error) {

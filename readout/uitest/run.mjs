@@ -285,10 +285,16 @@ const scenarios = [
     // The drop opens the file; it is not pasted into the open document.
     assert.deepEqual(await editorLines(page), ['# Dropped file', 'body']);
 
-    // Anything that is not Markdown is refused with a message, and nothing opens.
+    // Anything that is not Markdown is refused with a message, and nothing opens. An image dropped
+    // on a document that is not in an opened folder is refused too: the browser has nowhere it
+    // may write (RD13).
     const image = await file('photo.png', 'not markdown');
     await drag('dragenter', image);
     await drag('drop', image);
+    await banner(page).getByText('No image was added', { exact: false }).waitFor();
+    const other = await file('notes.exe', 'MZ');
+    await drag('dragenter', other);
+    await drag('drop', other);
     await banner(page).getByText('Only Markdown files', { exact: false }).waitFor();
     assert.equal(await docTitle(page).textContent(), 'dropped.md');
 
@@ -300,6 +306,65 @@ const scenarios = [
     });
     await drag('dragenter', text);
     assert.equal(await overlay.isHidden(), true);
+  }],
+
+  ['paste and drop an image into a document of an opened folder', async (page) => {
+    await boot(page);
+    await openFolder(page);
+    await page.waitForSelector('.markdown-body h1');
+    for (const folder of ['docs', 'docs/guide']) {
+      const summary = page.locator(`summary[title="${folder}"]`);
+      if (!(await summary.evaluate((n) => n.parentElement.open))) await summary.click();
+    }
+    await page.locator('.tree-file[data-path="docs/guide/setup.md"]').click();
+    await page.locator('.markdown-body h1', { hasText: 'Setup' }).waitFor();
+    const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4];
+    const paste = (bytes, name, type, text = '') =>
+      page.evaluate(([b, n, t, x]) => {
+        const dt = new DataTransfer();
+        if (x) dt.setData('text/plain', x);
+        else dt.items.add(new File([new Uint8Array(b)], n, { type: t }));
+        document.querySelector('.cm-content').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+      }, [bytes, name, type, text]);
+
+    // A pasted png is saved in images/ beside the document and linked relatively.
+    await paste(png, 'image.png', 'image/png');
+    await banner(page).getByText('Undo removes the link only', { exact: false }).waitFor();
+    const source = await editorText(page);
+    const link = /!\[\]\((images\/image-\d{8}-\d{6}\.png)\)/.exec(source);
+    assert.ok(link, `a link was inserted: ${source}`);
+    assert.deepEqual(await page.evaluate((p) => window.__fs.bytes(p), `proj/docs/guide/${link[1]}`), png);
+
+    // The same second again never overwrites: a counter is added.
+    await paste(png, 'image.png', 'image/png');
+    await page.waitForFunction(() => document.querySelector('.cm-content').innerText.split('![](').length === 3);
+    assert.equal((await editorText(page)).match(/!\[\]\(images\/[^)]+\)/g).length, 2);
+
+    // Undo takes the last link out in one step; the file stays.
+    await page.locator('.cm-content').press('Control+z');
+    assert.equal((await editorText(page)).match(/!\[\]\(images\/[^)]+\)/g).length, 1);
+    assert.deepEqual(await page.evaluate((p) => window.__fs.bytes(p), `proj/docs/guide/${link[1]}`), png);
+
+    // SVG is refused, and text on the clipboard still pastes as text.
+    await paste([60, 115, 118, 103, 47, 62], 'a.svg', 'image/svg+xml');
+    await banner(page).getByText('Only PNG, JPEG, GIF and WebP', { exact: false }).waitFor();
+    await paste(null, '', '', 'plain words');
+    assert.ok((await editorText(page)).includes('plain words'));
+
+    // A dropped image file is saved under its cleaned name.
+    const drop = (type, dt) => page.dispatchEvent('body', type, { dataTransfer: dt });
+    const dt = await page.evaluateHandle((b) => {
+      const d = new DataTransfer();
+      d.items.add(new File([new Uint8Array(b)], 'Network Map.png', { type: 'image/png' }));
+      return d;
+    }, png);
+    await drop('dragenter', dt);
+    await drop('drop', dt);
+    await page.waitForFunction(() => document.querySelector('.cm-content').innerText.includes('![](images/Network-Map.png)'));
+    assert.deepEqual(await page.evaluate(() => window.__fs.bytes('proj/docs/guide/images/Network-Map.png')), png);
+    // The preview loads it through the folder (a blob URL, no network request). The test bytes are
+    // not a decodable picture, so only the source is checked.
+    await page.waitForFunction(() => [...document.querySelectorAll('.markdown-body img')].some((i) => i.src.startsWith('blob:')));
   }],
 
   ['dividers: drag, keyboard, reset', async (page) => {
@@ -417,7 +482,14 @@ const scenarios = [
     await page.locator('.markdown-body h1', { hasText: 'Setup' }).waitFor();
     assert.equal(await docTitle(page).textContent(), 'docs/guide/setup.md');
     assert.ok((await cursor(page)).startsWith('Ln 7,'), await cursor(page));
-    assert.equal(await page.locator('.cm-selectionBackground').count() >= 1, true, 'the match is selected');
+    // CodeMirror draws the selection layer in its next measure frame, after the cursor has moved;
+    // wait for it (bounded) rather than counting immediately, which raced on slower CI runners.
+    const selected = await page
+      .locator('.cm-selectionBackground')
+      .first()
+      .waitFor({ state: 'attached', timeout: 5000 })
+      .then(() => true, () => false);
+    assert.equal(selected, true, 'the match is selected');
 
     await input.fill('no such text anywhere');
     await input.press('Enter');

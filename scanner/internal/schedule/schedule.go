@@ -297,6 +297,24 @@ func (s *Scheduler) Info(key string) (Info, bool) {
 	return Info{Next: j.next, Running: key == s.active, Skipped: j.skipped, SkipReason: j.skipReason, SkippedAt: j.skippedAt}, true
 }
 
+// NoticeAddress re-parses an address and returns its canonical text, or false
+// when it is not a plain unicast IPv4 or IPv6 address. An IPv6 zone is left off,
+// so the text never carries a name. Everything else (a device-reported name,
+// markup, loopback, multicast) is dropped, not escaped.
+func NoticeAddress(a string) (string, bool) {
+	ip, err := netip.ParseAddr(a)
+	if err != nil {
+		return "", false
+	}
+	switch {
+	case ip.Is4():
+		return ip.String(), true
+	case ip.Is6() && !ip.Is4In6() && !ip.IsLoopback() && !ip.IsUnspecified() && !ip.IsMulticast():
+		return ip.WithZone("").String(), true
+	}
+	return "", false
+}
+
 // NoticeText builds the text of a new-device notification: counts and
 // addresses only. Addresses are re-parsed and printed canonically, so nothing
 // else (and nothing a device reported) can reach the text. At most
@@ -304,8 +322,8 @@ func (s *Scheduler) Info(key string) (Info, bool) {
 func NoticeText(addresses []string, maxListed int) (title, body string) {
 	var clean []string
 	for _, a := range addresses {
-		if ip, err := netip.ParseAddr(a); err == nil && ip.Is4() {
-			clean = append(clean, ip.String())
+		if text, ok := NoticeAddress(a); ok {
+			clean = append(clean, text)
 		}
 	}
 	n := len(clean)

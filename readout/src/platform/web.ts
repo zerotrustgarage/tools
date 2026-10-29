@@ -1,7 +1,27 @@
-import { LISTED_EXTENSIONS, resolveInFolder, skipFolder } from '../core/paths';
+import {
+  IMAGE_FOLDER,
+  IMAGE_REFUSED,
+  MAX_IMAGE_BYTES,
+  imageKindFromMime,
+  imageKindFromName,
+  imageMime,
+  imageNameAttempt,
+  imageProblem,
+  imageStem,
+} from '../core/images';
+import { LISTED_EXTENSIONS, dirname, resolveInFolder, skipFolder } from '../core/paths';
 import { writeRichText } from './clipboard';
 import { createRecentFiles } from './recent-web';
-import { FileTooLargeError, type Arrival, type FileRef, type Listing, type OpenedFile, type Platform } from './types';
+import {
+  FileTooLargeError,
+  type Arrival,
+  type FileRef,
+  type ImageSource,
+  type Listing,
+  type OpenedFile,
+  type Platform,
+  type SavedImage,
+} from './types';
 
 // Browser build. Files never leave the machine: they are read and written locally through the
 // File System Access API (Chromium browsers) or through file inputs and downloads elsewhere.
@@ -23,8 +43,8 @@ type IterableDirectory = FileSystemDirectoryHandle & {
   values(): AsyncIterable<FileSystemFileHandle | FileSystemDirectoryHandle>;
 };
 type PermissionHandle = FileSystemHandle & {
-  queryPermission?(options: { mode: 'read' }): Promise<PermissionState>;
-  requestPermission?(options: { mode: 'read' }): Promise<PermissionState>;
+  queryPermission?(options: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
+  requestPermission?(options: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
 };
 const picker = window as PickerWindow;
 const cancelled = (error: unknown) => error instanceof DOMException && error.name === 'AbortError';
@@ -127,6 +147,60 @@ function withSessionStore<T>(mode: IDBTransactionMode, use: (store: IDBObjectSto
       };
     };
   });
+}
+
+/** Write access to a folder the browser opened for reading: asked for here, from the paste or drop. */
+async function canWrite(handle: FileSystemHandle): Promise<boolean> {
+  const h = handle as PermissionHandle;
+  if ((await h.queryPermission?.({ mode: 'readwrite' })) === 'granted') return true;
+  return (await h.requestPermission?.({ mode: 'readwrite' })) === 'granted';
+}
+
+const notMissing = (error: unknown) => !(error instanceof DOMException && error.name === 'NotFoundError');
+
+/**
+ * Saves an image into the `images` folder beside a document of the open folder, through the
+ * folder's directory handle. A file that is already there is never replaced: the browser cannot
+ * create a file exclusively, so a free name is looked for first (the gap between that look and
+ * the write is the one thing this cannot close). The File System Access API has no links.
+ */
+async function writeImage(
+  root: FileSystemDirectoryHandle,
+  documentPath: string,
+  image: Extract<ImageSource, { kind: 'bytes' }>,
+): Promise<SavedImage> {
+  const kind = imageKindFromMime(image.type);
+  if (!kind) throw new Error(IMAGE_REFUSED);
+  const problem = imageProblem(image.bytes, kind);
+  if (problem) throw new Error(problem);
+  if (!(await canWrite(root))) {
+    throw new Error('The browser did not allow writing to the folder, so nothing was saved or inserted.');
+  }
+  let folder = root;
+  for (const part of dirname(documentPath).split('/').filter(Boolean)) folder = await folder.getDirectoryHandle(part);
+  try {
+    folder = await folder.getDirectoryHandle(IMAGE_FOLDER, { create: true });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'TypeMismatchError') {
+      throw new Error('There is a file named images beside the document, not a folder.');
+    }
+    throw error;
+  }
+  const stem = imageStem(image.name, new Date());
+  for (let attempt = 1; attempt <= 999; attempt++) {
+    const name = imageNameAttempt(stem, kind, attempt);
+    let taken = true;
+    try {
+      await folder.getFileHandle(name);
+    } catch (error) {
+      if (notMissing(error)) throw error;
+      taken = false;
+    }
+    if (taken) continue;
+    await writeHandle(await folder.getFileHandle(name, { create: true }), image.bytes);
+    return { name, link: `${IMAGE_FOLDER}/${name}` };
+  }
+  throw new Error('Could not find a free name for the image.');
 }
 
 async function access(handle: FileSystemHandle, ask: boolean): Promise<boolean> {
@@ -264,6 +338,17 @@ export const webPlatform: Platform = {
     window.open(url, '_blank', 'noopener,noreferrer');
   },
 
+  async saveImage(ref, listing, image) {
+    const root = listing?.folder.handle;
+    if (!root || ref.folderPath === undefined) {
+      throw new Error(
+        'In the browser, images are saved only beside a document of a folder you opened with Open folder (Ctrl+Shift+O). Nothing was inserted.',
+      );
+    }
+    if (image.kind !== 'bytes') throw new Error('The browser cannot copy a file from disk this way.');
+    return writeImage(root, ref.folderPath, image);
+  },
+
   async loadLocalImage(ref, relative, listing) {
     if (!listing || ref?.folderPath === undefined) return null;
     const path = resolveInFolder(ref.folderPath, relative);
@@ -341,7 +426,18 @@ export const webPlatform: Platform = {
         return;
       }
       if (!/\.(md|markdown|mdown|mkd|mkdn|txt)$/i.test(file.name)) {
-        handlers.refused(file.name);
+        const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif)$/i.test(file.name);
+        if (!isImage || !handlers.image) {
+          handlers.refused(file.name);
+          return;
+        }
+        const kind = imageKindFromMime(file.type) ?? imageKindFromName(file.name);
+        if (!kind) handlers.image(file.name, null);
+        else if (file.size > MAX_IMAGE_BYTES) handlers.image(file.name, null, 'The image is larger than 20 MB.');
+        else {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          handlers.image(file.name, { kind: 'bytes', bytes, type: imageMime(kind), name: file.name });
+        }
         return;
       }
       handlers.open({ file: { ref: { name: file.name }, bytes: new Uint8Array(await file.arrayBuffer()) } });

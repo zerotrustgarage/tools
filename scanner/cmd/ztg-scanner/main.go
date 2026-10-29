@@ -74,6 +74,8 @@ Usage:
   ztg-scanner check-updates [--json]    check published releases on request
 
 Targets: 192.168.1.0/24  10.0.0.1-50  10.0.0.1-10.0.1.20  10.0.0.7  printer.lan
+IPv6 devices on the local link are found by reading the system's neighbor table, not by sweeping a prefix;
+give IPv4 targets, and see --no-ipv6 and --no-ipv6-ping.
 Only private, CGNAT, link-local and loopback space is scanned unless --allow-public is given.
 
 Run "ztg-scanner scan -h" or "ztg-scanner report -h" for command flags.
@@ -112,6 +114,8 @@ func cmdScan(args []string) error {
 		noLLMNR     = fs.Bool("no-llmnr", false, "skip the LLMNR name query (RFC 4795) to on-link hosts")
 		noSMB       = fs.Bool("no-smb", false, "skip the SMB2 NEGOTIATE sent to hosts with TCP 445 open (dialect and signing policy only)")
 		noFavicon   = fs.Bool("no-favicon", false, "skip the one GET of /favicon.ico on identified web ports (needs banners)")
+		noIPv6      = fs.Bool("no-ipv6", false, "skip IPv6 neighbor discovery (reading the local link's IPv6 neighbor table and scanning the IPv6-only devices in it)")
+		noIPv6Ping  = fs.Bool("no-ipv6-ping", false, "do not send the one ICMPv6 echo to ff02::1 (all nodes on the link) that makes IPv6 neighbors appear in the table; only neighbors the system already knows are used")
 		concurrency = fs.Int("concurrency", 128, "hosts scanned in parallel")
 		timeout     = fs.Duration("timeout", 800*time.Millisecond, "TCP connect timeout")
 		maxHosts    = fs.Int("max-hosts", targets.DefaultMaxHosts, "refuse target lists larger than this")
@@ -176,6 +180,7 @@ func cmdScan(args []string) error {
 		timeout: *timeout, timeoutSet: set["timeout"], ports: *portsFlag,
 		noPorts: *noPorts, noBanners: *noBanners, noNames: *noNames, noSSDP: *noSSDP,
 		noWSD: *noWSD, noLLMNR: *noLLMNR, noSMB: *noSMB, noFavicon: *noFavicon,
+		noIPv6: *noIPv6, noIPv6Ping: *noIPv6Ping, allowPublic: *allowPublic,
 	}, addrs)
 	if err != nil {
 		return err
@@ -208,6 +213,9 @@ func cmdScan(args []string) error {
 	sum := scan.Run(ctx, cfg, col)
 	if !*quiet {
 		fmt.Fprintf(os.Stderr, "\r  done: %d of %d up in %s via %s\n", sum.Up, sum.Total, sum.Finished.Sub(sum.Started).Round(100*time.Millisecond), strings.Join(sum.Methods, ", "))
+		if sum.IPv6Only > 0 {
+			fmt.Fprintf(os.Stderr, "  %d of the up devices were found only in the IPv6 neighbor table (not among the %d requested addresses)\n", sum.IPv6Only, sum.Total)
+		}
 		for _, w := range sum.Warnings {
 			fmt.Fprintln(os.Stderr, "  warning:", w)
 		}
@@ -250,6 +258,8 @@ type planFlags struct {
 	ports                               string
 	noPorts, noBanners, noNames, noSSDP bool
 	noWSD, noLLMNR, noSMB, noFavicon    bool
+	noIPv6, noIPv6Ping                  bool
+	allowPublic                         bool
 }
 
 // planRequest turns flags into the shared scan.PlanRequest. In gentle mode
@@ -257,7 +267,7 @@ type planFlags struct {
 // settings apply otherwise and a request for more than gentle allows is
 // rejected by scan.BuildPlan.
 func planRequest(f planFlags, addrs []netip.Addr) (scan.PlanRequest, error) {
-	req := scan.PlanRequest{Mode: f.mode, Targets: addrs, Probes: scan.DefaultProbes}
+	req := scan.PlanRequest{Mode: f.mode, Targets: addrs, Probes: scan.DefaultProbes, AllowPublic: f.allowPublic}
 	if f.mode == scan.ModeGentle {
 		if f.concurrencySet {
 			req.Concurrency = f.concurrency
@@ -297,6 +307,12 @@ func planRequest(f planFlags, addrs []netip.Addr) (scan.PlanRequest, error) {
 	}
 	if f.noSSDP {
 		req.Probes.SSDP = false
+	}
+	if f.noIPv6 {
+		req.Probes.IPv6, req.Probes.IPv6Ping = false, false
+	}
+	if f.noIPv6Ping {
+		req.Probes.IPv6Ping = false
 	}
 	return req, nil
 }

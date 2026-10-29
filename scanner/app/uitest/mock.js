@@ -27,7 +27,7 @@
 
   let timer = null;
   let hasResults = false;
-  let currentHosts = structuredClone(hosts);
+  let currentHosts = structuredClone(hosts.concat(window.__extraHosts || [])); // a test may add devices before the mock loads
   let site = "";
   let saved = null;
   const snapshot = (all) => ({ running: false, site, targets: ["192.168.50.0/24"], hosts: hasResults ? structuredClone(all ? currentHosts.concat([{ ip: "192.168.50.2", status: "down" }]) : currentHosts) : [] });
@@ -109,9 +109,9 @@
     },
     OpenWith: async (name, ip, allow) => { calls.push(["OpenWith", name, ip, allow]); if (!allow && ip === "8.8.8.8") throw "public address space needs authorization for this action"; return "Opened " + name + " for " + ip; },
     Version: async () => "0.2.0-test",
-    Defaults: async () => ({ ports: "22,80,443", probes: { ports: true, banners: true, reverse_dns: true, netbios: true, mdns: true, ssdp: true, wsd: true, llmnr: true, smb: true, favicon: true }, concurrency: 128, timeout_ms: 800, max_hosts: 65536, snmp_auth_protocols: ["SHA", "SHA-256", "SHA-512"], snmp_priv_protocols: ["AES", "AES-256"],
+    Defaults: async () => ({ ports: "22,80,443", probes: { ports: true, banners: true, reverse_dns: true, netbios: true, mdns: true, ssdp: true, wsd: true, llmnr: true, smb: true, favicon: true, ipv6: true, ipv6_ping: true }, concurrency: 128, timeout_ms: 800, max_hosts: 65536, snmp_auth_protocols: ["SHA", "SHA-256", "SHA-512"], snmp_priv_protocols: ["AES", "AES-256"],
       // Mirrors scan.GentleInfo() in internal/scan/plan.go.
-      gentle: { mode: "gentle", label: "Gentle", concurrency: 4, port_concurrency: 2, probes_per_second: 10, timeout_ms: 1500, ports: [22, 80, 443, 445, 515, 631, 8080, 9100], probes: { ports: true, banners: false, reverse_dns: true, netbios: false, mdns: false, ssdp: false, wsd: false, llmnr: false, smb: false, favicon: false, snmp: false }, tradeoff: "Gentle mode lowers the load a scan puts on a network and skips the more intrusive probes. It is slower and identifies less: no service banners, NetBIOS, mDNS, UPnP, WS-Discovery, LLMNR, SMB or favicon probes, no SNMP, and only a few ports. It reduces risk but does not remove it: any scan can upset a very fragile device, so get approval and watch the network." } }),
+      gentle: { mode: "gentle", label: "Gentle", concurrency: 4, port_concurrency: 2, probes_per_second: 10, timeout_ms: 1500, ports: [22, 80, 443, 445, 515, 631, 8080, 9100], probes: { ports: true, banners: false, reverse_dns: true, netbios: false, mdns: false, ssdp: false, wsd: false, llmnr: false, smb: false, favicon: false, snmp: false, ipv6: true, ipv6_ping: false }, tradeoff: "Gentle mode lowers the load a scan puts on a network and skips the more intrusive probes. It is slower and identifies less: no service banners, NetBIOS, mDNS, UPnP, WS-Discovery, LLMNR, SMB or favicon probes, no SNMP, no IPv6 multicast echo, and only a few ports. It reduces risk but does not remove it: any scan can upset a very fragile device, so get approval and watch the network." } }),
     Suggestions: async () => [{ interface: "Ethernet", address: "192.168.50.10", range: "192.168.50.0/24" }],
     Results: async (all) => snapshot(all),
     ValidateTargets: async (input) => {

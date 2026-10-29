@@ -42,6 +42,9 @@ func nbstatQuery(txid uint16) []byte {
 
 // NetBIOSStatus asks addr for its NetBIOS name table on UDP 137.
 func NetBIOSStatus(ctx context.Context, addr netip.Addr, timeout time.Duration) (*NetBIOSInfo, error) {
+	if !addr.Is4() {
+		return nil, errors.New("NetBIOS name service is IPv4 only")
+	}
 	c, err := net.DialUDP("udp4", nil, &net.UDPAddr{IP: addr.AsSlice(), Port: 137})
 	if err != nil {
 		return nil, err

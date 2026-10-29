@@ -273,7 +273,7 @@ func TestGentleRequestBuildsTheSharedPlan(t *testing.T) {
 	// Identical to the Plan asserted in the CLI test.
 	want := scan.Plan{
 		Mode: scan.ModeGentle, Targets: targets, Ports: []int{22, 80, 443, 445, 515, 631, 8080, 9100},
-		Probes: scan.Probes{Ports: true, ReverseDNS: true}, Concurrency: 4, PortConcurrency: 2, PingAttempts: 1,
+		Probes: scan.Probes{Ports: true, ReverseDNS: true, IPv6: true}, Concurrency: 4, PortConcurrency: 2, PingAttempts: 1,
 		ConnectTimeout: 1500 * time.Millisecond, ProbeInterval: 100 * time.Millisecond,
 	}
 	if !reflect.DeepEqual(got, want) {

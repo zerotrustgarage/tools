@@ -44,7 +44,7 @@ func JSON(w io.Writer, doc Document) error {
 }
 
 // CSVHeader is the column order of the CSV export.
-var CSVHeader = []string{"ip", "status", "name", "type", "mac", "vendor", "mac_randomized", "dns_name", "netbios_name", "workgroup", "mdns_name", "manufacturer", "model", "open_ports", "services", "rtt_ms", "ttl", "os_hint", "findings", "evidence", "serial", "firmware", "location", "snmp_descr", "notes", "tags", "favorite", "last_known_mac", "llmnr_name", "wsd_types", "wsd_name", "smb_dialect", "smb_signing", "favicon_mmh3", "favicon_sha256"}
+var CSVHeader = []string{"ip", "status", "name", "type", "mac", "vendor", "mac_randomized", "dns_name", "netbios_name", "workgroup", "mdns_name", "manufacturer", "model", "open_ports", "services", "rtt_ms", "ttl", "os_hint", "findings", "evidence", "serial", "firmware", "location", "snmp_descr", "notes", "tags", "favorite", "last_known_mac", "llmnr_name", "wsd_types", "wsd_name", "smb_dialect", "smb_signing", "favicon_mmh3", "favicon_sha256", "ipv6"}
 
 // CSV writes one row per host.
 func CSV(w io.Writer, hosts []scan.Host) error {
@@ -116,6 +116,7 @@ func csvRow(h scan.Host) []string {
 		safe(h.Notes), safe(strings.Join(h.Tags, ", ")), strconv.FormatBool(h.Favorite),
 		safe(h.LastKnownMAC),
 		safe(llmnrName), safe(wsdTypes), safe(wsdName), safe(smbDialect), smbSigning, favMMH3, favSHA,
+		safe(strings.Join(h.IPv6, " ")),
 	}
 }
 

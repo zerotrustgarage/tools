@@ -77,8 +77,7 @@ func ValidKey(key string) bool {
 	if !strings.HasPrefix(key, "ip:") || len(parts) != 2 {
 		return false
 	}
-	ip, err := netip.ParseAddr(parts[0])
-	if err != nil || !ip.Is4() || ip.String() != parts[0] {
+	if _, ok := scan.ParseHostAddr(parts[0]); !ok {
 		return false
 	}
 	if parts[1] == "" {
@@ -202,11 +201,20 @@ func changes(a, b scan.Host) []string {
 			out = append(out, name)
 		}
 	}
-	add("ip", a.IP, b.IP)
+	add("ip", zonelessIP(a.IP), zonelessIP(b.IP))
 	add("name", a.Name, b.Name)
 	add("mac", strings.ToLower(a.MAC), strings.ToLower(b.MAC))
 	add("type", a.Type, b.Type)
 	add("vendor", a.Vendor, b.Vendor)
+	// IPv6 (SC3): only the link-local addresses are compared. They are the stable
+	// ones; global and unique-local addresses rotate with privacy extensions and
+	// prefix changes, so a change there is not a change of device. Only where both
+	// scans listed one, so turning IPv6 discovery on or off, or a neighbor that
+	// had left the table, is not reported as a change. Zones are left out: they
+	// name the scanning computer's interface, not the device.
+	if x, y := linkLocalSet(a), linkLocalSet(b); len(x) > 0 && len(y) > 0 {
+		add("ipv6", x, y)
+	}
 	services := func(h scan.Host) []string {
 		out := []string{}
 		for _, s := range h.Services {
@@ -243,6 +251,27 @@ func changes(a, b scan.Host) []string {
 		add("firmware", a.SNMP.Firmware, b.SNMP.Firmware)
 		add("software", a.SNMP.Software, b.SNMP.Software)
 	}
+	return out
+}
+
+// zonelessIP is an address without its IPv6 zone, so the same device scanned from
+// two computers (eth0 here, Ethernet there) is not reported as having moved.
+func zonelessIP(s string) string {
+	if ip, err := netip.ParseAddr(s); err == nil && ip.Zone() != "" {
+		return ip.WithZone("").String()
+	}
+	return s
+}
+
+// linkLocalSet is a host's link-local IPv6 addresses, zone-free and sorted.
+func linkLocalSet(h scan.Host) []string {
+	out := []string{}
+	for _, text := range h.IPv6 {
+		if ip, err := netip.ParseAddr(text); err == nil && ip.IsLinkLocalUnicast() {
+			out = append(out, ip.WithZone("").String())
+		}
+	}
+	sort.Strings(out)
 	return out
 }
 

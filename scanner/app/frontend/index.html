@@ -125,6 +125,8 @@
       <label class="check"><input type="checkbox" data-probe="llmnr"> LLMNR names (on-link hosts)</label>
       <label class="check"><input type="checkbox" data-probe="smb"> SMB2 negotiate (dialect and signing, where port 445 is open)</label>
       <label class="check"><input type="checkbox" data-probe="favicon"> Web interface icon fingerprint (needs service identification)</label>
+      <label class="check"><input type="checkbox" data-probe="ipv6"> IPv6 neighbors on the local link (reads the system's neighbor table)</label>
+      <label class="check"><input type="checkbox" data-probe="ipv6_ping"> Send one ICMPv6 echo to all nodes (ff02::1) first, so neighbors appear</label>
     </fieldset>
     <fieldset id="snmp-fields">
       <legend>SNMPv3 inventory (optional)</legend>

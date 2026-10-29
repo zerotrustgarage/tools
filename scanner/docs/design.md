@@ -2,7 +2,8 @@
 
 Status (October 29, 2026): slices S1 (engine and CLI), S2 (desktop app), S3 (SNMPv3 inventory) and S4 (packaging
 and release pipeline), and S5 (actions, local inventories and comparison) are built, as are SC9 (saved target sets),
-SC10 (Open with commands), SC13 (gentle mode), SC7 (scheduled rescans) and SC11 (deeper identification). Owner signing setup is
+SC10 (Open with commands), SC13 (gentle mode), SC7 (scheduled rescans), SC11 (deeper identification) and SC3's IPv6
+neighbor discovery (the macOS build, the other half of S6, is still open). Owner signing setup is
 complete; S4's first signed release awaits a successful production release run. S6 is planned.
 
 ## 1. Purpose
@@ -20,17 +21,20 @@ cloud service, and keeps its results local unless the technician exports them.
 1. Identify, never intrude. Every default probe is a single standard protocol exchange that any client on the LAN may
    make (an ICMP echo, an ARP request, a TCP connect, one HTTP GET for `/`, one TLS handshake, a NetBIOS node status
    query, an mDNS query, an SSDP search, a WS-Discovery probe, an LLMNR name query, an SMB2 NEGOTIATE, one GET of
-   `/favicon.ico`). Nothing authenticates, writes, or exploits. The one credentialed probe,
+   `/favicon.ico`, a read of the operating system's IPv6 neighbor table, one ICMPv6 echo to ff02::1). Nothing authenticates, writes, or exploits. The one credentialed probe,
    SNMPv3 (slice S3), is off by default, read-only, and enabled per scan with credentials the technician enters.
 2. Scope guard. Only private (RFC 1918), carrier-grade NAT, link-local and loopback space is scanned by default.
    Public space needs `--allow-public` (and, in the GUI, an explicit authorization confirmation). One scan is capped at
-   65,536 addresses.
+   65,536 addresses. For IPv6 only link-local (fe80::/10), unique local (fc00::/7) and the scanner's own on-link global
+   prefixes are internal; every other global address is public and is never probed without that authorization.
 3. Identify ourselves. HTTP requests and SSDP searches carry `User-Agent: ZTG-Scanner/<version> (+https://ztg.sh)`,
    so a client's administrators can tell who looked.
 4. No privileges required. On Windows every probe works as a standard user: ICMP through `IcmpSendEcho` and ARP
    through `SendARP` (both `iphlpapi.dll`), with no Npcap or other capture driver. On Linux, ICMP uses an unprivileged
    datagram socket where `net.ipv4.ping_group_range` allows it, else a raw socket (root or `CAP_NET_RAW`); ARP comes
-   from the kernel neighbor table after one UDP datagram makes the kernel resolve the address.
+   from the kernel neighbor table after one UDP datagram makes the kernel resolve the address. IPv6 neighbors come
+   from `GetIpNetTable2` on Windows and a netlink dump on Linux (no privilege), and the optional ICMPv6 echo uses
+   `Icmp6SendEcho2` on Windows, so it needs no raw socket either.
 5. Clean room. The scanner is written from public protocol specifications. No code, data or assets come from Advanced
    IP Scanner, Radmin, or Nmap (whose service probe database is under the NPSL, which does not suit closed
    redistribution). The MAC vendor table is generated from the IEEE Registration Authority's public listings.
@@ -50,6 +54,11 @@ internal/scan        the engine: worker pool, per-host pipeline, Observer callba
 internal/report      table, CSV and JSON output
 app/                 desktop app (separate Go module): Wails shell, bound methods, plain HTML/CSS/JS frontend
 ```
+
+Before the per-host pass, when IPv6 neighbor discovery is on and some target is on a directly connected network, the
+engine reads the IPv6 neighbor table of those links (section 9, SC3) and, for each host it later finishes, links the
+IPv6 addresses whose MAC address matches. After the pass, neighbors that matched no IPv4 host get the same per-host
+pipeline as devices of their own.
 
 Per host, the engine runs:
 
@@ -87,6 +96,9 @@ canceled scan keeps everything already established.
 | LLMNR            | Unicast PTR query over TCP 5355, TTL 1 (RFC 4795 2.4)        | Host name (SC11)                               |
 | SMB2 negotiate   | One NEGOTIATE on TCP 445 (open ports only); no session       | Highest dialect, signing policy, clock (SC11)  |
 | Favicon          | One GET `/favicon.ico` on identified web ports               | Icon hash (SHA-256 and MurmurHash3) (SC11)     |
+| IPv6 neighbors   | Reads the system's neighbor table (sends nothing)            | IPv6 addresses and MACs on the link (SC3)      |
+| ICMPv6 multicast | One Echo Request to ff02::1 per on-link interface (optional) | Makes link hosts appear in the table (SC3)     |
+| ICMPv6 echo      | Echo request to a neighbor found in the table                | Alive, round trip, hop limit (SC3)             |
 
 ## 5. Findings
 
@@ -169,7 +181,7 @@ directive.
 | S3    | SNMPv3 inventory, opt-in per scan: authPriv only, GET and GETNEXT only, model, serial, firmware, location, interfaces | Built   |
 | S4    | Packaging and trust: Authenticode signing, MSI (WiX) and a portable ZIP, reproducible unsigned executable builds, SBOM, release workflow with provenance attestation | Built; signing setup complete, first production release run pending |
 | S5    | Actions from results: browser, SSH, RDP, copy, Wake-on-LAN, ping and traceroute; site inventories, notes, tags and favorites; compare scans | Built |
-| S6    | macOS build (ARP through the routing socket), IPv6 neighbor discovery on the local link                                                     | Planned |
+| S6    | macOS build (ARP through the routing socket), IPv6 neighbor discovery on the local link                                                     | IPv6 built (SC3); macOS build planned |
 
 Each slice is reviewed before the next starts.
 
@@ -253,10 +265,11 @@ connections per host, one echo request per host, a 1500 ms connect timeout, TCP 
 8080 and 9100, and a shared pacer that allows one probe start every 100 ms (10 per second) across all hosts. The
 pacer gates every probe start: echo, ARP, TCP connect, reverse DNS and, if ever enabled, banner grabs. It uses an
 injectable clock, so tests assert the schedule without real time. Probes in gentle mode are ICMP, ARP, TCP connect
-and reverse DNS only; banner grabs, NetBIOS, mDNS, SSDP, WS-Discovery, LLMNR, SMB2 negotiate, favicon reads and
+and reverse DNS only, plus the read of the IPv6 neighbor table (it sends nothing; the IPv6 devices in it then get the same
+ICMP, ports and pacing as any other host, see SC3); banner grabs, NetBIOS, mDNS, SSDP, WS-Discovery, LLMNR, SMB2 negotiate, favicon reads and
 SNMP are off and a request to enable them is ignored (SNMP is rejected with an error). `BuildPlan` builds the
 gentle probe set field by field, so a probe added later is off in gentle mode until someone decides otherwise,
-and the engine masks the SC11 probes again for a hand-built gentle `Config`. A request can ask for fewer hosts, a subset of the gentle ports, fewer probes or any positive connect timeout,
+and the engine masks the SC11 probes and the IPv6 multicast echo again for a hand-built gentle `Config`. A request can ask for fewer hosts, a subset of the gentle ports, fewer probes or any positive connect timeout,
 never more, and malformed values fail with a message instead of being clamped. Cancellation interrupts a pending pacer wait. A gentle scan records
 `"mode": "gentle"` in the summary; default scans omit the field.
 
@@ -355,6 +368,84 @@ fakes. WS-Discovery on a real multicast network (including the Windows firewall)
 responders, an SMB2 negotiate against real Windows and Samba servers, and favicons from real printers, cameras and
 NAS units need a real LAN and are not claimed.
 
+### IPv6 neighbor discovery (SC3)
+
+A /64 holds 2^64 addresses, so Scanner never sweeps IPv6 and refuses an IPv6 address or prefix typed as a target (the
+message says why). It finds IPv6 hosts the way the operating system does: from the neighbor table of the local link,
+which holds the hosts that have exchanged Neighbor Discovery messages with this computer (RFC 4861).
+
+What exists before SC3: nothing. Every target, probe, export and the comparison were IPv4 only, with checks such as
+`Is4()` in the target parser, the report reader and the annotation keys.
+
+How it works (`internal/probe/ndp*.go`, `internal/scan/ipv6.go`):
+
+- Which links. Only interfaces that hold an IPv4 address with at least one target on its network. Neighbors on
+  other interfaces of the machine are not the technician's subject and are ignored, as are this computer's own MAC
+  and addresses.
+- The table. Windows: `GetIpNetTable2(AF_INET6)` and `FreeMibTable` from `iphlpapi.dll` through lazy procs in
+  `golang.org/x/sys/windows`; the `MIB_IPNET_ROW2` bytes (88 bytes per row) are decoded by hand in a file with no build
+  tag, so the layout is tested with constructed buffers on any platform. Linux: an `RTM_GETNEIGH` netlink dump over
+  `syscall.NetlinkRIB`, which needs no privilege (there is no IPv6 file under `/proc/net` like `/proc/net/arp`), decoded
+  by a hand-written walker that is tested the same way. Elsewhere the discovery reports itself unavailable and the scan
+  stays IPv4 only, with a warning.
+- Kept entries. Unicast addresses with a usable six-byte unicast MAC, in state reachable, stale, delay, probe or
+  permanent. Incomplete and unreachable entries, multicast, unspecified, loopback and IPv4-mapped addresses are
+  dropped. A stale entry means the system saw the host recently, not that it is up now; ICMPv6 and port evidence are
+  recorded beside it (`evidence` lists `ndp`, `icmp6`, `tcp-open`).
+- The multicast echo (optional, on by default in default mode, `--no-ipv6-ping`, and a Settings switch). One ICMPv6
+  Echo Request to ff02::1 out of each on-link interface (at most eight), then a 1.5 second wait, then the table is
+  read, so the link's hosts have a chance to appear in it. Windows sends it with `Icmp6SendEcho2` and no raw socket;
+  Linux with an unprivileged ICMPv6 datagram socket where `ping_group_range` allows it. Gentle mode never sends it.
+  A host that does not answer multicast echo (the Windows firewall blocks it by default) does not appear unless it
+  was already in the table.
+- Scope guard. Link-local, unique local and the scanner's own on-link global prefixes (the networks of its own
+  global IPv6 addresses, never shorter than /48) are internal. Any other global address is public: it is not listed
+  and not probed unless `--allow-public` (or the GUI's authorization) is set, and a warning says how many were left out.
+- Linking. Neighbors are grouped by MAC address. A group whose MAC equals a finished IPv4 host's MAC is listed on that
+  host as `ipv6` (link-local first, then unique local, then global; at most 16). Two IPv4 addresses on one MAC both
+  list the same IPv6 addresses. A group matching no IPv4 host becomes a device of its own: `ip` is its link-local
+  address (else unique local, else global), its `ipv6` lists all of them, and it is counted in the summary's
+  `ipv6_only`, not in `total` (which stays the number of requested addresses). At most 1,024 such devices per scan.
+  An IPv4 host that is down has no MAC, so its IPv6 neighbor appears as an IPv6-only device.
+- Probing. Only addresses found this way are probed, and only the primary address of an IPv6-only device (a dual-stack
+  IPv4 host is linked, not scanned a second time over IPv6). They use the same pipeline, limits and pacing as IPv4:
+  ICMPv6 echo (`Icmp6SendEcho2` on Windows, an ICMPv6 datagram socket elsewhere), the port list, banners, TLS, HTTP,
+  SMB2 negotiate, mDNS (unicast to the address, PTR under ip6.arpa) and the favicon read. Reverse DNS is asked for
+  non-link-local addresses only. NetBIOS, LLMNR, SSDP and WS-Discovery answers, and SNMP, are IPv4 only (their
+  exchanges, or Scanner's validation of them, are IPv4). In gentle mode the IPv6 devices get the gentle ports,
+  concurrency and pacer.
+- Zones. A link-local address carries its interface zone (`fe80::1%eth0`) in every field and file, so it can be dialed.
+  The zone is the interface name when that is at most 15 characters of letters, digits, dot, underscore and hyphen,
+  else the decimal interface index (Windows friendly names such as "Ethernet 2" would put a space in exports). Zones are
+  never sent in HTTP `Host` headers (RFC 6874), never in notifications, and never in the name of a reverse DNS
+  query. Addresses are rendered by `net/netip`, so they are canonical.
+- Not done: mDNS AAAA records and WS-Discovery or LLMNR replies are not used to link addresses. A reply is untrusted
+  device text, and letting an IPv4 device claim an IPv6 address (and so absorb another device's entry) would make the
+  hardware address in the neighbor table less decisive, not more. Only the MAC match links.
+
+Files and views. JSON gains `ipv6` (a list, per host) and `ipv6_only` (summary), both omitted when empty, so a scan
+without IPv6 evidence serializes exactly as before; older files read unchanged, and a file with these fields is
+refused by an older Scanner like any file with fields it does not know. `report.Read` holds saved files to the
+same bounds as the engine: canonical addresses, a zone only on link-local addresses and only one Scanner writes, no
+duplicates, at most 16 per host. CSV gains an `ipv6` column at the end (through the formula guard); the HTML report
+lists the addresses, the metric and the evidence; the desktop grid has an optional IPv6 column, a search over
+the addresses and the detail pane lists them, and sorts every IPv4 address before IPv6. IPv6-only devices are not
+offered Ping, Trace route, SSH, RDP, Wake-on-LAN or Open with, which take an IPv4 address, and a zoned address is not
+opened in a browser (browsers do not take a zone).
+
+Comparison (SC6) matches IPv6-only devices by their unique stable MAC like any other. It reports a changed `ipv6` set
+only where both scans listed link-local addresses, compares link-local addresses only (global and unique local
+addresses rotate with privacy extensions), and ignores zones, so a different scanning computer is not a change. An
+IPv6-only device absent from the later scan is "not assessed", never "missing": it was found, not visited at a
+requested address. A scheduled rescan that finds a new IPv6-only device notifies with its address, without the zone.
+
+Not validated here: everything above is tested with constructed bytes (Windows table and ICMPv6 structures, netlink
+messages), fake tables and interfaces in the engine, and loopback where the host has IPv6. The Windows calls
+(`GetIpNetTable2` row layout on real Windows, `Icmp6SendEcho2` to a multicast group and to a unicast neighbor, with the
+scope id and the reply layout) and the behavior of real hosts and routers on a dual-stack LAN need a real Windows machine
+on a real LAN and are not claimed. A misread ICMPv6 reply can only lose evidence: a reply must name the address asked
+and report success to count.
+
 ### Saved target sets (SC9)
 
 Target sets contain a client/site label, a set name and target specifications only. Up to 50 sets are kept in the
@@ -433,6 +524,7 @@ Boundaries, each tested (`internal/schedule`, `app/schedule_test.go`, `app/uites
 
 - Remote access (Advanced IP Scanner bundles Radmin; ZTG Scanner bundles no remote access software and installs
   nothing on scanned hosts). SC10 only starts clients the technician already has, on the technician's choice.
+- Sweeping an IPv6 prefix. IPv6 hosts are the ones the link's neighbor table already knows.
 - Vulnerability scanning or exploitation. This includes judging SMB signing, SMB1 or a LLMNR responder as a flaw.
 - Anything past the first SMB2 message: the operating system build and version from SMB need NTLMSSP in a session
   setup, which Scanner does not start.

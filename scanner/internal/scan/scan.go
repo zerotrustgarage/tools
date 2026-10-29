@@ -5,6 +5,7 @@ package scan
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/netip"
 	"sort"
@@ -53,11 +54,20 @@ type Probes struct {
 	// SNMP is opt-in and needs Config.SNMP credentials (SNMPv3 authPriv,
 	// read-only GET and GETNEXT).
 	SNMP bool `json:"snmp"`
+	// IPv6 reads the operating system's IPv6 neighbor table for the links the
+	// targets are on, links each neighbor to the IPv4 device with the same MAC
+	// address, and scans neighbors that match no IPv4 device as devices of their
+	// own (SC3). It never sweeps an IPv6 prefix and sends nothing by itself.
+	IPv6 bool `json:"ipv6"`
+	// IPv6Ping adds one ICMPv6 Echo Request to ff02::1 per on-link interface
+	// before the table is read, so that hosts which answer appear in it. It needs
+	// IPv6, and gentle mode never sends it.
+	IPv6Ping bool `json:"ipv6_ping"`
 }
 
 // DefaultProbes is the safe default set: identification only, nothing
 // that enumerates shares, users or authenticates.
-var DefaultProbes = Probes{Ports: true, Banners: true, ReverseDNS: true, NetBIOS: true, MDNS: true, SSDP: true, WSD: true, LLMNR: true, SMB: true, Favicon: true}
+var DefaultProbes = Probes{Ports: true, Banners: true, ReverseDNS: true, NetBIOS: true, MDNS: true, SSDP: true, WSD: true, LLMNR: true, SMB: true, Favicon: true, IPv6: true, IPv6Ping: true}
 
 // Config describes one scan.
 type Config struct {
@@ -80,6 +90,11 @@ type Config struct {
 	Pacer Pacer
 	// Mode labels the scan in its summary; set only for non-default modes.
 	Mode string
+	// AllowPublic is the technician's authorization for public address space. The
+	// caller has already applied it to Targets; the engine applies it again to
+	// the IPv6 neighbors it finds, so a public IPv6 address on the link is never
+	// probed without it.
+	AllowPublic bool
 	// Now is injectable for tests.
 	Now func() time.Time
 }
@@ -108,10 +123,14 @@ type Host struct {
 	SMB           *probe.SMBInfo     `json:"smb,omitempty"`
 	SNMP          *probe.SNMPInfo    `json:"snmp,omitempty"`
 	Services      []probe.Service    `json:"services,omitempty"`
-	Type          string             `json:"type,omitempty"`
-	TypeReason    string             `json:"type_reason,omitempty"`
-	Findings      []classify.Finding `json:"findings,omitempty"`
-	ScannedAt     time.Time          `json:"scanned_at"`
+	// IPv6 lists the device's IPv6 addresses seen in the neighbor table with the
+	// same MAC address (SC3), canonical, link-local ones with their zone. For a
+	// device found only over IPv6 it includes IP.
+	IPv6       []string           `json:"ipv6,omitempty"`
+	Type       string             `json:"type,omitempty"`
+	TypeReason string             `json:"type_reason,omitempty"`
+	Findings   []classify.Finding `json:"findings,omitempty"`
+	ScannedAt  time.Time          `json:"scanned_at"`
 }
 
 // Annotation is supplied by the technician, never by a probe.
@@ -132,6 +151,9 @@ type Summary struct {
 	Canceled bool      `json:"canceled,omitempty"`
 	// Mode is set only for a non-default mode, so default output is unchanged.
 	Mode string `json:"mode,omitempty"`
+	// IPv6Only counts devices found only in the IPv6 neighbor table (they are
+	// not among the requested addresses, so Total does not include them).
+	IPv6Only int `json:"ipv6_only,omitempty"`
 }
 
 // Observer receives results as they arrive. Calls are serialized.
@@ -144,6 +166,11 @@ type localIface struct {
 	addr   netip.Addr
 	prefix netip.Prefix
 	mac    net.HardwareAddr
+	// ifIndex and ifName identify the interface; IPv6 neighbor discovery uses
+	// them to pick the links to read and to write link-local zones. Zero and ""
+	// when unknown (the fakes in the SC11 tests leave them out).
+	ifIndex int
+	ifName  string
 }
 
 // hooks are the SC11 network exchanges and the local interface list. Production
@@ -158,6 +185,16 @@ type hooks struct {
 	// pinger opens the ICMP pinger; nil means probe.NewPinger. Tests set it so
 	// liveness does not depend on whether the runner allows unprivileged ICMP.
 	pinger func() (probe.Pinger, error)
+	// table6 opens the IPv6 neighbor table and ping6 sends the one multicast echo
+	// (SC3); nil means the platform's own. settle is how long to wait after that
+	// echo before reading the table; zero means ndpSettle.
+	table6 func() (probe.NeighborTable6, error)
+	// arp and ports replace the ARP resolver and the TCP connect scan, so a test
+	// can give a host hardware evidence and open ports without a network.
+	arp    func() probe.Neighbors
+	ports  func(ctx context.Context, addr netip.Addr, ports []int, timeout time.Duration, parallel int) probe.PortResult
+	ping6  func(ctx context.Context, ifIndex int, ifName string, timeout time.Duration) error
+	settle time.Duration
 }
 
 func defaultHooks() hooks {
@@ -180,6 +217,7 @@ type engine struct {
 	ranWSD, ranLLMNR, ranSMB, ranFavicon atomic.Bool
 	obsMu                                sync.Mutex
 	obs                                  Observer
+	v6                                   *ipv6State // nil unless IPv6 neighbor discovery found anything (ipv6.go)
 }
 
 // Run scans cfg.Targets and reports each host to obs. It returns when the
@@ -194,6 +232,9 @@ func run(ctx context.Context, cfg Config, obs Observer, hk hooks) Summary {
 		// Gentle mode never runs the SC11 probes. BuildPlan already leaves
 		// them out; this keeps a hand-built gentle Config honest too.
 		cfg.Probes.WSD, cfg.Probes.LLMNR, cfg.Probes.SMB, cfg.Probes.Favicon = false, false, false, false
+		// The multicast echo is a packet to every host on the link; gentle mode
+		// only reads the table the system already has.
+		cfg.Probes.IPv6Ping = false
 	}
 	sum := Summary{Started: cfg.Now(), Total: len(cfg.Targets), Mode: cfg.Mode}
 	e := &engine{hk: hk, cfg: cfg, obs: obs, ssdpDone: make(chan struct{}), wsdDone: make(chan struct{})}
@@ -209,7 +250,11 @@ func run(ctx context.Context, cfg Config, obs Observer, hk hooks) Summary {
 	} else {
 		sum.Warnings = append(sum.Warnings, "ICMP echo is not available ("+err.Error()+"); liveness relies on ARP and TCP.")
 	}
-	e.arp = probe.NewNeighbors()
+	if hk.arp != nil {
+		e.arp = hk.arp()
+	} else {
+		e.arp = probe.NewNeighbors()
+	}
 	if m := e.arp.Method(); m != "none" {
 		sum.Methods = append(sum.Methods, m)
 	}
@@ -220,6 +265,9 @@ func run(ctx context.Context, cfg Config, obs Observer, hk hooks) Summary {
 		sum.Warnings = append(sum.Warnings, "MAC vendor database failed to load: "+err.Error())
 	}
 	e.locals = hk.locals()
+	if cfg.Probes.IPv6 {
+		e.discoverIPv6(ctx, &sum)
+	}
 	if cfg.Probes.SNMP {
 		if cfg.SNMP == nil {
 			e.cfg.Probes.SNMP = false
@@ -290,6 +338,37 @@ dispatch:
 		}(addr)
 	}
 	wg.Wait()
+	if only, dropped := e.unlinkedIPv6(); len(only) > 0 && ctx.Err() == nil {
+		sum.IPv6Only = len(only)
+		if dropped > 0 {
+			sum.Warnings = append(sum.Warnings, fmt.Sprintf("%d more IPv6 neighbor device(s) were not scanned; one scan adds at most %d.", dropped, maxIPv6Devices))
+		}
+		total := len(cfg.Targets) + len(only)
+	dispatch6:
+		for _, dev := range only {
+			select {
+			case <-ctx.Done():
+				break dispatch6
+			case sem <- struct{}{}:
+			}
+			wg.Add(1)
+			go func(dev *ipv6Device) {
+				defer func() { <-sem; wg.Done() }()
+				h := e.scanHost6(ctx, dev)
+				if h.Status == "up" {
+					up.Add(1)
+				}
+				n := int(done.Add(1))
+				e.obsMu.Lock()
+				defer e.obsMu.Unlock()
+				if ctx.Err() == nil || h.Status == "up" {
+					obs.Host(h)
+				}
+				obs.Progress(n, total)
+			}(dev)
+		}
+		wg.Wait()
+	}
 	sum.Up = int(up.Load())
 	for _, m := range []struct {
 		ran  *atomic.Bool
@@ -352,11 +431,20 @@ func localInterfaces() []localIface {
 				continue
 			}
 			ip, ok := netip.AddrFromSlice(ipn.IP)
-			if !ok || !ip.Unmap().Is4() {
+			if !ok {
 				continue
 			}
 			ones, _ := ipn.Mask.Size()
-			out = append(out, localIface{addr: ip.Unmap(), prefix: netip.PrefixFrom(ip.Unmap(), ones).Masked(), mac: ifc.HardwareAddr})
+			if ip = ip.Unmap(); !ip.Is4() {
+				// IPv6 addresses are kept for self detection and for the on-link
+				// global prefixes IPv6 neighbor discovery treats as internal.
+				if ip.IsLoopback() {
+					continue
+				}
+				out = append(out, localIface{addr: ip.WithZone(""), prefix: netip.PrefixFrom(ip.WithZone(""), ones).Masked(), mac: ifc.HardwareAddr, ifIndex: ifc.Index, ifName: ifc.Name})
+				continue
+			}
+			out = append(out, localIface{addr: ip, prefix: netip.PrefixFrom(ip, ones).Masked(), mac: ifc.HardwareAddr, ifIndex: ifc.Index, ifName: ifc.Name})
 		}
 	}
 	return out
@@ -364,7 +452,7 @@ func localInterfaces() []localIface {
 
 func (e *engine) onLink(a netip.Addr) bool {
 	for _, l := range e.locals {
-		if !l.addr.IsLoopback() && l.prefix.Bits() < 32 && l.prefix.Contains(a) {
+		if l.addr.Is4() && !l.addr.IsLoopback() && l.prefix.Bits() < 32 && l.prefix.Contains(a) {
 			return true
 		}
 	}
@@ -417,11 +505,32 @@ func (e *engine) self(a netip.Addr) (net.HardwareAddr, bool) {
 }
 
 func (e *engine) scanHost(ctx context.Context, addr netip.Addr) Host {
+	return e.scanAddr(ctx, addr, nil)
+}
+
+// scanHost6 scans an IPv6-only device (SC3) through its primary address. The
+// neighbor table already proved the device exists and gave its MAC address, so
+// the hardware evidence comes from there.
+func (e *engine) scanHost6(ctx context.Context, dev *ipv6Device) Host {
+	return e.scanAddr(ctx, dev.primary(), dev)
+}
+
+// scanAddr is the per-host pipeline for an IPv4 target (seed nil) or an IPv6
+// neighbor (seed set). IPv6 hosts skip the exchanges that exist only over IPv4
+// (ARP, NetBIOS, LLMNR, the SSDP and WS-Discovery multicast answers) and SNMP,
+// which Scanner has not been validated against over IPv6.
+func (e *engine) scanAddr(ctx context.Context, addr netip.Addr, seed *ipv6Device) Host {
 	h := Host{IP: addr.String(), Status: "down", ScannedAt: e.cfg.Now().UTC()}
 	if ctx.Err() != nil {
 		return h
 	}
 	var mac net.HardwareAddr
+	v6 := seed != nil
+	if v6 {
+		mac = seed.mac
+		h.IPv6 = seed.strings()
+		h.Evidence = append(h.Evidence, "ndp")
+	}
 
 	if m, ok := e.self(addr); ok {
 		h.Self = true
@@ -462,7 +571,11 @@ func (e *engine) scanHost(ctx context.Context, addr netip.Addr) Host {
 	}
 	wg.Wait()
 	if echo != nil {
-		h.Evidence = append(h.Evidence, "icmp")
+		if v6 {
+			h.Evidence = append(h.Evidence, "icmp6")
+		} else {
+			h.Evidence = append(h.Evidence, "icmp")
+		}
 		h.RTTMillis = float64(echo.RTT.Microseconds()) / 1000
 		h.TTL = echo.TTL
 		h.OSHint = probe.OSHintFromTTL(echo.TTL)
@@ -472,7 +585,7 @@ func (e *engine) scanHost(ctx context.Context, addr netip.Addr) Host {
 		mac = arpMAC
 	}
 
-	alive := h.Self || echo != nil || arpMAC != nil
+	alive := h.Self || echo != nil || arpMAC != nil || v6
 	var open []int
 	if e.cfg.Probes.Ports {
 		ports := e.cfg.Ports
@@ -511,14 +624,18 @@ func (e *engine) scanHost(ctx context.Context, addr netip.Addr) Host {
 			}
 			c, cancel := context.WithTimeout(ctx, e.cfg.ProbeTimeout)
 			defer cancel()
-			if names, err := e.cfg.Resolver.LookupAddr(c, addr.String()); err == nil && len(names) > 0 {
+			// A link-local address has no DNS name, so it is not asked about.
+			if v6 && addr.IsLinkLocalUnicast() {
+				return
+			}
+			if names, err := e.cfg.Resolver.LookupAddr(c, addr.WithZone("").String()); err == nil && len(names) > 0 {
 				mu.Lock()
 				h.DNSName = strings.TrimSuffix(names[0], ".")
 				mu.Unlock()
 			}
 		})
 	}
-	if e.cfg.Probes.NetBIOS {
+	if e.cfg.Probes.NetBIOS && !v6 {
 		run(func() {
 			if !e.pace(ctx) {
 				return
@@ -542,7 +659,7 @@ func (e *engine) scanHost(ctx context.Context, addr netip.Addr) Host {
 			}
 		})
 	}
-	if e.cfg.Probes.LLMNR && e.linkLocalScope(addr) {
+	if e.cfg.Probes.LLMNR && !v6 && e.linkLocalScope(addr) {
 		run(func() {
 			if !e.pace(ctx) {
 				return
@@ -583,7 +700,7 @@ func (e *engine) scanHost(ctx context.Context, addr netip.Addr) Host {
 			}
 		})
 	}
-	if e.cfg.Probes.SNMP {
+	if e.cfg.Probes.SNMP && !v6 {
 		run(func() {
 			if !e.pace(ctx) {
 				return
@@ -637,6 +754,10 @@ func (e *engine) scanHost(ctx context.Context, addr netip.Addr) Host {
 			mac = m
 			h.Evidence = append(h.Evidence, "netbios-mac")
 		}
+	}
+	if !v6 && mac != nil {
+		// A device's IPv6 addresses are the neighbor-table entries with its MAC.
+		h.IPv6 = e.linkIPv6(mac)
 	}
 	if mac != nil {
 		h.MAC = mac.String()
@@ -702,11 +823,15 @@ func (e *engine) pace(ctx context.Context) bool {
 // scanPorts is probe.ScanPorts for an unpaced scan. With a pacer, each
 // connect waits for its slot, still bounded by PortConcurrency.
 func (e *engine) scanPorts(ctx context.Context, addr netip.Addr, ports []int) probe.PortResult {
+	dial := e.hk.ports
+	if dial == nil {
+		dial = probe.ScanPorts
+	}
 	if e.cfg.Pacer == nil {
-		return probe.ScanPorts(ctx, addr, ports, e.cfg.ConnectTimeout, e.cfg.PortConcurrency)
+		return dial(ctx, addr, ports, e.cfg.ConnectTimeout, e.cfg.PortConcurrency)
 	}
 	return scanPortsPaced(ctx, ports, e.cfg.PortConcurrency, e.cfg.Pacer, func(port int) probe.PortResult {
-		return probe.ScanPorts(ctx, addr, []int{port}, e.cfg.ConnectTimeout, 1)
+		return dial(ctx, addr, []int{port}, e.cfg.ConnectTimeout, 1)
 	})
 }
 
