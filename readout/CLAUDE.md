@@ -21,7 +21,9 @@ These properties are requirements, each held by tests:
    documents never name a drive, root or UNC host. A new command must be added to `build.rs`
    and granted in `capabilities/default.json` deliberately. A link to a non-Markdown file (RD16,
    `src-tauri/src/linked.rs`) opens only an allow-listed document type after a confirmation;
-   programs and scripts are refused and Readout never runs anything.
+   programs and scripts are refused and Readout never runs anything. A pasted or dropped image (RD13,
+   `src-tauri/src/images.rs`) is written only into a plain `images` folder beside a granted document,
+   only PNG, JPEG, GIF or WebP whose bytes match, create-new, never through a link; `test/images.test.ts`.
 4. Formatting commands change only the characters they add or remove.
 5. The recent-files list is Rust's on the desktop (`src-tauri/src/recent.rs`): only a granted
    document is added, and `open_recent` grants a path only when it is on the list. The window's

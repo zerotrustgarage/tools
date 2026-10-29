@@ -31,6 +31,32 @@ Relative images load from the folder. The listing skips `.git`, `node_modules`, 
 other noise, keeps `.github`, and never follows symbolic links or junctions. Back (Alt+Left)
 returns along the links you followed.
 
+### Pasting and dropping images
+
+Paste an image (a screenshot, "Copy image") or drop an image file onto the editor and Readout saves
+it in an `images` folder beside the document and inserts `![](images/<name>)` at the cursor. The
+folder is `images` next to the document itself, not next to the opened folder's root.
+
+- Only PNG, JPEG, GIF and WebP, up to 20 MiB. The first bytes must match the type; SVG and every
+  other type are refused, and nothing is written.
+- A pasted image is named `image-YYYYMMDD-HHMMSS.png` (UTC). A dropped file keeps its name cut
+  down to letters, digits, dot, underscore and hyphen, with the extension of its real type. A taken
+  name gets `-2`, `-3`, and so on; an existing file is never overwritten. A dropped file is copied;
+  the original stays where it was.
+- If `images` exists as a link (a symbolic link or a junction) or as anything but a folder, nothing
+  is written.
+- A clipboard that also holds text pastes as text, as before. An unsaved new document asks you to
+  save first and writes nothing. Dropping a Markdown file or folder still opens it.
+- The inserted link is one undo step. Undo removes the link only; the image file stays in
+  `images`, so delete it yourself if you do not want it.
+- Desktop: Rust writes the file (`src-tauri/src/images.rs`), only beside a document the window
+  opened or saved, and only a file Rust saw dropped may be copied. The WebView still holds no file
+  system permission.
+- Browser: works for a document of a folder opened with Open folder, in a Chromium browser. The
+  browser asks once for write access to that folder. A lone file, a folder upload (Firefox and
+  Safari) and a browser without the File System Access API insert nothing and say why. The
+  browser cannot create a file exclusively, so a free name is checked just before the write.
+
 ### Links to other files
 
 A link to a file that is not Markdown (`[Spec](files/spec.pdf)`) opens it in the program your
@@ -150,8 +176,8 @@ opener already bundled for web links).
     searched, so results reflect the current files.
   - Browser fallback for Firefox and Safari (folder upload): the search covers the snapshot taken
     when the folder was chosen, as the file list does.
-- Drag a Markdown file or a folder onto the window to open it. Anything else is refused with a
-  note saying why, and in the browser a dropped file is never pasted into the open document.
+- Drag a Markdown file or a folder onto the window to open it. An image file is added to the open
+  document (see Pasting and dropping images). Anything else is refused with a note saying why, and in the browser a dropped file is never pasted into the open document.
 - Drag the dividers between the file list, the editor and the preview to set their widths. The
   arrow keys move a focused divider (Shift for larger steps), Home or a double-click resets it,
   and the widths are remembered. The editor's share is kept as a proportion, so it scales with
@@ -200,7 +226,8 @@ defences are layered:
    (PDF, spreadsheet) opens it in its default app only after a confirmation, and a link to a
    program or script is refused outright (see Links to other files). Paths written in
    documents may not name a drive or UNC host, which closes the Windows NTLM hash leak through
-   `\\host\share` image paths. Only Markdown and text files can be written. The stored session
+   `\\host\share` image paths. Only Markdown and text files can be written, besides a pasted or
+   dropped image (PNG, JPEG, GIF or WebP, checked by its bytes) saved in `images` beside a document. The stored session
    and the recent-files list can only hold paths already on that allow-list, and are checked
    again before they grant anything; a recent file is reopened only if it is on the list.
 5. Mermaid runs with `securityLevel: 'strict'` and its SVG is sanitized again; KaTeX runs with

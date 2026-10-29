@@ -10,6 +10,8 @@ const COMMANDS: &[&str] = &[
     "export_html",
     "open_external",
     "read_image",
+    "paste_image",
+    "copy_dropped_image",
     "resolve_link",
     "inspect_link_file",
     "open_link_file",

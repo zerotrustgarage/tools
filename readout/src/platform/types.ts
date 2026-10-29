@@ -94,9 +94,28 @@ export interface WindowControls {
   onMaximizedChange(handler: (maximized: boolean) => void): void;
 }
 
+/**
+ * An image to save beside the open document (RD13): bytes from the clipboard or from a browser
+ * drop, or a file the desktop shell saw dropped (Rust holds the path and copies it).
+ */
+export type ImageSource =
+  | { kind: 'bytes'; bytes: Uint8Array; type: string; name?: string }
+  | { kind: 'dropped'; path: string; name: string };
+
+/** An image saved beside the document: its file name and the link to write, relative to it. */
+export interface SavedImage {
+  name: string;
+  link: string;
+}
+
 export interface DropHandlers {
   dragging(active: boolean): void;
   open(arrival: Arrival): void;
+  /**
+   * A dropped image file. source is null when it may not be saved, and reason then says why when it
+   * is not the type (SVG and the rest are refused for their type). Absent on a host that cannot save images; the drop is then refused like any other file.
+   */
+  image?(name: string, source: ImageSource | null, reason?: string): void;
   /** A dropped item that cannot be opened; folder is set when a browser refuses a folder. */
   refused(name: string, folder?: boolean): void;
 }
@@ -196,6 +215,13 @@ export interface Platform {
   copyRichText(html: string, text: string): Promise<void>;
   /** Opens an http, https or mailto address in the system browser. */
   openExternal(url: string): Promise<void>;
+  /**
+   * Saves an image in an `images` folder beside ref and resolves with the link to insert. Rejects
+   * with a message that says why nothing was written. Absent where images cannot be saved.
+   * The desktop build asks Rust (granted documents only); the browser writes through the open
+   * folder's directory handle after the browser's permission prompt.
+   */
+  saveImage?(ref: FileRef, listing: Listing | null, image: ImageSource): Promise<SavedImage>;
   /** Resolves an image path (decoded, relative to ref or folder-rooted) to an object URL. */
   loadLocalImage(ref: FileRef | null, relative: string, listing: Listing | null): Promise<string | null>;
   /**

@@ -92,6 +92,8 @@ export interface EditorOptions {
   onChange: () => void;
   onCursor: (line: number, column: number) => void;
   onScroll: (topLine: number) => void;
+  /** An image was pasted (RD13). Called instead of the paste; absent keeps the editor's own paste. */
+  onPasteImage?: (file: File) => void;
 }
 
 const readOnlyCompartment = new Compartment();
@@ -141,6 +143,17 @@ export function createEditorState(options: Omit<EditorOptions, 'parent'>): Edito
         }
       }),
       EditorView.domEventHandlers({
+        // A clipboard that holds an image and no text (a screenshot, "Copy image") is an image
+        // paste; anything with text pastes as text, as it always did.
+        paste: (event) => {
+          const data = event.clipboardData;
+          if (!options.onPasteImage || !data || data.getData('text/plain') !== '') return false;
+          const image = Array.from(data.files ?? []).find((file) => file.type.startsWith('image/'));
+          if (!image) return false;
+          event.preventDefault();
+          options.onPasteImage(image);
+          return true;
+        },
         scroll: (_event, view) => {
           const block = view.lineBlockAtHeight(view.scrollDOM.scrollTop);
           options.onScroll(view.state.doc.lineAt(block.from).number - 1);
