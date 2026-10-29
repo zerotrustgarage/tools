@@ -16,6 +16,7 @@ import (
 	"github.com/zerotrustgarage/tools/scanner/internal/classify"
 	"github.com/zerotrustgarage/tools/scanner/internal/oui"
 	"github.com/zerotrustgarage/tools/scanner/internal/probe"
+	"github.com/zerotrustgarage/tools/scanner/internal/targets"
 )
 
 // DefaultPorts are probed on every live host: the services that identify
@@ -39,6 +40,16 @@ type Probes struct {
 	NetBIOS    bool `json:"netbios"`
 	MDNS       bool `json:"mdns"`
 	SSDP       bool `json:"ssdp"`
+	// WSD is one WS-Discovery multicast Probe per scan (UDP 3702), for the
+	// device types printers, ONVIF cameras and Windows hosts announce.
+	WSD bool `json:"wsd"`
+	// LLMNR is one unicast TCP name query (RFC 4795) to each on-link host.
+	LLMNR bool `json:"llmnr"`
+	// SMB is one SMB2 NEGOTIATE to a host whose TCP 445 the scan found open.
+	SMB bool `json:"smb"`
+	// Favicon is one GET of /favicon.ico on a web port the scan found open and
+	// identified as HTTP or HTTPS. It needs Banners, which finds those ports.
+	Favicon bool `json:"favicon"`
 	// SNMP is opt-in and needs Config.SNMP credentials (SNMPv3 authPriv,
 	// read-only GET and GETNEXT).
 	SNMP bool `json:"snmp"`
@@ -46,7 +57,7 @@ type Probes struct {
 
 // DefaultProbes is the safe default set: identification only, nothing
 // that enumerates shares, users or authenticates.
-var DefaultProbes = Probes{Ports: true, Banners: true, ReverseDNS: true, NetBIOS: true, MDNS: true, SSDP: true}
+var DefaultProbes = Probes{Ports: true, Banners: true, ReverseDNS: true, NetBIOS: true, MDNS: true, SSDP: true, WSD: true, LLMNR: true, SMB: true, Favicon: true}
 
 // Config describes one scan.
 type Config struct {
@@ -92,6 +103,9 @@ type Host struct {
 	NetBIOS       *probe.NetBIOSInfo `json:"netbios,omitempty"`
 	MDNS          *probe.MDNSInfo    `json:"mdns,omitempty"`
 	UPnP          *probe.UPnPInfo    `json:"upnp,omitempty"`
+	WSD           *probe.WSDInfo     `json:"wsd,omitempty"`
+	LLMNR         *probe.LLMNRInfo   `json:"llmnr,omitempty"`
+	SMB           *probe.SMBInfo     `json:"smb,omitempty"`
 	SNMP          *probe.SNMPInfo    `json:"snmp,omitempty"`
 	Services      []probe.Service    `json:"services,omitempty"`
 	Type          string             `json:"type,omitempty"`
@@ -132,7 +146,23 @@ type localIface struct {
 	mac    net.HardwareAddr
 }
 
+// hooks are the SC11 network exchanges and the local interface list. Production
+// code uses the real probes (defaultHooks); tests substitute fakes so the
+// engine's gating can be checked without a real LAN.
+type hooks struct {
+	wsd     func(ctx context.Context, wait time.Duration) (map[netip.Addr]*probe.WSDInfo, error)
+	llmnr   func(ctx context.Context, addr netip.Addr, timeout time.Duration) (*probe.LLMNRInfo, error)
+	smb     func(ctx context.Context, addr netip.Addr, timeout time.Duration) (*probe.SMBInfo, error)
+	favicon func(ctx context.Context, addr netip.Addr, port int, useTLS bool, timeout time.Duration) (*probe.FaviconInfo, error)
+	locals  func() []localIface
+}
+
+func defaultHooks() hooks {
+	return hooks{wsd: probe.WSDDiscover, llmnr: probe.LLMNRQuery, smb: probe.SMBNegotiate, favicon: probe.FetchFavicon, locals: localInterfaces}
+}
+
 type engine struct {
+	hk       hooks
 	cfg      Config
 	pinger   probe.Pinger
 	arp      probe.Neighbors
@@ -140,16 +170,30 @@ type engine struct {
 	locals   []localIface
 	ssdp     map[netip.Addr]*probe.UPnPInfo
 	ssdpDone chan struct{}
-	obsMu    sync.Mutex
-	obs      Observer
+	wsd      map[netip.Addr]*probe.WSDInfo
+	wsdDone  chan struct{}
+	// ran records which SC11 probes sent at least one exchange, so the summary's
+	// methods list what actually happened and not what was merely enabled.
+	ranWSD, ranLLMNR, ranSMB, ranFavicon atomic.Bool
+	obsMu                                sync.Mutex
+	obs                                  Observer
 }
 
 // Run scans cfg.Targets and reports each host to obs. It returns when the
 // scan finishes or ctx is canceled.
 func Run(ctx context.Context, cfg Config, obs Observer) Summary {
+	return run(ctx, cfg, obs, defaultHooks())
+}
+
+func run(ctx context.Context, cfg Config, obs Observer, hk hooks) Summary {
 	cfg = withDefaults(cfg)
+	if cfg.Mode == ModeGentle {
+		// Gentle mode never runs the SC11 probes. BuildPlan already leaves
+		// them out; this keeps a hand-built gentle Config honest too.
+		cfg.Probes.WSD, cfg.Probes.LLMNR, cfg.Probes.SMB, cfg.Probes.Favicon = false, false, false, false
+	}
 	sum := Summary{Started: cfg.Now(), Total: len(cfg.Targets), Mode: cfg.Mode}
-	e := &engine{cfg: cfg, obs: obs, ssdpDone: make(chan struct{})}
+	e := &engine{hk: hk, cfg: cfg, obs: obs, ssdpDone: make(chan struct{}), wsdDone: make(chan struct{})}
 
 	if p, err := probe.NewPinger(); err == nil {
 		e.pinger = p
@@ -168,7 +212,7 @@ func Run(ctx context.Context, cfg Config, obs Observer) Summary {
 	} else {
 		sum.Warnings = append(sum.Warnings, "MAC vendor database failed to load: "+err.Error())
 	}
-	e.locals = localInterfaces()
+	e.locals = hk.locals()
 	if cfg.Probes.SNMP {
 		if cfg.SNMP == nil {
 			e.cfg.Probes.SNMP = false
@@ -190,6 +234,21 @@ func Run(ctx context.Context, cfg Config, obs Observer) Summary {
 		}()
 	} else {
 		close(e.ssdpDone)
+	}
+
+	// WS-Discovery is one multicast Probe on the local link, so it is sent only
+	// when some target is an on-link address in the default-permitted scope, and
+	// only answers from such addresses are kept.
+	if cfg.Probes.WSD && e.anyOnLinkInternal() {
+		e.ranWSD.Store(true)
+		go func() {
+			defer close(e.wsdDone)
+			if m, err := e.hk.wsd(ctx, 2500*time.Millisecond); err == nil {
+				e.wsd = keepInternal(m)
+			}
+		}()
+	} else {
+		close(e.wsdDone)
 	}
 
 	var (
@@ -225,6 +284,14 @@ dispatch:
 	}
 	wg.Wait()
 	sum.Up = int(up.Load())
+	for _, m := range []struct {
+		ran  *atomic.Bool
+		name string
+	}{{&e.ranWSD, "ws-discovery"}, {&e.ranLLMNR, "llmnr"}, {&e.ranSMB, "smb2-negotiate"}, {&e.ranFavicon, "http-favicon"}} {
+		if m.ran.Load() {
+			sum.Methods = append(sum.Methods, m.name)
+		}
+	}
 	sum.Canceled = ctx.Err() != nil
 	sum.Finished = cfg.Now()
 	return sum
@@ -300,6 +367,33 @@ func (e *engine) onLink(a netip.Addr) bool {
 func (e *engine) anyOnLink() bool {
 	for _, a := range e.cfg.Targets {
 		if e.onLink(a) {
+			return true
+		}
+	}
+	return false
+}
+
+// linkLocalScope reports whether a is on a directly connected network and in
+// the scope guard's default-permitted ranges: the only hosts link-local
+// protocols (WS-Discovery, LLMNR) are used for.
+func (e *engine) linkLocalScope(a netip.Addr) bool {
+	return e.onLink(a) && targets.IsInternal(a)
+}
+
+// keepInternal drops multicast answers from addresses outside the scope guard's
+// default-permitted ranges.
+func keepInternal(m map[netip.Addr]*probe.WSDInfo) map[netip.Addr]*probe.WSDInfo {
+	for a := range m {
+		if !targets.IsInternal(a) {
+			delete(m, a)
+		}
+	}
+	return m
+}
+
+func (e *engine) anyOnLinkInternal() bool {
+	for _, a := range e.cfg.Targets {
+		if e.linkLocalScope(a) {
 			return true
 		}
 	}
@@ -441,6 +535,47 @@ func (e *engine) scanHost(ctx context.Context, addr netip.Addr) Host {
 			}
 		})
 	}
+	if e.cfg.Probes.LLMNR && e.linkLocalScope(addr) {
+		run(func() {
+			if !e.pace(ctx) {
+				return
+			}
+			e.ranLLMNR.Store(true)
+			if info, err := e.hk.llmnr(ctx, addr, e.cfg.ProbeTimeout); err == nil {
+				mu.Lock()
+				h.LLMNR = info
+				mu.Unlock()
+			}
+		})
+	}
+	if e.cfg.Probes.SMB && containsPort(open, 445) {
+		run(func() {
+			if !e.pace(ctx) {
+				return
+			}
+			e.ranSMB.Store(true)
+			if info, err := e.hk.smb(ctx, addr, e.cfg.ProbeTimeout); err == nil {
+				mu.Lock()
+				h.SMB = info
+				mu.Unlock()
+			}
+		})
+	}
+	if e.cfg.Probes.WSD {
+		run(func() {
+			select {
+			case <-e.wsdDone:
+			case <-ctx.Done():
+				return
+			}
+			if info, ok := e.wsd[addr]; ok {
+				cp := *info
+				mu.Lock()
+				h.WSD = &cp
+				mu.Unlock()
+			}
+		})
+	}
 	if e.cfg.Probes.SNMP {
 		run(func() {
 			if !e.pace(ctx) {
@@ -484,6 +619,9 @@ func (e *engine) scanHost(ctx context.Context, addr netip.Addr) Host {
 		})
 	}
 	wg.Wait()
+	if e.cfg.Probes.Favicon {
+		e.fingerprintFavicons(ctx, addr, services)
+	}
 	h.Services = services
 
 	if mac == nil && h.NetBIOS != nil && h.NetBIOS.MAC != "" {
@@ -504,6 +642,45 @@ func (e *engine) scanHost(ctx context.Context, addr netip.Addr) Host {
 	h.Name = bestName(&h)
 	e.classify(&h)
 	return h
+}
+
+// maxFaviconsPerHost bounds the icons fetched from one host.
+const maxFaviconsPerHost = 4
+
+// fingerprintFavicons makes one GET of /favicon.ico on each web service that the
+// banner probe already identified as HTTP or HTTPS (at most four per host, lowest
+// ports first), over TLS where the service answered a TLS handshake.
+func (e *engine) fingerprintFavicons(ctx context.Context, addr netip.Addr, services []probe.Service) {
+	var wg sync.WaitGroup
+	n := 0
+	for i := range services {
+		s := &services[i]
+		if s.HTTP == nil || n >= maxFaviconsPerHost {
+			continue
+		}
+		n++
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if !e.pace(ctx) {
+				return
+			}
+			e.ranFavicon.Store(true)
+			if fav, err := e.hk.favicon(ctx, addr, s.Port, s.TLS != nil, e.cfg.ProbeTimeout); err == nil {
+				s.Favicon = fav // each goroutine owns one element
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+func containsPort(ports []int, p int) bool {
+	for _, x := range ports {
+		if x == p {
+			return true
+		}
+	}
+	return false
 }
 
 // pace waits for the pacer's next slot; it is a no-op without one. It
@@ -567,10 +744,14 @@ func bestName(h *Host) string {
 		return h.NetBIOS.Computer
 	case h.SNMP != nil && h.SNMP.SysName != "":
 		return h.SNMP.SysName
+	case h.LLMNR != nil && h.LLMNR.Primary() != "":
+		return h.LLMNR.Primary()
 	case h.MDNS != nil && h.MDNS.Hostname != "":
 		return h.MDNS.Hostname
 	case h.UPnP != nil && h.UPnP.FriendlyName != "":
 		return h.UPnP.FriendlyName
+	case h.WSD != nil && h.WSD.Name != "":
+		return h.WSD.Name
 	}
 	return ""
 }
@@ -615,6 +796,14 @@ func (e *engine) classify(h *Host) {
 				ev.NetBIOSGroups = append(ev.NetBIOSGroups, n.Suffix)
 			}
 		}
+	}
+	if h.WSD != nil {
+		ev.WSDTypes = h.WSD.TypeNames()
+		ev.WSDONVIF = h.WSD.HasONVIFScope()
+	}
+	if h.SMB != nil {
+		ev.SMBDialect = h.SMB.Dialect
+		ev.SMBLegacyWindows = h.SMB.LegacyWindowsDialect()
 	}
 	r := classify.Classify(&ev)
 	if h.Self {

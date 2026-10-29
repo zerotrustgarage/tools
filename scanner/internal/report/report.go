@@ -12,6 +12,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/zerotrustgarage/tools/scanner/internal/probe"
 	"github.com/zerotrustgarage/tools/scanner/internal/scan"
 )
 
@@ -43,7 +44,7 @@ func JSON(w io.Writer, doc Document) error {
 }
 
 // CSVHeader is the column order of the CSV export.
-var CSVHeader = []string{"ip", "status", "name", "type", "mac", "vendor", "mac_randomized", "dns_name", "netbios_name", "workgroup", "mdns_name", "manufacturer", "model", "open_ports", "services", "rtt_ms", "ttl", "os_hint", "findings", "evidence", "serial", "firmware", "location", "snmp_descr", "notes", "tags", "favorite", "last_known_mac"}
+var CSVHeader = []string{"ip", "status", "name", "type", "mac", "vendor", "mac_randomized", "dns_name", "netbios_name", "workgroup", "mdns_name", "manufacturer", "model", "open_ports", "services", "rtt_ms", "ttl", "os_hint", "findings", "evidence", "serial", "firmware", "location", "snmp_descr", "notes", "tags", "favorite", "last_known_mac", "llmnr_name", "wsd_types", "wsd_name", "smb_dialect", "smb_signing", "favicon_mmh3", "favicon_sha256"}
 
 // CSV writes one row per host.
 func CSV(w io.Writer, hosts []scan.Host) error {
@@ -90,6 +91,11 @@ func csvRow(h scan.Host) []string {
 			firmware = h.SNMP.Software
 		}
 	}
+	if model == "" && h.WSD != nil {
+		model = h.WSD.Hardware
+	}
+	llmnrName, wsdTypes, wsdName, smbDialect, smbSigning := SC11Columns(h)
+	favMMH3, favSHA := FaviconColumns(h)
 	var findings []string
 	for _, f := range h.Findings {
 		findings = append(findings, f.Severity+":"+f.Code)
@@ -109,7 +115,49 @@ func csvRow(h scan.Host) []string {
 		safe(serial), safe(firmware), safe(location), safe(descr),
 		safe(h.Notes), safe(strings.Join(h.Tags, ", ")), strconv.FormatBool(h.Favorite),
 		safe(h.LastKnownMAC),
+		safe(llmnrName), safe(wsdTypes), safe(wsdName), safe(smbDialect), smbSigning, favMMH3, favSHA,
 	}
+}
+
+// SC11Columns returns the LLMNR name, the WS-Discovery types and name, the
+// negotiated SMB2 dialect and its signing policy. All are device-supplied text
+// except the dialect and the policy words, which Scanner derives.
+func SC11Columns(h scan.Host) (llmnrName, wsdTypes, wsdName, smbDialect, smbSigning string) {
+	llmnrName = h.LLMNR.Primary()
+	if h.WSD != nil {
+		wsdTypes = strings.Join(h.WSD.Types, " ")
+		wsdName = joinNonempty(" ", h.WSD.Name, h.WSD.Hardware)
+	}
+	if h.SMB != nil {
+		smbDialect = h.SMB.Dialect
+		smbSigning = SigningPolicy(h.SMB)
+	}
+	return
+}
+
+// SigningPolicy words the SMB2 signing flags a server reported.
+func SigningPolicy(s *probe.SMBInfo) string {
+	switch {
+	case s == nil:
+		return ""
+	case s.SigningRequired:
+		return "required"
+	case s.SigningEnabled:
+		return "enabled, not required"
+	}
+	return "not offered"
+}
+
+// FaviconColumns lists "port:value" pairs, one per fingerprinted web service.
+func FaviconColumns(h scan.Host) (mmh3, sha256 string) {
+	var a, b []string
+	for _, s := range h.Services {
+		if s.Favicon != nil {
+			a = append(a, strconv.Itoa(s.Port)+":"+strconv.FormatInt(int64(s.Favicon.MMH3), 10))
+			b = append(b, strconv.Itoa(s.Port)+":"+s.Favicon.SHA256)
+		}
+	}
+	return strings.Join(a, " "), strings.Join(b, " ")
 }
 
 // MaxTableRows and MaxTableCols bound a CSVTable export.

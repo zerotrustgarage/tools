@@ -20,12 +20,18 @@ type Evidence struct {
 	UPnPType      string
 	UPnPMaker     string
 	UPnPModel     string
-	SNMPDescr     string // sysDescr and ENTITY-MIB model
-	SNMPMaker     string // ENTITY-MIB manufacturer and sysObjectID enterprise
-	NetBIOSGroups []byte // suffixes of group names
-	NetBIOS       bool
-	Telnet        bool
-	CertExpiries  []time.Time
+	WSDTypes      []string // local names of WS-Discovery device types, lower case
+	WSDONVIF      bool     // the device announced an ONVIF scope
+	SMBDialect    string   // highest SMB2 dialect the server negotiated, "" if none
+	// SMBLegacyWindows is true for a dialect (2.0.2 to 3.0.2) on which only the
+	// Windows 2008 to 2012 R2 generations and old appliances stop.
+	SMBLegacyWindows bool
+	SNMPDescr        string // sysDescr and ENTITY-MIB model
+	SNMPMaker        string // ENTITY-MIB manufacturer and sysObjectID enterprise
+	NetBIOSGroups    []byte // suffixes of group names
+	NetBIOS          bool
+	Telnet           bool
+	CertExpiries     []time.Time
 }
 
 // Result is the inferred device type and why.
@@ -75,6 +81,19 @@ func textHas(e *Evidence, words ...string) (string, bool) {
 	return "", false
 }
 
+// wsdHas reports the first of the given WS-Discovery type names (lower case
+// local parts, whatever prefix the device used) that the device announced.
+func wsdHas(e *Evidence, names ...string) (string, bool) {
+	for _, have := range e.WSDTypes {
+		for _, n := range names {
+			if have == n {
+				return n, true
+			}
+		}
+	}
+	return "", false
+}
+
 func mdnsHas(e *Evidence, svcs ...string) (string, bool) {
 	for _, have := range e.MDNSServices {
 		for _, s := range svcs {
@@ -116,6 +135,9 @@ var rules = []rule{
 		if w, ok := textHas(e, "printer"); ok && e.UPnPType != "" {
 			return "UPnP device type mentions " + w, true
 		}
+		if w, ok := wsdHas(e, "printdevicetype", "scandevicetype"); ok {
+			return "advertises the WS-Discovery " + w + " type", true
+		}
 		if has(e, 9100, 515, 631) {
 			if v, ok := vendorIs(e, printerVendors...); ok {
 				return "print port open and vendor " + v, true
@@ -132,6 +154,12 @@ var rules = []rule{
 	{"IP camera / NVR", func(e *Evidence) (string, bool) {
 		if v, ok := vendorIs(e, cameraVendors...); ok {
 			return "vendor " + v, true
+		}
+		if w, ok := wsdHas(e, "networkvideotransmitter", "networkvideorecorder", "networkvideodisplay"); ok {
+			return "advertises the ONVIF " + w + " type over WS-Discovery", true
+		}
+		if e.WSDONVIF {
+			return "announces ONVIF scopes over WS-Discovery", true
 		}
 		if has(e, 554) {
 			if w, ok := textHas(e, "camera", "nvr", "dvr", "ipcam", "webcam", "network video"); ok {
@@ -224,6 +252,12 @@ var rules = []rule{
 		}
 		if has(e, 135) && has(e, 445) {
 			return "Windows RPC (135) and SMB (445) open", true
+		}
+		if _, ok := wsdHas(e, "computer"); ok {
+			return "advertises the WS-Discovery Computer type (Windows network discovery)", true
+		}
+		if e.SMBLegacyWindows && e.TTL > 64 && e.TTL <= 128 {
+			return "SMB " + e.SMBDialect + " is its highest dialect and it has a Windows TTL", true
 		}
 		if e.NetBIOS && e.TTL > 64 && e.TTL <= 128 {
 			return "answers NetBIOS with a Windows TTL", true

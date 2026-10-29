@@ -76,6 +76,7 @@ a { color:var(--info); text-decoration:none } a:hover { text-decoration:underlin
 <div class="field"><b>Classification reason</b>{{.TypeReason}}</div><div class="field"><b>Evidence</b>{{range .Evidence}}{{.}}<br>{{end}}</div>
 <div class="field"><b>DNS / NetBIOS / mDNS / UPnP</b>{{.Discovery}}{{if .NetBIOS}}<br>Workgroup: {{.NetBIOS.Workgroup}}{{end}}{{if .UPnP}}<br>UPnP name: {{.UPnP.FriendlyName}}{{end}}</div>
 <div class="field"><b>Model / serial / firmware / location</b>{{.Model}}{{if .SNMP}}<br>Serial: {{.SNMP.Serial}}<br>Firmware: {{.Firmware}}<br>Location: {{.SNMP.SysLocation}}{{end}}{{if .UPnP}}<br>UPnP model: {{.UPnP.ModelName}} {{.UPnP.ModelNumber}}{{end}}</div>
+<div class="field"><b>WS-Discovery / SMB2 / favicon (device-reported)</b>{{.Extra}}</div>
 <div class="field"><b>Services</b>{{range .Services}}{{.Port}}/{{.Name}}{{if .Product}} · {{.Product}}{{end}}{{if .HTTP}} · HTTP {{.HTTP.Status}} {{.HTTP.Server}} {{.HTTP.Title}}{{end}}{{if .TLS}} · TLS {{.TLS.Version}}, subject {{.TLS.Subject}}, issuer {{.TLS.Issuer}}, expires {{if .TLS.NotAfter.IsZero}}unknown{{else}}{{.TLS.NotAfter.UTC.Format "2006-01-02"}}{{end}}{{end}}<br>{{end}}</div>
 <div class="field"><b>Findings</b>{{range .Findings}}{{.Severity}} · {{.Code}}: {{.Message}}<br>{{else}}None recorded{{end}}</div>
 <div class="field"><b>Technician annotations</b>Tags: {{range $i,$v:=.Tags}}{{if $i}}, {{end}}{{$v}}{{end}}<br>Notes: {{.Notes}}{{if .Favorite}}<br>Favorite{{end}}</div>
