@@ -28,6 +28,7 @@ import { showUpdateDialog } from "./updates.js";
     targetSetsBusy: false,
     targetSetsReturnFocus: null,
     targetSetDraft: null,
+    openWith: { commands: [], error: "", editing: -1, busy: false, returnFocus: null },
   };
 
   // ---------- DOM helpers ----------
@@ -546,6 +547,14 @@ import { showUpdateDialog } from "./updates.js";
       type: "button", "data-action": action, text: label, disabled: !enabled,
       onclick: () => runAction(action, h.ip),
     }));
+    buttons.push(el("button", {
+      type: "button", "data-action": "open-with", "aria-haspopup": "menu", text: "Open with ▾", disabled: !api,
+      onclick: (e) => {
+        e.stopPropagation();
+        const r = e.currentTarget.getBoundingClientRect();
+        showOpenWithMenu(h.ip, r.left, r.bottom + 4);
+      },
+    }));
     const wakeMAC = h.mac || h.last_known_mac;
     buttons.push(el("button", { type: "button", "data-action": "wake", text: "Wake-on-LAN", disabled: !wakeMAC || h.mac_randomized,
       onclick: async () => {
@@ -562,6 +571,7 @@ import { showUpdateDialog } from "./updates.js";
     if (diagnostic) {
       $("diagnostics").hidden = false;
       $("comparison").hidden = true;
+      $("open-with").hidden = true;
       $("diagnostics-title").textContent = (action === "ping" ? "Ping " : "Trace route to ") + ip;
       $("diagnostics-output").textContent = "Running…";
     }
@@ -754,7 +764,7 @@ import { showUpdateDialog } from "./updates.js";
     if ($("target-sets").hidden) {
       state.targetSetsReturnFocus = document.activeElement;
       closeMenus();
-      for (const id of ["settings", "comparison", "diagnostics"]) $(id).hidden = true;
+      for (const id of ["settings", "comparison", "diagnostics", "open-with"]) $(id).hidden = true;
       $("settings-btn").setAttribute("aria-expanded", "false");
       $("target-set-site").value = $("site").value;
       $("target-set-name").value = "";
@@ -875,6 +885,258 @@ import { showUpdateDialog } from "./updates.js";
       state.targetSetsError = String(e && e.message ? e.message : e);
       targetSetStatus();
     } finally { setTargetSetBusy(false); }
+  }
+
+  // ---------- Open with commands (SC10) ----------
+  //
+  // Commands are the technician's own: they live in this WebView's local storage (like saved target sets)
+  // and are handed to the app, which validates them again and keeps the copy it launches from. A launch
+  // sends only a command name and an address; the app takes the hostname from its own results. Nothing a
+  // device reports is used here except as text.
+
+  const OPEN_WITH_KEY = "ztg-scanner:open-with";
+  const OPEN_WITH_MAX = 20;
+  const errText = (e) => String(e && e.message ? e.message : e);
+
+  function readOpenWithStore() {
+    const raw = localStorage.getItem(OPEN_WITH_KEY);
+    if (raw === null) return [];
+    const value = JSON.parse(raw);
+    if (!value || value.version !== 1 || !Array.isArray(value.commands) || value.commands.length > OPEN_WITH_MAX) throw new Error("Saved Open with commands are not in a recognized format.");
+    return value.commands.map((c) => {
+      if (!c || typeof c !== "object" || typeof c.name !== "string" || !["program", "url"].includes(c.kind)) throw new Error("Saved Open with commands are not in a recognized format.");
+      const out = { name: c.name, kind: c.kind };
+      if (c.kind === "program") {
+        if (typeof c.program !== "string" || (c.args !== undefined && (!Array.isArray(c.args) || c.args.some((a) => typeof a !== "string")))) throw new Error("Saved Open with commands are not in a recognized format.");
+        out.program = c.program;
+        out.args = c.args || [];
+      } else {
+        if (typeof c.url !== "string") throw new Error("Saved Open with commands are not in a recognized format.");
+        out.url = c.url;
+      }
+      return out;
+    });
+  }
+
+  function writeOpenWithStore(commands) {
+    const serialized = JSON.stringify({ version: 1, commands });
+    localStorage.setItem(OPEN_WITH_KEY, serialized);
+    if (localStorage.getItem(OPEN_WITH_KEY) !== serialized) throw new Error("Saved commands could not be verified after writing.");
+  }
+
+  // Load at start: an unreadable or invalid store leaves no commands active and says why.
+  async function loadOpenWith() {
+    const ow = state.openWith;
+    ow.error = "";
+    ow.commands = [];
+    try {
+      const stored = readOpenWithStore();
+      ow.commands = await api.SetOpenWithCommands(stored);
+    } catch (e) {
+      ow.error = errText(e);
+    }
+  }
+
+  function openWithStatus(message = "") {
+    const ow = state.openWith;
+    $("ow-status").textContent = ow.error && message !== ow.error ? ow.error + (message ? " " + message : "") : message;
+    $("ow-reset").hidden = !ow.error;
+  }
+
+  function renderOpenWithList(selectName = "") {
+    const list = $("ow-list");
+    list.replaceChildren(...state.openWith.commands.map((c, i) => el("option", { value: String(i), text: c.name + " · " + (c.kind === "url" ? "web address" : "program") })));
+    const i = state.openWith.commands.findIndex((c) => c.name === selectName);
+    if (i >= 0) list.value = String(i);
+  }
+
+  function fillOpenWithForm(c) {
+    state.openWith.editing = c ? state.openWith.commands.indexOf(c) : -1;
+    $("ow-name").value = c ? c.name : "";
+    $("ow-kind").value = c ? c.kind : "program";
+    $("ow-program").value = c && c.kind === "program" ? c.program : "";
+    $("ow-args").value = c && c.kind === "program" ? (c.args || []).join("\n") : "";
+    $("ow-url").value = c && c.kind === "url" ? c.url : "";
+    $("ow-preview").textContent = "";
+    syncOpenWithKind();
+  }
+
+  function syncOpenWithKind() {
+    const url = $("ow-kind").value === "url";
+    $("ow-program-fields").hidden = url;
+    $("ow-url-fields").hidden = !url;
+  }
+
+  function openWithFromForm() {
+    const kind = $("ow-kind").value;
+    const c = { name: $("ow-name").value, kind };
+    if (kind === "url") c.url = $("ow-url").value;
+    else {
+      c.program = $("ow-program").value;
+      const lines = $("ow-args").value.split(/\r?\n/);
+      while (lines.length && lines[lines.length - 1] === "") lines.pop();
+      c.args = lines;
+    }
+    return c;
+  }
+
+  function setOpenWithBusy(busy) {
+    state.openWith.busy = busy;
+    for (const id of ["ow-save", "ow-delete", "ow-new", "ow-preview-btn", "ow-reset", "ow-list"]) $(id).disabled = busy;
+  }
+
+  // Applies a new list: the app validates it first, then it is written and read back. If the write
+  // fails, the app is put back on the previous list so what runs is always what is saved.
+  async function applyOpenWithList(next, selectName) {
+    const ow = state.openWith;
+    const previous = ow.commands;
+    const validated = await api.SetOpenWithCommands(next);
+    try {
+      writeOpenWithStore(validated);
+    } catch (e) {
+      await api.SetOpenWithCommands(previous).catch(() => {});
+      throw e;
+    }
+    ow.commands = validated;
+    ow.error = "";
+    renderOpenWithList(selectName);
+  }
+
+  async function saveOpenWith() {
+    const ow = state.openWith;
+    if (!api || ow.busy || ow.error) return;
+    setOpenWithBusy(true);
+    try {
+      const c = openWithFromForm();
+      const key = c.name.trim().toLowerCase();
+      let index = ow.editing;
+      const clash = ow.commands.findIndex((x, i) => i !== index && x.name.toLowerCase() === key);
+      if (clash >= 0) {
+        if (!await confirmDialog("Replace command?", "A command named “" + ow.commands[clash].name + "” already exists. Replace it?", "Replace command")) return;
+        index = clash;
+      }
+      const next = [...ow.commands];
+      if (index >= 0) next[index] = c;
+      else next.push(c);
+      await applyOpenWithList(next, c.name.trim());
+      fillOpenWithForm(ow.commands.find((x) => x.name === c.name.trim()));
+      openWithStatus("Command saved.");
+    } catch (e) {
+      openWithStatus(errText(e));
+    } finally { setOpenWithBusy(false); }
+  }
+
+  async function deleteOpenWith() {
+    const ow = state.openWith;
+    if (!api || ow.busy || ow.error) return;
+    const entry = ow.commands[ow.editing];
+    if (!entry) return openWithStatus("Choose a saved command to delete.");
+    setOpenWithBusy(true);
+    try {
+      if (!await confirmDialog("Delete command?", "Delete “" + entry.name + "”?", "Delete command")) return;
+      await applyOpenWithList(ow.commands.filter((x) => x !== entry), "");
+      fillOpenWithForm(null);
+      openWithStatus("Command deleted.");
+    } catch (e) { openWithStatus(errText(e)); }
+    finally { setOpenWithBusy(false); }
+  }
+
+  async function resetOpenWith() {
+    const ow = state.openWith;
+    if (!ow.error || ow.busy) return;
+    setOpenWithBusy(true);
+    try {
+      if (!await confirmDialog("Reset saved commands?", "This permanently removes the unreadable saved Open with data from this app.", "Reset saved commands")) return;
+      localStorage.removeItem(OPEN_WITH_KEY);
+      if (localStorage.getItem(OPEN_WITH_KEY) !== null) throw new Error("Saved commands could not be removed from local storage.");
+      ow.commands = await api.SetOpenWithCommands([]);
+      ow.error = "";
+      renderOpenWithList();
+      fillOpenWithForm(null);
+      openWithStatus("Saved commands were reset.");
+    } catch (e) { openWithStatus(errText(e)); }
+    finally { setOpenWithBusy(false); }
+  }
+
+  // Shows exactly what would run for the test values, as one quoted line per argument. Starts nothing.
+  async function previewOpenWith() {
+    if (!api || state.openWith.busy) return;
+    const out = $("ow-preview");
+    try {
+      const r = await api.PreviewOpenWith(openWithFromForm(), $("ow-test-ip").value, $("ow-test-host").value);
+      out.textContent = r.kind === "url"
+        ? "Open in the default browser:\n" + r.url
+        : "Program and arguments, one per line in brackets (no shell):\n" + (r.argv || []).map((a, i) => (i === 0 ? "program  [" : "arg " + i + "    [") + a + "]").join("\n");
+    } catch (e) {
+      out.textContent = "Not usable: " + errText(e);
+    }
+  }
+
+  function openOpenWith() {
+    if (!$("open-with").hidden) return;
+    state.openWith.returnFocus = document.activeElement;
+    closeMenus();
+    for (const id of ["settings", "target-sets", "comparison", "diagnostics"]) $(id).hidden = true;
+    $("settings-btn").setAttribute("aria-expanded", "false");
+    $("target-sets-btn").setAttribute("aria-expanded", "false");
+    renderOpenWithList();
+    fillOpenWithForm(null);
+    openWithStatus(state.openWith.commands.length ? "" : "No commands yet. Add PuTTY, mstsc or an RMM console link below.");
+    $("open-with").hidden = false;
+    $("ow-name").focus();
+  }
+
+  function closeOpenWith() {
+    if ($("open-with").hidden) return;
+    $("open-with").hidden = true;
+    const back = state.openWith.returnFocus;
+    if (back && back.focus && back.isConnected) back.focus();
+    state.openWith.returnFocus = null;
+  }
+
+  // The row menu: built from the app's answer for this device, so a command that needs a hostname the
+  // device does not have is shown as unavailable with the reason.
+  async function showOpenWithMenu(ip, x, y) {
+    const menu = $("openwith-menu");
+    closeMenus();
+    menu.replaceChildren(el("li", { class: "muted", text: "Loading…" }));
+    menu.hidden = false;
+    placeMenu(menu, x, y);
+    let options;
+    try { options = await api.OpenWithOptions(ip); }
+    catch (e) { menu.hidden = true; return toast(errText(e)); }
+    const items = options.map((o) => el("li", { role: "none" }, el("button", {
+      type: "button", role: "menuitem", "data-command": o.name, disabled: !o.available, title: o.available ? "" : o.reason,
+      onclick: () => { closeMenus(); runOpenWith(o.name, ip); },
+    }, o.name, el("span", { class: "sub", text: o.available ? (o.kind === "url" ? "Web address" : "Program") : o.reason }))));
+    if (state.openWith.error) items.unshift(el("li", { class: "muted", text: "Saved commands could not be loaded. See Open with settings." }));
+    else if (!items.length) items.push(el("li", { class: "muted", text: "No commands yet" }));
+    items.push(el("li", { role: "separator", class: "menu-sep" }),
+      el("li", { role: "none" }, el("button", { type: "button", role: "menuitem", id: "openwith-manage", text: "Edit commands…", onclick: () => { closeMenus(); openOpenWith(); } })));
+    menu.replaceChildren(...items);
+    placeMenu(menu, x, y);
+    const first = menu.querySelector("button:not(:disabled)");
+    if (first) first.focus();
+  }
+
+  // Set through CSSOM: the Content-Security-Policy blocks inline style attributes.
+  function placeMenu(menu, x, y) {
+    const r = menu.getBoundingClientRect();
+    menu.style.left = Math.max(8, Math.min(x, window.innerWidth - r.width - 8)) + "px";
+    menu.style.top = Math.max(8, Math.min(y, window.innerHeight - r.height - 8)) + "px";
+  }
+
+  async function runOpenWith(name, ip, allowPublic = false) {
+    try {
+      toast(await api.OpenWith(name, ip, allowPublic));
+    } catch (e) {
+      const message = errText(e);
+      if (!allowPublic && message.includes("public address space")) {
+        if (await confirmDialog("Connect to a public address?", "Only continue if you are authorized to use " + name + " with " + ip + ".", "I am authorized")) return runOpenWith(name, ip, true);
+        return;
+      }
+      toast(message, 6000);
+    }
   }
 
   function renderComparison() {
@@ -1102,6 +1364,7 @@ import { showUpdateDialog } from "./updates.js";
     toggle($("suggest-btn"), $("suggest-menu"), false);
     toggle($("export-btn"), $("export-menu"), false);
     toggle($("columns-btn"), $("columns-menu"), false);
+    $("openwith-menu").hidden = true;
   }
 
   // ---------- wiring ----------
@@ -1183,6 +1446,26 @@ import { showUpdateDialog } from "./updates.js";
     });
     for (const id of ["filter", "type-filter", "findings-only", "favorites-only"]) $(id).addEventListener("input", render);
     $("site").addEventListener("input", () => markDirty());
+    $("open-with-edit").addEventListener("click", openOpenWith);
+    $("open-with-close").addEventListener("click", closeOpenWith);
+    $("ow-list").addEventListener("change", () => {
+      const option = $("ow-list").selectedOptions[0];
+      fillOpenWithForm(option && state.openWith.commands[Number(option.value)]);
+      openWithStatus("");
+    });
+    $("ow-kind").addEventListener("change", syncOpenWithKind);
+    $("ow-new").addEventListener("click", () => { $("ow-list").selectedIndex = -1; fillOpenWithForm(null); openWithStatus(""); });
+    $("ow-save").addEventListener("click", saveOpenWith);
+    $("ow-delete").addEventListener("click", deleteOpenWith);
+    $("ow-reset").addEventListener("click", resetOpenWith);
+    $("ow-preview-btn").addEventListener("click", previewOpenWith);
+    $("rows").addEventListener("contextmenu", (e) => {
+      const tr = e.target.closest("tr[data-ip]");
+      if (!tr || !api) return;
+      e.preventDefault();
+      select(tr.dataset.ip);
+      showOpenWithMenu(tr.dataset.ip, e.clientX, e.clientY);
+    });
     $("target-sets-btn").addEventListener("click", openTargetSets);
     $("target-sets-close").addEventListener("click", closeTargetSets);
     $("target-set-list").addEventListener("change", () => {
@@ -1208,6 +1491,7 @@ import { showUpdateDialog } from "./updates.js";
         if (!result.path) return;
         state.comparison = result;
         $("comparison").hidden = false;
+        $("open-with").hidden = true;
         $("diagnostics").hidden = true;
         renderComparison();
       } catch (e) { toast(String(e)); }
@@ -1260,6 +1544,7 @@ import { showUpdateDialog } from "./updates.js";
         closeMenus();
         if (!$("modal").hidden) $("modal-cancel").click();
         else if (!$("target-sets").hidden) closeTargetSets();
+        else if (!$("open-with").hidden) closeOpenWith();
         else if (!$("comparison").hidden) $("comparison").hidden = true;
         else if (!$("diagnostics").hidden) $("diagnostics").hidden = true;
         else if (!$("settings").hidden) toggle($("settings-btn"), $("settings"), false);
@@ -1271,7 +1556,10 @@ import { showUpdateDialog } from "./updates.js";
       }
     });
 
-    $("settings-btn").addEventListener("click", () => toggle($("settings-btn"), $("settings")));
+    $("settings-btn").addEventListener("click", () => {
+      if ($("settings").hidden) $("open-with").hidden = true;
+      toggle($("settings-btn"), $("settings"));
+    });
     $("settings-close").addEventListener("click", () => {
       readSettings();
       toggle($("settings-btn"), $("settings"), false);
@@ -1303,6 +1591,7 @@ import { showUpdateDialog } from "./updates.js";
     if (rt && rt.WindowSetTitle) rt.WindowSetTitle(document.title);
     state.defaults = defaults;
     loadSettings();
+    await loadOpenWith();
 
     const menu = $("suggest-menu");
     if (!suggestions || !suggestions.length) {

@@ -150,7 +150,22 @@ diagnostic output in the app. Programs use fixed system paths and numeric result
 as commands. A public address loaded from a file requires authorization before these connection actions.
 Wake-on-LAN asks before sending one UDP magic packet and is limited to directly connected internal IPv4 networks;
 it can use the last known MAC of an offline favorite. Nothing is installed on the scanned device, and no credentials
-are collected by Scanner for these actions. Scheduled scans and custom command templates remain planned.
+are collected by Scanner for these actions. Scheduled scans remain planned.
+
+## Open with commands
+
+Choose **Settings**, then **Open with commands** to define up to 20 commands of your own, for example PuTTY, mstsc
+or an RMM console link. A program command is the full path to an installed `.exe` plus one argument per line; a web
+command is an `https://` address. Use `{ip}` for the device address and `{hostname}` for its reported name, for
+example `-ssh` and `admin@{hostname}` as two arguments. **Preview** shows exactly what would run for a test address
+and name without starting anything. Choose a command from **Open with** in the device pane, or right-click a result.
+
+Commands are stored only in the current Windows user's desktop preferences and are never written to scan files or
+exports. Each argument stays one argument and no shell is involved. If a device has no valid DNS hostname, commands
+that use `{hostname}` are unavailable for it rather than adjusted. `cmd.exe`, PowerShell and other shells or script
+hosts are refused, there is no password placeholder, and obvious password options such as `-pw` are refused: let the
+program or site ask for the credential. A web address needs a fixed `https://` host, and values placed in its path or
+query are URL-escaped. A public address needs the same authorization as the other connection actions.
 
 ## Saved target sets
 

@@ -141,6 +141,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .annotation-form label.check { display: flex; align-items: center; gap: 6px; }
 .drawer.comparison { width: min(580px, calc(100% - 32px)); }
 .drawer.target-sets { width: min(480px, calc(100% - 32px)); }
+.drawer.open-with { width: min(520px, calc(100% - 32px)); }
 .comparison .close { float: right; }
 .target-sets .close { float: right; }
 .target-sets select { width: 100%; }
@@ -270,3 +271,14 @@ td.mono, .mono { font-family: var(--mono); font-size: 12px; }
 .modal-card h2 { margin: 0 0 8px; font-size: 16px; }
 
 .toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--panel-2); border: 1px solid var(--line); padding: 8px 14px; border-radius: var(--radius); z-index: 50; }
+
+.open-with .close { float: right; }
+.open-with select, .open-with > input, .open-with textarea { width: 100%; }
+.open-with textarea { min-height: 80px; }
+.open-with > #ow-reset { margin: 0 0 10px; }
+.open-with [role=status]:empty { display: none; }
+.open-with .row input { width: 100%; }
+#ow-preview { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; margin: 0 0 8px; }
+#ow-preview:empty { display: none; }
+.open-with .target-set-actions #ow-save { margin-left: auto; }
+.menu.floating { position: fixed; top: 0; left: 0; min-width: 220px; max-width: 360px; }

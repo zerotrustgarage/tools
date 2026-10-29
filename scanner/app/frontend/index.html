@@ -136,6 +136,7 @@
       <label>Connect timeout (ms) <input id="timeout" type="number" min="100" max="10000" step="100"></label>
     </div>
     </fieldset>
+    <div class="row"><button type="button" id="open-with-edit" class="ghost" aria-controls="open-with">Open with commands…</button></div>
     <p class="muted small">Defaults identify devices without logging in to anything. Only private networks are scanned unless you confirm you are authorized to scan a public range.</p>
     <div class="row end"><button type="button" id="settings-reset" class="ghost">Restore defaults</button><button type="button" id="settings-close" class="primary">Done</button></div>
   </aside>
@@ -162,6 +163,41 @@
     </div>
   </aside>
 
+  <aside id="open-with" class="drawer open-with" hidden role="dialog" aria-modal="false" aria-labelledby="open-with-title" tabindex="-1">
+    <button type="button" id="open-with-close" class="ghost close" aria-label="Close Open with commands">✕</button>
+    <h2 id="open-with-title">Open with commands</h2>
+    <label for="ow-list">Saved commands</label>
+    <select id="ow-list" size="5" aria-describedby="ow-status"></select>
+    <p id="ow-status" class="muted small" role="status" aria-live="polite"></p>
+    <button type="button" id="ow-reset" class="danger" hidden>Reset saved commands</button>
+    <label for="ow-name">Name</label>
+    <input id="ow-name" type="text" maxlength="60" autocomplete="off">
+    <label for="ow-kind">Type</label>
+    <select id="ow-kind"><option value="program">Installed program</option><option value="url">Web address (https)</option></select>
+    <div id="ow-program-fields">
+      <label for="ow-program">Program (full path to an .exe)</label>
+      <input id="ow-program" type="text" maxlength="260" autocomplete="off" spellcheck="false" placeholder="C:\Program Files\PuTTY\putty.exe">
+      <label for="ow-args">Arguments, one per line</label>
+      <textarea id="ow-args" rows="4" spellcheck="false" placeholder="-ssh&#10;admin@{hostname}"></textarea>
+    </div>
+    <div id="ow-url-fields" hidden>
+      <label for="ow-url">Address</label>
+      <input id="ow-url" type="text" maxlength="2048" autocomplete="off" spellcheck="false" placeholder="https://rmm.example.com/console?host={hostname}">
+    </div>
+    <p class="muted small">Use {ip} and {hostname}. Each argument line stays one argument; nothing runs in a shell. A device whose reported name is not a plain DNS name cannot use {hostname}. A web address must be https with a fixed host, and values are URL-escaped. There are no password placeholders and Scanner stores no credentials. Commands run only when you choose them from Open with.</p>
+    <div class="row">
+      <label for="ow-test-ip">Test address <input id="ow-test-ip" type="text" maxlength="64" value="10.0.0.5" autocomplete="off" spellcheck="false"></label>
+      <label for="ow-test-host">Test hostname <input id="ow-test-host" type="text" maxlength="253" value="server-01.example.lan" autocomplete="off" spellcheck="false"></label>
+    </div>
+    <pre id="ow-preview" aria-live="polite"></pre>
+    <div class="target-set-actions">
+      <button type="button" id="ow-new">New</button>
+      <button type="button" id="ow-preview-btn">Preview</button>
+      <button type="button" id="ow-save" class="primary">Save command</button>
+      <button type="button" id="ow-delete" class="danger">Delete</button>
+    </div>
+  </aside>
+
   <aside id="comparison" class="drawer comparison" hidden aria-label="Scan comparison">
     <button type="button" id="comparison-close" class="ghost close" aria-label="Close comparison">✕</button>
     <h2>Scan comparison</h2>
@@ -185,6 +221,7 @@
       <div class="row end"><button type="button" id="modal-cancel" class="ghost">Cancel</button><button type="button" id="modal-ok" class="danger"></button></div>
     </div>
   </div>
+  <ul id="openwith-menu" class="menu floating" role="menu" aria-label="Open with" hidden></ul>
   <div id="toast" class="toast" role="status" hidden></div>
 </body>
 </html>

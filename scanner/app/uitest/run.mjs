@@ -290,6 +290,146 @@ async function targetSetTests(scheme) {
   await page.close();
 }
 
+async function openWithTests(scheme) {
+  const page = await browser.newPage({ viewport: { width: 1320, height: 820 }, colorScheme: scheme });
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => m.type() === "error" && /Content Security Policy/i.test(m.text()) && errors.push(m.text()));
+  await page.addInitScript({ path: join(here, "mock.js") });
+  await page.goto(url);
+  await page.waitForFunction(() => document.getElementById("targets")?.value === "192.168.50.0/24");
+  const calls = () => page.evaluate(() => window.__calls);
+  const stored = () => page.evaluate(() => JSON.parse(localStorage.getItem("ztg-scanner:open-with")));
+  await page.click("#scan-btn");
+  await page.waitForFunction(() => document.getElementById("status-text").textContent.startsWith("Done:"));
+
+  // No commands yet: the menu says so and offers the editor.
+  await page.click('#rows tr[data-ip="192.168.50.20"]');
+  await page.click('#detail button[data-action="open-with"]');
+  await page.waitForSelector("#openwith-menu:not([hidden]) #openwith-manage");
+  assert.match(await page.textContent("#openwith-menu"), /No commands yet/);
+  await page.click("#openwith-manage");
+  await page.waitForSelector("#open-with:not([hidden])");
+
+  // Add a program command; the preview shows the exact argument vector, one argument per line.
+  await page.fill("#ow-name", "PuTTY");
+  await page.fill("#ow-program", "C:\\Program Files\\PuTTY\\putty.exe");
+  await page.fill("#ow-args", "-ssh\nadmin@{hostname}\n");
+  await page.fill("#ow-test-host", "srv-01.lab.lan");
+  await page.click("#ow-preview-btn");
+  await page.waitForFunction(() => document.getElementById("ow-preview").textContent.includes("srv-01.lab.lan"));
+  const preview = await page.textContent("#ow-preview");
+  assert.match(preview, /program {2}\[C:\\Program Files\\PuTTY\\putty.exe\]/);
+  assert.match(preview, /arg 1 {4}\[-ssh\]/);
+  assert.match(preview, /arg 2 {4}\[admin@srv-01.lab.lan\]/);
+  assert.equal((await calls()).filter((c) => c[0] === "OpenWith").length, 0, "preview must not launch");
+  await page.fill("#ow-test-host", "-oProxyCommand=calc");
+  await page.click("#ow-preview-btn");
+  await page.waitForFunction(() => document.getElementById("ow-preview").textContent.startsWith("Not usable"));
+  await page.fill("#ow-test-host", "srv-01.lab.lan");
+  await page.click("#ow-save");
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem("ztg-scanner:open-with") || "{}").commands?.length === 1);
+  assert.deepEqual(await stored(), { version: 1, commands: [{ name: "PuTTY", kind: "program", program: "C:\\Program Files\\PuTTY\\putty.exe", args: ["-ssh", "admin@{hostname}"] }] });
+
+  // A URL command, and a refused shell, which saves nothing.
+  await page.click("#ow-new");
+  await page.fill("#ow-name", "RMM console");
+  await page.selectOption("#ow-kind", "url");
+  assert.equal(await page.isVisible("#ow-program"), false);
+  await page.fill("#ow-url", "https://rmm.example.com/console?ip={ip}&name={hostname}");
+  await page.click("#ow-save");
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem("ztg-scanner:open-with") || "{}").commands?.length === 2);
+  await page.click("#ow-new");
+  await page.fill("#ow-name", "Shell");
+  await page.fill("#ow-program", "C:\\Windows\\System32\\cmd.exe");
+  await page.fill("#ow-args", "/c\n{ip}");
+  await page.click("#ow-save");
+  await page.waitForFunction(() => /shell or script host/.test(document.getElementById("ow-status").textContent));
+  assert.equal((await stored()).commands.length, 2, "a refused command must not be stored");
+  assert.equal(await page.locator("#ow-list option").count(), 2);
+
+  // Edit: selecting fills the form; saving under the same name replaces in place.
+  await page.selectOption("#ow-list", { index: 0 });
+  assert.equal(await page.inputValue("#ow-name"), "PuTTY");
+  assert.equal(await page.inputValue("#ow-args"), "-ssh\nadmin@{hostname}");
+  await page.fill("#ow-args", "-ssh\n-P\n22\nadmin@{hostname}");
+  await page.click("#ow-save");
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem("ztg-scanner:open-with")).commands[0].args.length === 4);
+  assert.equal((await stored()).commands.length, 2);
+  await page.click("#open-with-close");
+
+  // Survives a reload and is handed to the app again before any menu is built.
+  await page.reload();
+  await page.waitForFunction(() => document.getElementById("targets")?.value === "192.168.50.0/24");
+  await page.click("#scan-btn");
+  await page.waitForFunction(() => document.getElementById("status-text").textContent.startsWith("Done:"));
+
+  // The row menu, from the Open with button and from a right click. A name that is a valid DNS name enables
+  // both commands; a device with no name has the hostname commands disabled with the reason, and still lists them.
+  await page.click('#rows tr[data-ip="192.168.50.20"]');
+  await page.click('#detail button[data-action="open-with"]');
+  await page.waitForSelector('#openwith-menu button[data-command="PuTTY"]');
+  assert.equal(await page.isDisabled('#openwith-menu button[data-command="PuTTY"]'), false);
+  if (shots) await page.screenshot({ path: join(shots, `open-with-menu-${scheme}.png`) });
+  await page.click('#openwith-menu button[data-command="PuTTY"]');
+  await page.waitForFunction(() => window.__calls.some((c) => c[0] === "OpenWith"));
+  assert.deepEqual((await calls()).filter((c) => c[0] === "OpenWith").at(-1), ["OpenWith", "PuTTY", "192.168.50.20", false]);
+  assert.equal(await page.isHidden("#openwith-menu"), true, "menu closes after a choice");
+  await page.waitForFunction(() => document.getElementById("toast").textContent === "Opened PuTTY for 192.168.50.20");
+
+  await page.click('#rows tr[data-ip="192.168.50.120"]', { button: "right" });
+  await page.waitForSelector('#openwith-menu button[data-command="PuTTY"]');
+  assert.equal(await page.isDisabled('#openwith-menu button[data-command="PuTTY"]'), true);
+  assert.match(await page.textContent('#openwith-menu button[data-command="PuTTY"]'), /not a valid DNS name/);
+  assert.equal(await page.isDisabled('#openwith-menu button[data-command="RMM console"]'), true);
+  assert.equal(await page.evaluate(() => document.querySelector('#rows tr.selected')?.dataset.ip), "192.168.50.120");
+  const before = (await calls()).filter((c) => c[0] === "OpenWith").length;
+  await page.click('#openwith-menu button[data-command="PuTTY"]', { force: true, timeout: 1000 }).catch(() => {});
+  assert.equal((await calls()).filter((c) => c[0] === "OpenWith").length, before, "an unavailable command must not launch");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.isHidden("#openwith-menu"), true);
+
+  // Device-reported text is only ever text, even in the menu's reasons and the toast.
+  assert.equal(await page.locator("#openwith-menu img").count(), 0);
+  assert.equal(await page.evaluate(() => window.__pwned), undefined);
+
+  // Delete needs a confirmation.
+  await page.click("#settings-btn");
+  await page.click("#open-with-edit");
+  await page.selectOption("#ow-list", { index: 1 });
+  await page.click("#ow-delete");
+  await page.waitForSelector("#modal:not([hidden])");
+  await page.click("#modal-cancel");
+  assert.equal((await stored()).commands.length, 2);
+  await page.click("#ow-delete");
+  await page.click("#modal-ok");
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem("ztg-scanner:open-with")).commands.length === 1);
+  if (shots) await page.screenshot({ path: join(shots, `open-with-editor-${scheme}.png`) });
+
+  // Stored data that the app refuses leaves no command active and offers a reset; nothing is silently dropped.
+  await page.evaluate(() => localStorage.setItem("ztg-scanner:open-with", JSON.stringify({ version: 1, commands: [{ name: "Shell", kind: "program", program: "C:\\Windows\\System32\\cmd.exe", args: ["/c"] }] })));
+  await page.reload();
+  await page.waitForFunction(() => document.getElementById("targets")?.value === "192.168.50.0/24");
+  await page.click("#scan-btn");
+  await page.waitForFunction(() => document.getElementById("status-text").textContent.startsWith("Done:"));
+  await page.click('#rows tr[data-ip="192.168.50.20"]');
+  await page.click('#detail button[data-action="open-with"]');
+  await page.waitForSelector("#openwith-menu #openwith-manage");
+  assert.match(await page.textContent("#openwith-menu"), /could not be loaded/);
+  assert.equal(await page.locator("#openwith-menu button[data-command]").count(), 0);
+  await page.click("#openwith-manage");
+  assert.equal(await page.isVisible("#ow-reset"), true);
+  assert.equal(await page.isDisabled("#ow-save"), false);
+  await page.click("#ow-reset");
+  await page.click("#modal-ok");
+  await page.waitForFunction(() => localStorage.getItem("ztg-scanner:open-with") === null);
+  assert.equal(await page.isVisible("#ow-reset"), false);
+
+  assert.equal((await calls()).filter((c) => ["StartScan"].includes(c[0])).length >= 1, true);
+  assert.deepEqual(errors, [], "open with page errors");
+  await page.close();
+}
+
 try {
   for (const scheme of ["dark", "light"]) {
     const page = await browser.newPage({ viewport: { width: 1320, height: 820 }, colorScheme: scheme });
@@ -659,6 +799,8 @@ try {
     console.log(`ok  ${scheme} target sets`);
     await gentleTests(scheme);
     console.log(`ok  ${scheme} gentle mode`);
+    await openWithTests(scheme);
+    console.log(`ok  ${scheme} open with`);
   }
 } catch (e) {
   failed = true;

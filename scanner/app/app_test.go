@@ -25,6 +25,9 @@ type fakePlatform struct {
 	done   chan scan.Summary
 	saveTo string
 	opened []string
+	// programs records LaunchProgram calls (SC10).
+	programs  [][]string
+	launchErr error
 }
 
 func newFake(saveTo string) *fakePlatform {
@@ -45,6 +48,11 @@ func (f *fakePlatform) OpenFile(string, string, string) (string, error) { return
 func (f *fakePlatform) Launch(action, ip string) (string, error) {
 	f.opened = append(f.opened, action+":"+ip)
 	return "launched", nil
+}
+
+func (f *fakePlatform) LaunchProgram(argv []string) error {
+	f.programs = append(f.programs, append([]string(nil), argv...))
+	return f.launchErr
 }
 
 func webServer(t *testing.T) (*httptest.Server, string) {

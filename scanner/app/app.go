@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/zerotrustgarage/tools/scanner/internal/inventory"
+	"github.com/zerotrustgarage/tools/scanner/internal/openwith"
 	"github.com/zerotrustgarage/tools/scanner/internal/probe"
 	"github.com/zerotrustgarage/tools/scanner/internal/report"
 	"github.com/zerotrustgarage/tools/scanner/internal/scan"
@@ -41,6 +42,9 @@ type Platform interface {
 	OpenURL(url string)
 	OpenFile(title, filterName, pattern string) (string, error)
 	Launch(action, ip string) (string, error)
+	// LaunchProgram starts an installed program with an exact argument vector
+	// (argv[0] is the executable). It never involves a shell.
+	LaunchProgram(argv []string) error
 }
 
 // App is bound to the UI: its exported methods are callable from JavaScript.
@@ -62,6 +66,7 @@ type App struct {
 	revision      uint64
 	savedRevision uint64
 	filename      string
+	openWith      []openwith.Command // validated "Open with" commands from the technician's settings (SC10)
 }
 
 // NewApp returns an App; startup supplies the platform.

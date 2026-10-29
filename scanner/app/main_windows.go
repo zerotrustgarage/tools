@@ -6,9 +6,11 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -64,29 +66,9 @@ func (p wailsPlatform) Launch(action, ip string) (string, error) {
 		// os/exec supplies NUL for unspecified standard handles. CreateProcess
 		// without STARTF_USESTDHANDLES lets Windows attach SSH to a real console
 		// with keyboard input and visible output, while still avoiding a shell.
-		appName, err := winapi.UTF16PtrFromString(program)
-		if err != nil {
-			return "", err
-		}
-		argv := append([]string{program}, args...)
-		for i := range argv {
-			argv[i] = winapi.EscapeArg(argv[i])
-		}
-		commandLine, err := winapi.UTF16PtrFromString(strings.Join(argv, " "))
-		if err != nil {
-			return "", err
-		}
-		startup := winapi.StartupInfo{Cb: uint32(unsafe.Sizeof(winapi.StartupInfo{}))}
-		var process winapi.ProcessInformation
-		var flags uint32
-		if action == "ssh" {
-			flags = winapi.CREATE_NEW_CONSOLE
-		}
-		if err := winapi.CreateProcess(appName, commandLine, nil, nil, false, flags, nil, nil, &startup, &process); err != nil {
+		if err := startProcess(program, args, action == "ssh"); err != nil {
 			return "", fmt.Errorf("could not launch the installed %s client: %w", action, err)
 		}
-		_ = winapi.CloseHandle(process.Thread)
-		_ = winapi.CloseHandle(process.Process)
 		return "Opened the installed " + action + " client for " + ip, nil
 	}
 	ctx, cancel := context.WithTimeout(p.ctx, 30*time.Second)
@@ -100,6 +82,54 @@ func (p wailsPlatform) Launch(action, ip string) (string, error) {
 		return "", fmt.Errorf("%s: %w\n%s", action, err, output.String())
 	}
 	return output.String(), nil
+}
+
+// startProcess runs program with an exact argument vector through CreateProcess,
+// never through a shell. The program is passed as the application name, so
+// Windows does not search for it, and each argument is escaped as one element.
+func startProcess(program string, args []string, newConsole bool) error {
+	appName, err := winapi.UTF16PtrFromString(program)
+	if err != nil {
+		return err
+	}
+	argv := append([]string{program}, args...)
+	for i := range argv {
+		argv[i] = winapi.EscapeArg(argv[i])
+	}
+	commandLine, err := winapi.UTF16PtrFromString(strings.Join(argv, " "))
+	if err != nil {
+		return err
+	}
+	startup := winapi.StartupInfo{Cb: uint32(unsafe.Sizeof(winapi.StartupInfo{}))}
+	var process winapi.ProcessInformation
+	var flags uint32
+	if newConsole {
+		flags = winapi.CREATE_NEW_CONSOLE
+	}
+	if err := winapi.CreateProcess(appName, commandLine, nil, nil, false, flags, nil, nil, &startup, &process); err != nil {
+		return err
+	}
+	_ = winapi.CloseHandle(process.Thread)
+	_ = winapi.CloseHandle(process.Process)
+	return nil
+}
+
+// LaunchProgram starts a technician-defined "Open with" program (SC10). The
+// path was validated as an absolute .exe path; it must also exist as a regular
+// file now. The program runs detached, in its own console if it is a console
+// program, and its output is not captured.
+func (p wailsPlatform) LaunchProgram(argv []string) error {
+	if len(argv) == 0 {
+		return errors.New("no program to start")
+	}
+	info, err := os.Stat(argv[0])
+	if err != nil || !info.Mode().IsRegular() {
+		return errors.New("the program was not found at the saved path; check the command in Open with settings")
+	}
+	if err := startProcess(argv[0], argv[1:], true); err != nil {
+		return fmt.Errorf("could not start the program: %w", err)
+	}
+	return nil
 }
 
 func main() {

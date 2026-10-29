@@ -1,7 +1,8 @@
 # ZTG Scanner: design
 
-Status (October 23, 2026): slices S1 (engine and CLI), S2 (desktop app), S3 (SNMPv3 inventory) and S4 (packaging
-and release pipeline), and S5 (actions, local inventories and comparison) are built. Owner signing setup is
+Status (October 29, 2026): slices S1 (engine and CLI), S2 (desktop app), S3 (SNMPv3 inventory) and S4 (packaging
+and release pipeline), and S5 (actions, local inventories and comparison) are built, as are SC9 (saved target sets),
+SC10 (Open with commands) and SC13 (gentle mode). Owner signing setup is
 complete; S4's first signed release awaits a successful production release run. S6 is planned.
 
 ## 1. Purpose
@@ -184,6 +185,56 @@ standard service port; imported public addresses require a fresh authorization. 
 Wake-on-LAN is a separate, explicitly confirmed action: one magic packet to the most specific directly connected
 internal IPv4 network's broadcast address, never a forwarded or arbitrary broadcast. No credentials are persisted.
 
+### Open with commands (SC10)
+
+The technician can define up to 20 "Open with" commands in Settings, Open with commands. Each is either an installed
+program (an absolute path to an `.exe` plus one template per argument) or an `https://` address. They are chosen from
+an Open with menu on a result (the device pane button, or right-click on the row). Nothing launches except on that
+explicit choice, and Scanner bundles no remote access software: it starts whatever the technician already has
+installed, such as PuTTY or mstsc, or opens an RMM console link in the browser.
+
+Where commands live: only in the technician's local settings. The desktop UI keeps them in the WebView's local storage
+beside saved target sets, and hands the list to the app (`SetOpenWithCommands`), which validates it again and keeps
+the copy it launches from. A launch sends a command name and a result address; the app reads the hostname from its own
+results. Inventory files, exports and scan requests never carry commands, and a device cannot add or change one.
+
+Rules, all in `internal/openwith` and tested there:
+
+- Argument vectors, never shell strings. A program command is split into one template per argument when it is
+  saved, and a placeholder is substituted only inside its own element, so a value cannot add, remove or reorder
+  arguments. The process is started with CreateProcess and an exact vector (the same path S5 uses for SSH and RDP),
+  with the program as the application name so Windows does not search for it. No `cmd.exe /c`, PowerShell, `sh -c`
+  or other shell is used; those and other script hosts (`wscript`, `cscript`, `mshta`, `wsl`, `bash`, `rundll32`,
+  `regsvr32`, `cmdkey`, `runas` and similar) are refused as the program, as are `.bat`, `.cmd`, `.ps1`, `.vbs` and
+  `.lnk`. This guards against a mistake; it is not a sandbox, because any installed `.exe` the technician chooses
+  runs with the technician's rights.
+- Program path: absolute, on a drive letter, backslashes only, at most 260 ASCII characters, no `..`, UNC or device
+  paths, no environment variables, and it must exist as a regular file at launch.
+- `{ip}` is a parsed `net/netip` address rendered canonically (an IPv4-mapped IPv6 address becomes IPv4; zones,
+  unspecified and multicast addresses are refused).
+- `{hostname}` is the reverse DNS name if there is one, else the best name, and must be a strict DNS name: ASCII
+  letters, digits, hyphens and dots, labels of 1 to 63 characters that do not start or end with a hyphen, at most 253
+  characters, no trailing dot, and a last label that is not all digits. A name that fails is never cleaned up or
+  quoted; the command is shown as unavailable for that device, with the reason, and a command that does not use
+  `{hostname}` still works. This also means no device name can start with a hyphen and become an option.
+- URL commands must start with `https://` and have a literal host: placeholders, user names and passwords are
+  refused in the scheme and host part, so a device value can never choose the destination. Placeholders in the path
+  are path-escaped and in the query or fragment are query-escaped. The result is opened through the same browser
+  handoff as other links (`OpenURL`).
+- No other placeholders exist. There is no password placeholder, and a template that looks like it carries a password
+  or token (`-pw`, `--password`, `/pass:`, `token=` and similar) is refused. This is a heuristic for obvious cases;
+  it does not make storing a secret in some other form safe, and the settings text says Scanner stores no credentials.
+- Bounds: 20 commands, 60-character names (unique ignoring case), 16 arguments of up to 512 characters, 2,048-character
+  URLs, no control characters. A list is validated whole; an invalid one is refused and the previous list stays active.
+- The editor's Preview renders a command with a test address and hostname (checked by the same rules) and shows the
+  exact program and one bracketed line per argument, or the exact URL. It starts nothing.
+- Public addresses need the same fresh authorization as the other connection actions, and the address must be in the
+  current results.
+
+Unreadable or invalid stored commands leave none active, say why in the menu, and offer a reset in the editor.
+Real Windows launching of third-party clients has not been exercised in CI (Linux tests use a fake platform and the
+UI tests use a binding mock); the Windows paths are cross-compiled and vetted.
+
 ### Gentle mode (SC13)
 
 A named, opt-in scan mode for fragile networks (OT, medical, old printers). The user selects it (`--mode gentle`, or
@@ -225,7 +276,7 @@ and deletion requires confirmation. Storage failures must be reported as failure
 ## 10. Not in scope
 
 - Remote access (Advanced IP Scanner bundles Radmin; ZTG Scanner bundles no remote access software and installs
-  nothing on scanned hosts).
+  nothing on scanned hosts). SC10 only starts clients the technician already has, on the technician's choice.
 - Vulnerability scanning or exploitation.
 - Credential storage. SNMPv3 passphrases are entered per scan (CLI prompt or environment variable, GUI password
   fields), held in memory, and never written to disk, settings or exports.

@@ -44,7 +44,41 @@
     if (!normalized.length) throw "target list is empty";
     return normalized.join(", ");
   };
+  // Stand-ins for the Open with bindings (SC10). The real validation, rendering and launching are
+  // tested in Go (internal/openwith, app/openwith_test.go); this keeps only the shape the UI relies on.
+  let openWith = [];
+  const hostnameOK = (h) => /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*$/.test(h) && !/\.?\d+$/.test(h.split(".").pop() === h ? "" : h.split(".").pop());
+  const templatesOf = (c) => (c.kind === "url" ? [c.url] : c.args || []);
+  const usesHost = (c) => templatesOf(c).some((t) => t.includes("{hostname}"));
+  const openWithRender = (c, ip, host) => {
+    if (usesHost(c) && !hostnameOK(host)) throw "the device hostname is not a valid DNS name";
+    const sub = (t) => t.replaceAll("{ip}", ip).replaceAll("{hostname}", host);
+    return c.kind === "url" ? { kind: "url", url: sub(c.url) } : { kind: "program", argv: [c.program, ...(c.args || []).map(sub)] };
+  };
   window.go = { main: { App: {
+    SetOpenWithCommands: async (list) => {
+      calls.push(["SetOpenWithCommands", structuredClone(list)]);
+      if (window.__openWithRefuse) throw window.__openWithRefuse;
+      for (const c of list) {
+        if (!c.name || !c.name.trim()) throw "enter a name";
+        if (c.kind === "program" && /\\(cmd|powershell)\.exe$/i.test(c.program)) throw c.program.split("\\").pop() + " is a shell or script host and cannot be used; choose the program itself";
+      }
+      if (list.length > 20) throw "you can save up to 20 commands";
+      openWith = structuredClone(list).map((c) => ({ ...c, name: c.name.trim() }));
+      return structuredClone(openWith);
+    },
+    PreviewOpenWith: async (c, ip, host) => { calls.push(["PreviewOpenWith", c, ip, host]); return openWithRender(c, ip, host); },
+    OpenWithOptions: async (ip) => {
+      calls.push(["OpenWithOptions", ip]);
+      const h = currentHosts.find((x) => x.ip === ip);
+      if (!h) throw "that address is not in the results";
+      const host = h.dns_name || h.name || "";
+      return openWith.map((c) => {
+        try { openWithRender(c, ip, host); return { name: c.name, kind: c.kind, available: true }; }
+        catch (e) { return { name: c.name, kind: c.kind, available: false, reason: String(e) }; }
+      });
+    },
+    OpenWith: async (name, ip, allow) => { calls.push(["OpenWith", name, ip, allow]); if (!allow && ip === "8.8.8.8") throw "public address space needs authorization for this action"; return "Opened " + name + " for " + ip; },
     Version: async () => "0.2.0-test",
     Defaults: async () => ({ ports: "22,80,443", probes: { ports: true, banners: true, reverse_dns: true, netbios: true, mdns: true, ssdp: true }, concurrency: 128, timeout_ms: 800, max_hosts: 65536, snmp_auth_protocols: ["SHA", "SHA-256", "SHA-512"], snmp_priv_protocols: ["AES", "AES-256"],
       // Mirrors scan.GentleInfo() in internal/scan/plan.go.
