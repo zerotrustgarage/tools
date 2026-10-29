@@ -2,7 +2,7 @@
 
 Status (October 29, 2026): slices S1 (engine and CLI), S2 (desktop app), S3 (SNMPv3 inventory) and S4 (packaging
 and release pipeline), and S5 (actions, local inventories and comparison) are built, as are SC9 (saved target sets),
-SC10 (Open with commands), SC13 (gentle mode) and SC7 (scheduled rescans). Owner signing setup is
+SC10 (Open with commands), SC13 (gentle mode), SC7 (scheduled rescans) and SC11 (deeper identification). Owner signing setup is
 complete; S4's first signed release awaits a successful production release run. S6 is planned.
 
 ## 1. Purpose
@@ -19,7 +19,8 @@ cloud service, and keeps its results local unless the technician exports them.
 
 1. Identify, never intrude. Every default probe is a single standard protocol exchange that any client on the LAN may
    make (an ICMP echo, an ARP request, a TCP connect, one HTTP GET for `/`, one TLS handshake, a NetBIOS node status
-   query, an mDNS query, an SSDP search). Nothing authenticates, writes, or exploits. The one credentialed probe,
+   query, an mDNS query, an SSDP search, a WS-Discovery probe, an LLMNR name query, an SMB2 NEGOTIATE, one GET of
+   `/favicon.ico`). Nothing authenticates, writes, or exploits. The one credentialed probe,
    SNMPv3 (slice S3), is off by default, read-only, and enabled per scan with credentials the technician enters.
 2. Scope guard. Only private (RFC 1918), carrier-grade NAT, link-local and loopback space is scanned by default.
    Public space needs `--allow-public` (and, in the GUI, an explicit authorization confirmation). One scan is capped at
@@ -58,8 +59,10 @@ Per host, the engine runs:
    discovery list first; any connection or reset proves it is up, and the rest of the list follows. A reset counts as
    proof of life because only a live host sends one.
 3. Identification, in parallel, for live hosts: reverse DNS, NetBIOS node status (UDP 137), mDNS legacy unicast
-   (reverse name and DNS-SD service list, UDP 5353), service banners on open ports, and the UPnP device description
-   for hosts that answered the scan's one SSDP multicast search.
+   (reverse name and DNS-SD service list, UDP 5353), service banners on open ports, the UPnP device description
+   for hosts that answered the scan's one SSDP multicast search, the WS-Discovery answer (from the scan's one
+   multicast Probe), an LLMNR name query to on-link hosts, an SMB2 NEGOTIATE where TCP 445 was found open, and a
+   `/favicon.ico` fingerprint on web ports the banner probe identified (SC11, section 9).
 4. MAC vendor lookup (ARP MAC, else the NetBIOS unit ID, which crosses routers), best-name selection
    (DNS, then NetBIOS, then mDNS, then UPnP friendly name), classification and findings.
 
@@ -80,6 +83,10 @@ canceled scan keeps everything already established.
 | mDNS             | Legacy unicast PTR queries to the host (RFC 6762 6.7)        | `.local` hostname, advertised service types    |
 | SSDP and UPnP    | One multicast M-SEARCH; GET of the description on the device | Friendly name, manufacturer, model, type       |
 | Reverse DNS      | PTR lookup through the system resolver                       | DNS name                                       |
+| WS-Discovery     | One multicast Probe (UDP 3702); ProbeMatches parsed          | Device types, ONVIF name and hardware (SC11)   |
+| LLMNR            | Unicast PTR query over TCP 5355, TTL 1 (RFC 4795 2.4)        | Host name (SC11)                               |
+| SMB2 negotiate   | One NEGOTIATE on TCP 445 (open ports only); no session       | Highest dialect, signing policy, clock (SC11)  |
+| Favicon          | One GET `/favicon.ico` on identified web ports               | Icon hash (SHA-256 and MurmurHash3) (SC11)     |
 
 ## 5. Findings
 
@@ -246,8 +253,10 @@ connections per host, one echo request per host, a 1500 ms connect timeout, TCP 
 8080 and 9100, and a shared pacer that allows one probe start every 100 ms (10 per second) across all hosts. The
 pacer gates every probe start: echo, ARP, TCP connect, reverse DNS and, if ever enabled, banner grabs. It uses an
 injectable clock, so tests assert the schedule without real time. Probes in gentle mode are ICMP, ARP, TCP connect
-and reverse DNS only; banner grabs, NetBIOS, mDNS, SSDP and SNMP are off and a request to enable them is ignored
-(SNMP is rejected with an error). A request can ask for fewer hosts, a subset of the gentle ports, fewer probes or any positive connect timeout,
+and reverse DNS only; banner grabs, NetBIOS, mDNS, SSDP, WS-Discovery, LLMNR, SMB2 negotiate, favicon reads and
+SNMP are off and a request to enable them is ignored (SNMP is rejected with an error). `BuildPlan` builds the
+gentle probe set field by field, so a probe added later is off in gentle mode until someone decides otherwise,
+and the engine masks the SC11 probes again for a hand-built gentle `Config`. A request can ask for fewer hosts, a subset of the gentle ports, fewer probes or any positive connect timeout,
 never more, and malformed values fail with a message instead of being clamped. Cancellation interrupts a pending pacer wait. A gentle scan records
 `"mode": "gentle"` in the summary; default scans omit the field.
 
@@ -255,6 +264,96 @@ Gentle mode lowers load and skips the more intrusive probes; it is slower and id
 scan safe for every device, and the CLI help and the settings panel say so. The Desktop UI shows the selected numbers
 and the tradeoff from the same constants. Validation on real fragile equipment needs an approved lab and is not
 claimed here.
+
+### Deeper identification (SC11)
+
+Four more single standard exchanges, each with its own switch in Settings (Probes) and a `--no-...` flag
+(`--no-wsd`, `--no-llmnr`, `--no-smb`, `--no-favicon`; `--no-names` also turns LLMNR off, `--no-banners` turns the
+favicon read off because it needs the web services the banner probe finds, and `--no-ports` turns off SMB2 and the
+favicon read). In the default mode all four are on, as the other identification probes are; in gentle mode all four
+are off (see the gentle section). Every probe is bounded and paced like the others: the per-host exchanges wait for
+the pacer, run inside the probe timeout, and are cut short by Stop. Where a probe feeds the result, it appears in
+`methods` in the scan summary only if it actually ran.
+
+All replies are untrusted device text. They are parsed with strict size limits, stripped of control characters
+(`probe.CleanText`: control, bidirectional-override, zero-width, private-use and invalid UTF-8 characters are
+dropped, whitespace is collapsed, length is cut by rune), stored as optional fields, and shown with `textContent`
+only in the desktop UI and escaped by `html/template` and the CSV formula guard in the exports. Scanner never
+follows an address a reply names. A saved scan file is as untrusted as a reply: `report.Read` re-applies the same
+bounds and character checks to the SC11 fields and drops a record that is empty afterwards.
+
+WS-Discovery (`probe/wsd.go`). One SOAP 1.2 Probe for no particular type is sent once per scan to 239.255.255.250,
+UDP 3702, from an ordinary port, out of the default interface (as the SSDP search does, so other links are not
+reached). It is sent only when some target is on a directly connected network and in the scope guard's internal
+ranges, and answers from outside that scope are discarded. A reply counts only if it is a ProbeMatches message that
+answers this Probe (`RelatesTo` equals our message ID), is at most 32 KiB, has at most 4,000 XML tokens and 16 levels
+of nesting, and carries no DTD or entity declaration (SOAP forbids a DTD; refusing it removes entity-expansion
+attacks, and `encoding/xml` resolves no external entities in any case). It keeps `Types` (QName-shaped words only,
+16 at most), `Scopes` (printable ASCII URIs, 24), `XAddrs` (http or https URLs with a host and no user information,
+4; stored as text and never contacted) and, from the ONVIF scopes, the device name and hardware. Printers announce
+`PrintDeviceType` and `ScanDeviceType`, ONVIF cameras `NetworkVideoTransmitter`, Windows hosts `Computer`; the
+classifier reads the local part of those names (a device chooses its own prefix) and gives the reason. Responders per
+scan and datagrams read are bounded. The Windows firewall may drop the unicast ProbeMatches that arrive on a
+multicast-initiated socket, as it can for SSDP.
+
+LLMNR (`probe/llmnr.go`). RFC 4795 section 2.4 says a sender queries the PTR record of a known address by unicast,
+and that unicast LLMNR queries MUST be sent over TCP (unicast UDP queries are discarded by responders), with the
+IPv4 TTL set to 1 (section 2.5). Scanner does exactly that: one TCP connection to port 5355 of an on-link host,
+with `IP_TTL` 1 set before the connect (`golang.org/x/sys` on Windows, `syscall` elsewhere; a failure to set it
+aborts the query), one DNS-framed PTR query for the host's reverse name with every flag clear, and a parse of the
+answer. It accepts only a successful response with the same ID, QR set and our question echoed, and keeps the PTR
+answers (4 at most) that are plain hostnames (letters, digits, hyphens, underscores, dots; anything else is refused,
+not repaired). Scanner only asks. It never listens on 5355 and never sends a multicast LLMNR query, so it cannot
+answer or poison anyone's name lookups. Hardened networks disable LLMNR (it is a common poisoning target), and then
+nothing answers. The TCP framing (a two-byte length, as for DNS over TCP) follows the DNS convention that the RFC
+inherits; it has been tested only against loopback fakes built from the RFC.
+
+SMB2 negotiate (`probe/smb2.go`). For a host where the scan already found TCP 445 open: one connection, one
+NEGOTIATE request offering dialects 2.0.2 to 3.1.1 (with the pre-authentication integrity context 3.1.1 requires),
+signing enabled and not required, one response read. Scanner never sends SESSION_SETUP, never starts NTLM and never
+parses the security buffer (the SPNEGO token) or the negotiate contexts, so no challenge or credential material is
+ever touched. It reads the fixed fields: the highest dialect both sides support (which, because Scanner offers every
+dialect through 3.1.1, is the server's own maximum), the signing flags, the capability bits, the server GUID and the
+server's clock and start time. The operating system build and version are out of scope: SMB reveals them only inside
+the NTLMSSP challenge of a session setup, which is an authentication exchange. What Scanner reports instead is an
+`era_hint` inferred from the dialect (for example 3.0.2 is Windows 8.1 or Server 2012 R2 level, 3.1.1 is Windows 10
+or Server 2016 or newer, or a current Samba) and labeled as an inference, since Samba and appliances report any
+dialect. SMB1 is never spoken. Signing policy is recorded as a fact; Scanner does not turn it into a finding,
+because that would be a vulnerability judgement (design section 10). The classifier uses the dialect only as weak
+Windows evidence (2.0.2 to 3.0.2 with a Windows TTL).
+
+Favicon (`probe/favicon.go`). For each web service (at most four per host) that the banner probe identified as HTTP
+or HTTPS, one `GET /favicon.ico` on that port, over TLS where the service answered a TLS handshake. No cookies,
+credentials, referrer or redirects; the ZTG user agent identifies the request. Certificate verification is off for
+this read exactly as for the TLS identification probe (LAN devices use self-signed certificates, the reply is hashed
+and never trusted, nothing secret is sent). Only a `200` whose body is an image is accepted (recognized by its first
+bytes, or an `image/*` content type), and the body must be at most 64 KiB: a larger icon, a partial body or an
+HTML page that answers every path is not fingerprinted. Two hashes are recorded, plus size, content type and
+detected format. `sha256` of the icon bytes is Scanner's own identifier (used by comparison and reports). `mmh3` is the
+signed 32-bit MurmurHash3 (x86, seed 0) of the icon's MIME base64 text (lines of 76 characters, each ending in a
+newline, as Python's `base64.encodebytes` writes it), the value internet-scan search engines index as
+`http.favicon.hash`, so a technician can look it up there. Scanner ships no table that maps hashes to products. It has
+no source for one that it could verify and redistribute: the public collections of such mappings are third-party
+datasets whose licenses were not reviewed for this and whose entries cannot be checked here, and the clean-room rule
+(principle 5) means they are not copied on trust. A table can be added
+later from icons collected and verified from known devices, with the device and date recorded.
+
+Results flow into the existing model without breaking files: `wsd`, `llmnr` and `smb` are optional host fields,
+`favicon` an optional service field, and a host without them serializes exactly as before. Older files read fine;
+a file with SC11 fields is refused by an older Scanner like any file with fields it does not know. Best-name
+selection prefers DNS, NetBIOS, SNMP, then the LLMNR name, then mDNS, UPnP and last the ONVIF name. Comparison (SC6)
+reports a change in the LLMNR name, the WS-Discovery type set, the SMB2 dialect or signing flags, or a favicon hash
+on the same port, and only where both scans have that evidence (a probe that was off, filtered, or lost a UDP
+datagram is not a change); clock readings, GUIDs and capability bits are never compared. CSV gains seven columns at
+the end (`llmnr_name`, `wsd_types`, `wsd_name`, `smb_dialect`, `smb_signing`, `favicon_mmh3`, `favicon_sha256`), the
+HTML report a device-reported identification box, and the desktop detail pane, optional grid columns and comparison
+view the same fields. Settings saved by an earlier version take the current default for the four new switches (a
+probe the technician had switched off stays off); schedules saved earlier keep them off until re-saved.
+
+Not validated here: everything above is tested with parsers built from the specifications, fuzz targets and loopback
+fakes. WS-Discovery on a real multicast network (including the Windows firewall), LLMNR against real Windows
+responders, an SMB2 negotiate against real Windows and Samba servers, and favicons from real printers, cameras and
+NAS units need a real LAN and are not claimed.
 
 ### Saved target sets (SC9)
 
@@ -334,7 +433,9 @@ Boundaries, each tested (`internal/schedule`, `app/schedule_test.go`, `app/uites
 
 - Remote access (Advanced IP Scanner bundles Radmin; ZTG Scanner bundles no remote access software and installs
   nothing on scanned hosts). SC10 only starts clients the technician already has, on the technician's choice.
-- Vulnerability scanning or exploitation.
+- Vulnerability scanning or exploitation. This includes judging SMB signing, SMB1 or a LLMNR responder as a flaw.
+- Anything past the first SMB2 message: the operating system build and version from SMB need NTLMSSP in a session
+  setup, which Scanner does not start.
 - Credential storage. SNMPv3 passphrases are entered per scan (CLI prompt or environment variable, GUI password
   fields), held in memory, and never written to disk, settings or exports.
 - Any cloud reporting. Results stay on the technician's machine unless exported.

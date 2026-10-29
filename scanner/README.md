@@ -46,8 +46,12 @@ Scan flags (`ztg-scanner scan -h`):
 | `--ports LIST`       | 40 common ports | TCP ports and ranges, up to 1024                               |
 | `--no-ports`         | off             | Discovery only                                                 |
 | `--no-banners`       | off             | Open ports without service identification                      |
-| `--no-names`         | off             | Skip reverse DNS, NetBIOS and mDNS                             |
+| `--no-names`         | off             | Skip reverse DNS, NetBIOS, mDNS and LLMNR                      |
 | `--no-ssdp`          | off             | Skip the UPnP multicast search                                 |
+| `--no-wsd`           | off             | Skip the WS-Discovery multicast probe                          |
+| `--no-llmnr`         | off             | Skip the LLMNR name query to on-link hosts                     |
+| `--no-smb`           | off             | Skip the SMB2 NEGOTIATE on hosts with TCP 445 open             |
+| `--no-favicon`       | off             | Skip the `/favicon.ico` fingerprint (needs service banners)    |
 | `--mode M`           | default         | `default` or `gentle` (lower rate, fewer probes; see below)    |
 | `--concurrency N`    | 128             | Hosts scanned in parallel                                      |
 | `--timeout D`        | 800ms           | TCP connect timeout                                            |
@@ -74,22 +78,26 @@ setting uses the same definition, so both build the identical plan:
 | Echo requests per host  | 2                      | 1                                                              |
 | Connect timeout         | 800 ms                 | 1500 ms                                                        |
 | TCP ports               | 40 common ports        | 22, 80, 443, 445, 515, 631, 8080, 9100                         |
-| Other probes            | banners, NetBIOS, mDNS, SSDP | none; reverse DNS and ICMP/ARP liveness only. SNMP is refused |
+| Other probes            | banners, NetBIOS, mDNS, SSDP, WS-Discovery, LLMNR, SMB2, favicon | none; reverse DNS and ICMP/ARP liveness only. SNMP is refused |
 
 `--concurrency` may only ask for fewer hosts (at most 4) and `--ports` only for a subset of the eight gentle ports;
 anything else is rejected with an error rather than silently clamped. `--timeout` is free (any positive value),
 because it changes neither the rate nor the concurrency. Cancel (Ctrl-C, or Stop in the app) works at any point,
 including while a scan is waiting for its next probe slot.
 
-The tradeoff: gentle scans are slower and identify less (no service banners, names from NetBIOS, mDNS or UPnP, or
-SNMP inventory). Gentle mode reduces the load a scan creates; it does not make a scan harmless to every device.
+The tradeoff: gentle scans are slower and identify less (no service banners, names from NetBIOS, mDNS, UPnP or LLMNR, no WS-Discovery,
+SMB2 or favicon identification, and no SNMP inventory). Gentle mode reduces the load a scan creates; it does not make a scan harmless to every device.
 Get approval for fragile networks and watch them while you scan.
 
 ## What it learns
 
 Liveness from ICMP, ARP (on-link) and TCP (an open port or a reset); MAC vendor from the IEEE registry with
-randomized-MAC detection; names from reverse DNS, NetBIOS, mDNS and UPnP; services from banners, HTTP titles and
-realms, and TLS certificates; device type with the reason it was inferred; findings. See the probe catalogue in
+randomized-MAC detection; names from reverse DNS, NetBIOS, mDNS, LLMNR and UPnP; services from banners, HTTP titles and
+realms, and TLS certificates; device types announced over WS-Discovery (printers, ONVIF cameras, Windows hosts); the
+highest SMB2 dialect, signing policy and clock of file servers (from one NEGOTIATE, never a login); a hash of each
+web interface's icon; device type with the reason it was inferred; findings. The operating system build is not
+read: SMB reveals it only during authentication, which Scanner never starts. Everything a device reports is
+untrusted text and is shown and exported as text. See the probe catalogue in
 [docs/design.md](docs/design.md#4-probe-catalogue-s1).
 
 No administrator rights are needed on Windows. On Linux, ICMP needs `net.ipv4.ping_group_range` to include your group,

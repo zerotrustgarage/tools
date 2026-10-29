@@ -216,6 +216,27 @@ func changes(a, b scan.Host) []string {
 		return out
 	}
 	add("services", services(a), services(b))
+	// SC11 evidence is compared only where both scans have it, so turning a probe
+	// on or off, or one lost UDP datagram, is not reported as a device change.
+	// Clock readings, GUIDs and capability bits are never compared.
+	if a.LLMNR != nil && b.LLMNR != nil {
+		add("llmnr_name", a.LLMNR.Primary(), b.LLMNR.Primary())
+	}
+	if a.WSD != nil && b.WSD != nil {
+		add("wsd_types", sortedCopy(a.WSD.Types), sortedCopy(b.WSD.Types))
+	}
+	if a.SMB != nil && b.SMB != nil {
+		add("smb_dialect", a.SMB.Dialect, b.SMB.Dialect)
+		add("smb_signing", [2]bool{a.SMB.SigningEnabled, a.SMB.SigningRequired}, [2]bool{b.SMB.SigningEnabled, b.SMB.SigningRequired})
+	}
+	if x, y := favicons(a), favicons(b); len(x) > 0 && len(y) > 0 {
+		for port, sum := range x {
+			if other, ok := y[port]; ok && other != sum {
+				out = append(out, "favicon")
+				break
+			}
+		}
+	}
 	if a.SNMP != nil && b.SNMP != nil {
 		add("model", a.SNMP.Model, b.SNMP.Model)
 		add("serial", a.SNMP.Serial, b.SNMP.Serial)
@@ -223,4 +244,21 @@ func changes(a, b scan.Host) []string {
 		add("software", a.SNMP.Software, b.SNMP.Software)
 	}
 	return out
+}
+
+func sortedCopy(in []string) []string {
+	out := append([]string{}, in...)
+	sort.Strings(out)
+	return out
+}
+
+// favicons maps a port to the SHA-256 of the icon its web service served.
+func favicons(h scan.Host) map[int]string {
+	m := map[int]string{}
+	for _, s := range h.Services {
+		if s.Favicon != nil {
+			m[s.Port] = s.Favicon.SHA256
+		}
+	}
+	return m
 }

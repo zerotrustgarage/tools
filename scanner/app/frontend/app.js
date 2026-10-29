@@ -162,7 +162,10 @@ import { showUpdateDialog } from "./updates.js";
   const vendorOf = (h) => (h.mac_randomized ? "(private MAC)" : h.vendor || "");
   const worst = (h) => Math.max(0, ...(h.findings || []).map((f) => sevRank[f.severity] || 0));
 
-  const modelOf = (h) => (h.upnp && [h.upnp.model_name, h.upnp.model_number].filter(Boolean).join(" ")) || (h.snmp && h.snmp.model) || "";
+  const modelOf = (h) => (h.upnp && [h.upnp.model_name, h.upnp.model_number].filter(Boolean).join(" ")) || (h.snmp && h.snmp.model) || (h.wsd && h.wsd.hardware) || "";
+  const llmnrName = (h) => (h.llmnr && h.llmnr.names && h.llmnr.names[0]) || "";
+  const signingOf = (s) => (!s ? "" : s.signing_required ? "required" : s.signing_enabled ? "enabled, not required" : "not offered");
+  const faviconSummary = (h) => (h.services || []).filter((s) => s.favicon).map((s) => s.port + ":" + s.favicon.sha256.slice(0, 12)).join(" ");
   const serviceSummary = (h) =>
     (h.services || []).map((s) => s.port + "/" + s.name + (s.http && s.http.title ? ' "' + s.http.title + '"' : s.product ? " " + s.product : "")).join("; ");
 
@@ -185,6 +188,9 @@ import { showUpdateDialog } from "./updates.js";
     { key: "netbios", label: "NetBIOS name", width: 150, hidden: true, text: (h) => (h.netbios && h.netbios.computer) || "" },
     { key: "workgroup", label: "Workgroup", width: 120, hidden: true, text: (h) => (h.netbios && h.netbios.workgroup) || "" },
     { key: "mdns", label: "mDNS name", width: 180, hidden: true, text: (h) => (h.mdns && h.mdns.hostname) || "" },
+    { key: "llmnr", label: "LLMNR name", width: 150, hidden: true, text: llmnrName },
+    { key: "wsd", label: "WS-Discovery types", width: 220, hidden: true, text: (h) => (h.wsd && (h.wsd.types || []).join(" ")) || "" },
+    { key: "smb", label: "SMB dialect", width: 100, hidden: true, text: (h) => (h.smb && h.smb.dialect) || "" },
     { key: "model", label: "Model", width: 170, hidden: true, text: modelOf },
     { key: "serial", label: "Serial", width: 150, hidden: true, mono: true, text: (h) => (h.snmp && h.snmp.serial) || "" },
     { key: "firmware", label: "Firmware", width: 130, hidden: true, text: (h) => (h.snmp && (h.snmp.firmware_rev || h.snmp.software_rev)) || "" },
@@ -241,7 +247,7 @@ import { showUpdateDialog } from "./updates.js";
     const hay = [
       h.ip, h.name, h.mac, h.vendor, h.type, h.dns_name, h.notes, ...(h.tags || []),
       h.netbios && h.netbios.computer, h.netbios && h.netbios.workgroup,
-      h.mdns && h.mdns.hostname, h.upnp && h.upnp.manufacturer, h.upnp && h.upnp.model_name,
+      h.mdns && h.mdns.hostname, llmnrName(h), h.wsd && h.wsd.name, h.upnp && h.upnp.manufacturer, h.upnp && h.upnp.model_name,
       h.snmp && h.snmp.sys_name, h.snmp && h.snmp.model, h.snmp && h.snmp.serial, h.snmp && h.snmp.sys_location,
       ...(h.services || []).flatMap((s) => [String(s.port), s.name, s.product, s.http && s.http.title]),
     ].filter(Boolean).join(" ").toLowerCase();
@@ -462,6 +468,9 @@ import { showUpdateDialog } from "./updates.js";
         ["Issuer", s.tls && (s.tls.self_signed ? "self-signed" : s.tls.issuer)],
         ["Names", s.tls && (s.tls.dns_names || []).join(", ")],
         ["Expires", s.tls && s.tls.not_after && s.tls.not_after.slice(0, 10)],
+        ["Icon SHA-256", s.favicon && s.favicon.sha256],
+        ["Icon MurmurHash3", s.favicon && String(s.favicon.mmh3)],
+        ["Icon type", s.favicon && [s.favicon.format, s.favicon.size ? s.favicon.size + " bytes" : ""].filter(Boolean).join(", ")],
       ]),
     );
   }
@@ -503,6 +512,7 @@ import { showUpdateDialog } from "./updates.js";
         ["NetBIOS", nb && nb.computer],
         ["Workgroup", nb && nb.workgroup],
         ["mDNS", md && md.hostname],
+        ["LLMNR", h.llmnr && (h.llmnr.names || []).join(", ")],
         ["UPnP name", up && up.friendly_name],
         ["UPnP server", up && up.server],
       ])),
@@ -519,6 +529,23 @@ import { showUpdateDialog } from "./updates.js";
         ["Interfaces", h.snmp.interfaces],
         ["Uptime", h.snmp.uptime_seconds ? Math.floor(h.snmp.uptime_seconds / 86400) + " days" : ""],
         ["Object ID", h.snmp.sys_object_id],
+      ]) : null),
+      // Everything in the next two sections is what the device itself reported.
+      ...section("WS-Discovery (device-reported)", h.wsd ? kv([
+        ["Types", (h.wsd.types || []).join(" ")],
+        ["ONVIF name", h.wsd.name],
+        ["ONVIF hardware", h.wsd.hardware],
+        ["Scopes", (h.wsd.scopes || []).join("  ")],
+        ["Announced addresses (not contacted)", (h.wsd.xaddrs || []).join("  ")],
+      ]) : null),
+      ...section("SMB2 negotiate (server-reported)", h.smb ? kv([
+        ["Highest dialect", h.smb.dialect],
+        ["Era (inferred from dialect)", h.smb.era_hint],
+        ["Signing", signingOf(h.smb)],
+        ["Capabilities", (h.smb.capabilities || []).join(", ")],
+        ["Server clock (UTC)", h.smb.system_time],
+        ["Server start time (UTC)", h.smb.start_time],
+        ["Server GUID", h.smb.server_guid],
       ]) : null),
       ...section("Advertised services (mDNS)", md && md.services && md.services.length ? el("div", { class: "chips" }, md.services.map((s) => el("span", { text: s }))) : null),
       ...section("Open ports", (h.services || []).map((s) => serviceCard(h, s))),
@@ -1375,6 +1402,11 @@ import { showUpdateDialog } from "./updates.js";
         (c.fields || []).map(field => {
           const value = host => {
             if (field === "services") return serviceSummary(host) || "none";
+            if (field === "llmnr_name") return llmnrName(host) || "unknown";
+            if (field === "wsd_types") return (host.wsd && (host.wsd.types || []).slice().sort().join(" ")) || "unknown";
+            if (field === "smb_dialect") return (host.smb && host.smb.dialect) || "unknown";
+            if (field === "smb_signing") return signingOf(host.smb) || "unknown";
+            if (field === "favicon") return faviconSummary(host) || "unknown";
             if (["model", "serial", "firmware", "software"].includes(field)) {
               const key = field === "firmware" ? "firmware_rev" : field === "software" ? "software_rev" : field;
               return (host.snmp && host.snmp[key]) || "unknown";
@@ -1511,6 +1543,9 @@ import { showUpdateDialog } from "./updates.js";
     const d = state.defaults;
     const saved = store.get("settings", null);
     state.settings = saved && saved.probes ? saved : { ports: d.ports, probes: { ...d.probes }, concurrency: d.concurrency, timeout_ms: d.timeout_ms };
+    // Settings saved by an earlier version have no entry for probes added since;
+    // those take the current default, and a probe the user switched off stays off.
+    for (const k of Object.keys(d.probes)) if (!(k in state.settings.probes)) state.settings.probes[k] = d.probes[k];
     state.settings.probes.snmp = false; // opt-in for each session
     state.settings.mode = state.settings.mode === "gentle" ? "gentle" : "default";
     const fill = (sel, opts, cur) => {
@@ -1546,7 +1581,7 @@ import { showUpdateDialog } from "./updates.js";
       $("gentle-summary").textContent = "Settings: " + g.concurrency + " hosts at a time, " + g.port_concurrency +
         " connections per host, at most " + g.probes_per_second + " probe starts per second in total, " +
         g.timeout_ms + " ms connect timeout, TCP ports " + g.ports.join(", ") +
-        ". Service banners, NetBIOS, mDNS, UPnP and SNMP are skipped.";
+        ". Service banners, NetBIOS, mDNS, UPnP, WS-Discovery, LLMNR, SMB, favicon and SNMP probes are skipped.";
       $("gentle-tradeoff").textContent = g.tradeoff;
     }
     // Show the probes that will really run, not stale checkboxes.

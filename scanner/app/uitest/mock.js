@@ -13,12 +13,15 @@
       services: [{ port: 443, name: "https", product: "", tls: { version: "TLS 1.3", subject: "CN=FortiGate", issuer: "CN=FortiGate", self_signed: true, not_after: "2027-03-01T00:00:00Z", sha256: "ab" }, http: { status: 200, title: "FortiGate Login" } }] },
     { ip: "192.168.50.20", status: "up", name: "FRONTDESK-PC", type: "Windows host", type_reason: "Windows RPC (135) and SMB (445) open", mac: "00:1b:21:aa:bb:cc", vendor: "Intel Corporate", evidence: ["icmp", "arp"], rtt_ms: 1.2, ttl: 128,
       netbios: { computer: "FRONTDESK-PC", workgroup: "LAB", names: [{ name: "FRONTDESK-PC", suffix: 0, group: false }, { name: "LAB", suffix: 0, group: true }] },
+      llmnr: { names: ["frontdesk-pc"] },
+      smb: { dialect: "3.0.2", signing_enabled: true, signing_required: false, capabilities: ["dfs", "leasing"], server_guid: "12345678-9abc-def0-0102-030405060708", system_time: "2026-10-29T12:00:00Z", era_hint: "Highest dialect SMB 3.0.2: Windows 8.1 or Server 2012 R2 era, or a Samba or NAS release of that age" },
       services: [{ port: 135, name: "msrpc" }, { port: 445, name: "smb" }, { port: 3389, name: "rdp" }] },
     { ip: "192.168.50.40", status: "up", name: "NVR", type: "IP camera / NVR", type_reason: "vendor hikvision", mac: "44:19:b6:01:02:03", vendor: "Hangzhou Hikvision Digital Technology Co.,Ltd.", evidence: ["arp", "tcp-open"],
+      wsd: { types: ["dn:NetworkVideoTransmitter"], scopes: ["onvif://www.onvif.org/name/Cam"], xaddrs: ["http://192.168.50.40/onvif/device_service"], name: '<img src=x onerror="window.__pwned=1">Cam', hardware: "DS-2CD<b>1</b>" },
       services: [{ port: 23, name: "telnet", banner: "login:" }, { port: 80, name: "http", http: { status: 200, title: '<img src=x onerror="window.__pwned=1">Camera' } }, { port: 554, name: "rtsp" }],
       findings: [{ severity: "high", code: "ndaa-889", message: "Hardware from a vendor named in NDAA section 889." }, { severity: "high", code: "telnet", message: "Telnet is open: administration in cleartext." }] },
     { ip: "192.168.50.77", status: "up", name: "Office-Printer.local", type: "Printer", type_reason: "advertises _ipp._tcp over mDNS", mac: "30:05:5c:11:22:33", vendor: "Brother Industries, LTD.", evidence: ["icmp", "arp"],
-      mdns: { hostname: "Office-Printer.local", services: ["_http._tcp", "_ipp._tcp", "_printer._tcp"] }, services: [{ port: 80, name: "http", http: { status: 200, title: "Brother HL-L2350DW" } }, { port: 9100, name: "jetdirect" }] },
+      mdns: { hostname: "Office-Printer.local", services: ["_http._tcp", "_ipp._tcp", "_printer._tcp"] }, services: [{ port: 80, name: "http", http: { status: 200, title: "Brother HL-L2350DW" }, favicon: { sha256: "33d499a752b8bfaddefd2358485f5e2014da2570d1e5f8b2e94b5cd87c0b6cb8", mmh3: -1338840234, size: 200, content_type: "image/x-icon", format: "ico" } }, { port: 9100, name: "jetdirect" }] },
     { ip: "192.168.50.120", status: "up", name: "", type: "Private-MAC device (phone, laptop or VM)", type_reason: "randomized MAC and no open ports", mac: "da:a1:19:00:00:01", mac_randomized: true, evidence: ["arp"] },
   ];
 
@@ -106,9 +109,9 @@
     },
     OpenWith: async (name, ip, allow) => { calls.push(["OpenWith", name, ip, allow]); if (!allow && ip === "8.8.8.8") throw "public address space needs authorization for this action"; return "Opened " + name + " for " + ip; },
     Version: async () => "0.2.0-test",
-    Defaults: async () => ({ ports: "22,80,443", probes: { ports: true, banners: true, reverse_dns: true, netbios: true, mdns: true, ssdp: true }, concurrency: 128, timeout_ms: 800, max_hosts: 65536, snmp_auth_protocols: ["SHA", "SHA-256", "SHA-512"], snmp_priv_protocols: ["AES", "AES-256"],
+    Defaults: async () => ({ ports: "22,80,443", probes: { ports: true, banners: true, reverse_dns: true, netbios: true, mdns: true, ssdp: true, wsd: true, llmnr: true, smb: true, favicon: true }, concurrency: 128, timeout_ms: 800, max_hosts: 65536, snmp_auth_protocols: ["SHA", "SHA-256", "SHA-512"], snmp_priv_protocols: ["AES", "AES-256"],
       // Mirrors scan.GentleInfo() in internal/scan/plan.go.
-      gentle: { mode: "gentle", label: "Gentle", concurrency: 4, port_concurrency: 2, probes_per_second: 10, timeout_ms: 1500, ports: [22, 80, 443, 445, 515, 631, 8080, 9100], probes: { ports: true, banners: false, reverse_dns: true, netbios: false, mdns: false, ssdp: false, snmp: false }, tradeoff: "Gentle mode lowers the load a scan puts on a network and skips the more intrusive probes. It is slower and identifies less: no service banners, NetBIOS, mDNS, UPnP or SNMP, and only a few ports. It reduces risk but does not remove it: any scan can upset a very fragile device, so get approval and watch the network." } }),
+      gentle: { mode: "gentle", label: "Gentle", concurrency: 4, port_concurrency: 2, probes_per_second: 10, timeout_ms: 1500, ports: [22, 80, 443, 445, 515, 631, 8080, 9100], probes: { ports: true, banners: false, reverse_dns: true, netbios: false, mdns: false, ssdp: false, wsd: false, llmnr: false, smb: false, favicon: false, snmp: false }, tradeoff: "Gentle mode lowers the load a scan puts on a network and skips the more intrusive probes. It is slower and identifies less: no service banners, NetBIOS, mDNS, UPnP, WS-Discovery, LLMNR, SMB or favicon probes, no SNMP, and only a few ports. It reduces risk but does not remove it: any scan can upset a very fragile device, so get approval and watch the network." } }),
     Suggestions: async () => [{ interface: "Ethernet", address: "192.168.50.10", range: "192.168.50.0/24" }],
     Results: async (all) => snapshot(all),
     ValidateTargets: async (input) => {

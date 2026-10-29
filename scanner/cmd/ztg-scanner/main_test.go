@@ -190,3 +190,56 @@ func TestScanHelpDescribesGentleTradeoff(t *testing.T) {
 		t.Error("help overclaims or uses an em dash")
 	}
 }
+
+func TestSC11FlagsTurnProbesOffIndependently(t *testing.T) {
+	targets := []netip.Addr{netip.MustParseAddr("10.0.0.1")}
+	base := planFlags{mode: scan.ModeDefault, concurrency: 128, timeout: 800 * time.Millisecond}
+	probesFor := func(mod func(f *planFlags)) scan.Probes {
+		f := base
+		mod(&f)
+		req, err := planRequest(f, targets)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return req.Probes
+	}
+	all := scan.DefaultProbes
+	if !all.WSD || !all.LLMNR || !all.SMB || !all.Favicon {
+		t.Fatalf("defaults %+v", all)
+	}
+	for name, tc := range map[string]struct {
+		mod  func(f *planFlags)
+		want scan.Probes
+	}{
+		"no-wsd":     {func(f *planFlags) { f.noWSD = true }, withProbes(all, func(p *scan.Probes) { p.WSD = false })},
+		"no-llmnr":   {func(f *planFlags) { f.noLLMNR = true }, withProbes(all, func(p *scan.Probes) { p.LLMNR = false })},
+		"no-smb":     {func(f *planFlags) { f.noSMB = true }, withProbes(all, func(p *scan.Probes) { p.SMB = false })},
+		"no-favicon": {func(f *planFlags) { f.noFavicon = true }, withProbes(all, func(p *scan.Probes) { p.Favicon = false })},
+		"no-names": {func(f *planFlags) { f.noNames = true }, withProbes(all, func(p *scan.Probes) {
+			p.ReverseDNS, p.NetBIOS, p.MDNS, p.LLMNR = false, false, false, false
+		})},
+		"no-banners": {func(f *planFlags) { f.noBanners = true }, withProbes(all, func(p *scan.Probes) { p.Banners, p.Favicon = false, false })},
+		"no-ports": {func(f *planFlags) { f.noPorts = true }, withProbes(all, func(p *scan.Probes) {
+			p.Ports, p.Banners, p.SMB, p.Favicon = false, false, false, false
+		})},
+	} {
+		if got := probesFor(tc.mod); got != tc.want {
+			t.Errorf("%s: probes %+v, want %+v", name, got, tc.want)
+		}
+	}
+}
+
+func withProbes(p scan.Probes, f func(*scan.Probes)) scan.Probes { f(&p); return p }
+
+func TestSC11FlagsDoNotChangeGentle(t *testing.T) {
+	// Gentle mode ignores the toggles because it never runs these probes.
+	targets := []netip.Addr{netip.MustParseAddr("10.0.0.1")}
+	req, err := planRequest(planFlags{mode: scan.ModeGentle}, targets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := scan.BuildPlan(req)
+	if err != nil || p.Probes.WSD || p.Probes.LLMNR || p.Probes.SMB || p.Probes.Favicon {
+		t.Fatalf("%+v %v", p.Probes, err)
+	}
+}

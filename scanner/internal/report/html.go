@@ -38,7 +38,9 @@ type htmlHost struct {
 	scan.Host
 	Anchor                            string
 	Ports, Discovery, Model, Firmware string
-	Findings                          []classify.Finding
+	// Extra is the device-reported text of the SC11 probes, one item per line.
+	Extra    string
+	Findings []classify.Finding
 }
 
 func makeHTMLView(d Document) htmlView {
@@ -73,12 +75,53 @@ func makeHTMLView(d Document) htmlView {
 	SortHosts(hosts)
 	for i, h := range hosts {
 		x := htmlHost{Host: h, Anchor: fmt.Sprintf("host-%05d", i+1), Ports: Ports(h), Findings: append([]classify.Finding(nil), h.Findings...)}
-		x.Discovery = joinNonempty(" · ", h.DNSName, netbiosName(h), mdnsName(h), upnpName(h))
+		x.Discovery = joinNonempty(" · ", h.DNSName, netbiosName(h), h.LLMNR.Primary(), mdnsName(h), upnpName(h))
+		x.Extra = extraIdentification(h)
 		x.Model = joinNonempty(" · ", snmpModel(h), upnpModel(h))
 		x.Firmware = joinNonempty(" · ", snmpFirmware(h))
 		v.Hosts = append(v.Hosts, x)
 	}
 	return v
+}
+
+// extraIdentification lists what WS-Discovery, SMB2 and the favicon probe
+// recorded. Everything is device-reported and is escaped by the template; the
+// addresses a device announced are shown as text and never as links.
+func extraIdentification(h scan.Host) string {
+	var lines []string
+	if w := h.WSD; w != nil {
+		if len(w.Types) > 0 {
+			lines = append(lines, "WS-Discovery types: "+strings.Join(w.Types, ", "))
+		}
+		if w.Name != "" || w.Hardware != "" {
+			lines = append(lines, "ONVIF name / hardware: "+joinNonempty(" / ", w.Name, w.Hardware))
+		}
+		if len(w.XAddrs) > 0 {
+			lines = append(lines, "WS-Discovery addresses (announced by the device, not contacted): "+strings.Join(w.XAddrs, ", "))
+		}
+	}
+	if s := h.SMB; s != nil {
+		line := "SMB2 negotiate: dialect " + s.Dialect + ", signing " + SigningPolicy(s)
+		if len(s.Capabilities) > 0 {
+			line += ", capabilities " + strings.Join(s.Capabilities, " ")
+		}
+		lines = append(lines, line)
+		if s.SystemTime != "" {
+			lines = append(lines, "SMB2 server clock (UTC): "+s.SystemTime)
+		}
+		if s.ServerGUID != "" {
+			lines = append(lines, "SMB2 server GUID: "+s.ServerGUID)
+		}
+		if s.EraHint != "" {
+			lines = append(lines, s.EraHint+" (an inference from the dialect, not a measured version)")
+		}
+	}
+	for _, sv := range h.Services {
+		if f := sv.Favicon; f != nil {
+			lines = append(lines, fmt.Sprintf("Favicon on port %d: SHA-256 %s, MurmurHash3 %d, %d bytes", sv.Port, f.SHA256, f.MMH3, f.Size))
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func annotationEmpty(a scan.Annotation) bool {
