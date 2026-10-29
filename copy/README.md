@@ -84,6 +84,9 @@ go build -trimpath -o dist/ztg-copy.exe ./cmd/ztg-copy
 ./dist/ztg-copy.exe flags --search encryption
 ./dist/ztg-copy.exe explain 'robocopy "C:\data space" "D:\backup" /MIR /R:2'
 ./dist/ztg-copy.exe import --output my-job.json 'robocopy "C:\data space" "D:\backup" /E /MT:8'
+./dist/ztg-copy.exe explain --rcj saved.rcj
+./dist/ztg-copy.exe import --rcj --output my-job.json --accept saved.rcj
+./dist/ztg-copy.exe export --rcj my-job.json my-job.rcj
 ./dist/ztg-copy.exe validate my-job.json
 ./dist/ztg-copy.exe plan my-job.json
 ./dist/ztg-copy.exe run my-job.json
@@ -105,6 +108,14 @@ volume roots, reparse points in either tree, network endpoints, destructive/priv
 options, external Robocopy jobs, and user-supplied logging controls. Those switches remain
 available in `explain`. These restrictions stay until their later safety/network slices pass.
 Long identity paths are kept separate from the original invocation paths.
+
+## Robocopy job files (.RCJ)
+
+`explain --rcj` and `import --rcj` read a job file that Robocopy's `/SAVE:` wrote; `export --rcj` writes one
+from a job. Nothing is run. Import keeps unknown and hidden switches and flags them, shows the explanation first, and
+saves only with `--output` and `--accept`. Export refuses a job with errors, never writes `/REG` or a credential,
+and includes the safe defaults. The format reading is conservative and still to be checked on real Windows; see
+[design section 9.4](docs/design.md).
 
 ## Jobs and evidence
 

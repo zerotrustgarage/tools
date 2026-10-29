@@ -67,7 +67,9 @@ internal/catalog     embedded option catalog: groups, help, tags, conflicts, imp
 internal/job         job model (endpoints, file filters, options, metadata), JSON load and save, validation
 internal/template    saved templates: placeholders, substitution, library storage, import and export
 internal/cmdline     argument rendering, Windows command-line tokenizer for import, cmd and PowerShell quoting
-                     for display, .RCJ job file read and write (fuzzed)
+                     for display
+internal/rcj         .RCJ job file read and write (section 9.4; fuzzed). A package of its own because it
+                     builds on internal/job, which already imports cmdline
 internal/probe       robocopy.exe discovery, version, hash and supported options; privileges and elevation;
                      volume, drive and free space facts; SMB connection facts; BitLocker state
 internal/netconn     temporary deviceless SMB connections with alternate credentials; Windows credential dialog;
@@ -84,7 +86,8 @@ app/                 desktop app (separate Go module, Wails v2, as in ZTG Scanne
 The catalog is data (embedded JSON), generated from or checked against [flags.md](flags.md) in CI. Each entry has:
 token, group, argument type (none, number, size with units, date or days, attribute letters, copy flags, list,
 time window, path), default, short and long help, tags (destructive, privileged, conflict, detect, hidden),
-`conflicts_with`, `implies` (for example `/MIR` implies `/E` and `/PURGE`, `/SEC` sets `/COPY:DATS`), `requires`
+`type` (flag, number, size, age, attributes, copyflags, dirflags, window, yesno, path, names or text; `job.CheckValue`
+validates a value against it), `conflicts_with`, `implies` (for example `/MIR` implies `/E` and `/PURGE`, `/SEC` sets `/COPY:DATS`), `requires`
 (`/SECFIX` needs a security copy flag), required privileges, and suggested presets.
 
 The runner, parser and metrics take a clock and an output stream as interfaces, so tests replay captured Robocopy
@@ -216,6 +219,9 @@ connection afterwards.
 ```
 ztg-copy flags [--search text]                       # the catalog, explained
 ztg-copy explain "robocopy C:\data \\nas\data /MIR"  # import a command and explain each option and its risks
+ztg-copy explain --rcj job.rcj                       # the same for a Robocopy job file (section 9.4)
+ztg-copy import --rcj --output job.json --accept job.rcj
+ztg-copy export --rcj job.json job.rcj               # write a job file (section 9.4)
 ztg-copy plan job.json                               # probes and preview; changes nothing
 ztg-copy run job.json --report .\runs                # preview, guards, copy, record
 ztg-copy run job.json --max-delete 50 --verify sample
@@ -293,6 +299,66 @@ ztg-copy template import nas-mirror.json                   # explains it and ask
 ```
 
 `template run` refuses to start while a placeholder without a default is unfilled.
+
+### 9.4 RCJ job files
+
+Robocopy writes a job file with `/SAVE:name` and reads it with `/JOB:name`. The sources for this design
+(Microsoft's reference and SS64) give no grammar for it, and the repository holds no real sample. What follows is
+therefore a conservative reading, decided October 29, 2026, to be checked against files that a real Robocopy writes
+(see "Verification still needed"). Nothing here runs Robocopy.
+
+Reading (`explain --rcj FILE`, `import --rcj FILE`; `internal/rcj`):
+
+- Limits: 1 MiB, 10,000 lines, 32,766 bytes per line. Over any limit the import fails.
+- Encoding: UTF-16LE or BE with a byte order mark, UTF-8 with or without a mark, otherwise ANSI, which is read as
+  Windows-1252 with a warning (the code page is not in the file). UTF-16 without a mark, NUL bytes, control characters
+  other than tab and line breaks, odd UTF-16 lengths, unpaired surrogates and bytes undefined in Windows-1252 are
+  refused.
+- Lines: `::` starts a comment at the start of a line or after white space, outside quotes. Blank lines are ignored.
+  Each remaining line is split into arguments with the same Windows rules as a command line (`cmdline.Tokenize`), so
+  one line may hold one switch or several, and list items may sit on the following lines.
+- `/SD:path` and `/DD:path` set the source and destination. Unquoted, the value is the rest of the line (Robocopy
+  paths may hold spaces); an unquoted value holding a tab or " /" is refused as ambiguous. A repeated `/SD` or `/DD`
+  keeps the first and flags the repeat.
+- `/NOSD` and `/NODD` mean the file leaves out the path on purpose. They are consumed, the job has an empty path,
+  and the import says so; the job cannot run until the path is set. A path next to its own `/NO` switch is kept and
+  flagged.
+- `/IF` starts a file list: the arguments up to the next switch become the job's file filters (`Files`), which is
+  the same thing as the positional file names of a command.
+- Every other switch is kept in order in `Options`. It is looked up in the catalog, so principle 2 holds: unknown
+  switches, stray arguments, hidden switches (`/REG`, `/JOB`, `/SAVE`, `/DEBUG`) and bad values are kept and flagged
+  as errors by `job.Issues`, never dropped. Destructive switches get an import warning and still need the preview,
+  guards and confirmation of section 7; the runner allow-list refuses them today.
+- Nothing is executed, expanded or resolved. `/JOB` inside a job file is flagged, not followed.
+- `import --rcj` prints the explanation first. Saving needs `--output` and `--accept`, and never overwrites.
+- A comment of the form `:: ZTG-Copy-Name: text` (written by `export`) restores the job's name; Robocopy ignores it.
+
+Writing (`export --rcj JOB.json FILE.rcj`):
+
+- A job with any error (unknown or hidden option, bad value, missing path) is refused, so `/REG` is never written
+  and the file holds only catalog options. `/IF`, `/NOSD`, `/NODD` and `/QUIT` inside `Options` are refused too: they
+  describe the file, not the job.
+- The safe defaults the runner would add (`job.Arguments`: `/E`, `/DCOPY:DAT`, `/R:2`, `/W:5`, `/XJ`) are written, so
+  a plain `robocopy /JOB:file` run keeps them. A file therefore reads back to a job whose `Arguments()` are
+  identical, and exporting that job again gives the same text.
+- Layout: a comment header, then one tab-indented switch per line (`/SD:`, `/DD:`, `/IF` with its names, then the
+  options with list items on following lines). CRLF line endings. Arguments are quoted only when they hold a space,
+  tab, quote or `::`; for `/switch:value` only the value is quoted.
+- Encoding `auto` writes plain ASCII bytes (the same in ANSI and UTF-8, with no byte order mark to trip the engine)
+  and UTF-16LE with a mark only when the text holds other characters; `utf8` and `utf16` force one.
+- The file is created owner-only and never replaces an existing file. A job holds no credential field, so the file
+  holds none (principle 4).
+
+Verification still needed on real Windows: that `robocopy /JOB:file /QUIT` accepts an exported file in each encoding
+mode, including quoted values and a volume-root source (`/SD:C:\`); that a file written by `/SAVE:` (with `/NOSD`
+and `/NODD` too) reads back as expected, and how Robocopy reads non-ASCII text in a job file.
+
+Option and type validation (`job.CheckValue`, driven by the catalog `type`): numbers have the documented ranges
+(`/MT` 1 to 128, `/R` 0 to 1,000,000, `/W` 0 to 86,400, `/LEV`, `/MON`, `/MOT` at least 1); sizes are digits with an
+optional K, M or G (`/IOMAXSIZE`, `/IORATE`, `/THRESHOLD`, `/LFSM`) while `/MAX` and `/MIN` are plain bytes; ages are
+below 1900 (days) or a real YYYYMMDD date; attribute, copy and directory copy letters come from the sets in flags.md
+without repeats; `/RH` is `hhmm-hhmm`; `/SPARSE` is y or n; log and job paths have no wildcards, quotes or device
+prefixes; hidden options are errors in a job.
 
 ## 10. Run record and reports
 

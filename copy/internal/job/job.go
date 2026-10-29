@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"path"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -95,6 +94,9 @@ func textOK(s string) bool {
 	return utf8.ValidString(s) && !strings.ContainsFunc(s, func(r rune) bool { return r < 32 || r == 127 })
 }
 
+// TextOK reports whether s is valid text without control characters.
+func TextOK(s string) bool { return textOK(s) }
+
 func AbsoluteWindowsPath(s string) bool {
 	if !textOK(s) || strings.ContainsAny(s, "\"*?<>|") || strings.HasPrefix(s, `\\?\`) || strings.HasPrefix(s, `\\.\`) {
 		return false
@@ -143,6 +145,9 @@ func (j Job) Issues() []Issue {
 			add(a, "not recognized by this catalog; retained for review")
 			continue
 		}
+		if contains(o.Tags, "hidden") {
+			add(a, "hidden option: recognized for explanation only and never part of a job ("+hiddenReason(o.Token)+")")
+		}
 		if old, exists := seen[o.Token]; exists {
 			add(a, "duplicate option: "+old)
 		}
@@ -167,11 +172,8 @@ func (j Job) Issues() []Issue {
 			if strings.ContainsAny(value[1], "\x00\r\n") {
 				add(a, "invalid option value")
 			}
-			if min, max, numeric := numericRange(o.Token); numeric {
-				n, err := strconv.ParseUint(value[1], 10, 64)
-				if err != nil || n < min || n > max {
-					add(a, fmt.Sprintf("expected an integer from %d to %d", min, max))
-				}
+			if message := CheckValue(o, value[1]); message != "" {
+				add(a, message)
 			}
 		}
 		if o.Argument == "list" {
@@ -207,20 +209,25 @@ func (j Job) Issues() []Issue {
 	return issues
 }
 
-func numericRange(token string) (uint64, uint64, bool) {
-	switch token {
-	case "/MT":
-		return 1, 128, true
-	case "/R":
-		return 0, 1000000, true
-	case "/W":
-		return 0, 86400, true
-	case "/LEV", "/MON", "/MOT":
-		return 1, 1<<31 - 1, true
-	case "/MAX", "/MIN", "/IPG":
-		return 0, 1<<63 - 1, true
+func contains(values []string, value string) bool {
+	for _, v := range values {
+		if v == value {
+			return true
+		}
 	}
-	return 0, 0, false
+	return false
+}
+
+func hiddenReason(token string) string {
+	switch token {
+	case "/REG":
+		return "it silently changes Robocopy's retry defaults for every later run by this user"
+	case "/JOB":
+		return "it would load unreviewed options from another file"
+	case "/SAVE":
+		return "it would write a file instead of describing the job; use the export command"
+	}
+	return "undocumented by Microsoft"
 }
 
 // Arguments applies only absent defaults, preserving the imported arguments.
