@@ -250,6 +250,22 @@ only through the CLI and exports. Template commands are in section 9.3.
   Move to archive by age, Throttled over WAN (`/IORATE` where detected, else `/IPG` without `/MT`).
 - Templates: a library page and a quick-launch list (section 9.3).
 - Exports: `.cmd` and `.ps1` scripts with exit-code handling (0 to 7 success), an `.RCJ` job file, the job JSON.
+  Built today: the job JSON, the PowerShell command (copy to clipboard) and the `.RCJ` file. The `.cmd` and `.ps1`
+  run scripts for Robocopy jobs are not built (the BITS designer has its own `.ps1` export, section 17).
+- RCJ actions (built October 29, 2026; `app/rcj.go`, `app/frontend/rcj.js`; format in section 9.4). Import RCJ opens a
+  native file dialog and reads the file through `internal/rcj` with its limits. A review dialog comes first: the
+  file name, encoding and size, the source, destination and filters, the errors and warnings (job issues and import
+  notes) and every switch with its catalog help, tags and flags (unknown, stray, hidden, destructive, not enabled in
+  the runner). Nothing is dropped from the list; if a file has more than 300 unflagged switches the dialog counts
+  the rest, and flagged ones are always listed. The job is loaded into the designer only when the technician
+  confirms, and a file with anything flagged needs an acknowledgement box first. Loading saves nothing and runs
+  nothing; the designer's preview, guards and confirmations apply as for any job, and destructive switches are
+  still refused by the runner. Export RCJ applies the exporter's refusals before any dialog (a job with errors,
+  including `/REG`, shows the reason and no export button), shows the text and size, and offers the encoding: automatic
+  (default), UTF-8 or UTF-16. It then opens the native save dialog, creates the file owner-only through the same
+  private writer as the other exports, and refuses an existing file (the technician chooses a new name; nothing is
+  replaced). The result shows `robocopy /JOB:FILE /QUIT` as the way to have the installed Robocopy check the file;
+  Copy does not run it. File names and all file text reach the page through `textContent` only.
 - Elevation: the app runs as invoker; options that need elevation offer "Restart as administrator", which keeps the
   job.
 - Same model as ZTG Scanner: bound methods with no Wails imports, tested on any platform; plain HTML, CSS and
@@ -332,6 +348,8 @@ Reading (`explain --rcj FILE`, `import --rcj FILE`; `internal/rcj`):
 - Nothing is executed, expanded or resolved. `/JOB` inside a job file is flagged, not followed.
 - `import --rcj` prints the explanation first. Saving needs `--output` and `--accept`, and never overwrites.
 - A comment of the form `:: ZTG-Copy-Name: text` (written by `export`) restores the job's name; Robocopy ignores it.
+- The desktop app reads through the same code (`Import RCJ`, section 9.2): the explanation is shown in a review
+  dialog first and the job is loaded into the designer only after confirmation, with nothing saved or run.
 
 Writing (`export --rcj JOB.json FILE.rcj`):
 
@@ -347,7 +365,8 @@ Writing (`export --rcj JOB.json FILE.rcj`):
 - Encoding `auto` writes plain ASCII bytes (the same in ANSI and UTF-8, with no byte order mark to trip the engine)
   and UTF-16LE with a mark only when the text holds other characters; `utf8` and `utf16` force one.
 - The file is created owner-only and never replaces an existing file. A job holds no credential field, so the file
-  holds none (principle 4).
+  holds none (principle 4). The desktop app's `Export RCJ` uses the same formatter and encoder, applies the refusals
+  before opening the save dialog and shows the hint to run `robocopy /JOB:FILE /QUIT` (section 9.2).
 
 Verification still needed on real Windows: that `robocopy /JOB:file /QUIT` accepts an exported file in each encoding
 mode, including quoted values and a volume-root source (`/SD:C:\`); that a file written by `/SAVE:` (with `/NOSD`

@@ -10,7 +10,8 @@ Extract the desktop preview ZIP and open **ZTGCopy.exe**. The Windows WebView2 r
 be installed. The package also includes the CLI and checksums.
 
 - Design: browse for existing local folders, choose presets, edit catalog-backed options, import
-  and explain a command, and copy a safely quoted PowerShell command.
+  and explain a command, import or export a Robocopy job file (.RCJ, explained before it can be loaded;
+  see below), and copy a safely quoted PowerShell command.
 - Preview: review file/byte totals and extras, then confirm Start copy. Editing a job invalidates
   its preview approval. The runner also performs a fresh preview before copying.
 - Activity: phase status, elapsed time, completed phase totals, Stop and explicit convergence
@@ -114,7 +115,10 @@ Long identity paths are kept separate from the original invocation paths.
 `explain --rcj` and `import --rcj` read a job file that Robocopy's `/SAVE:` wrote; `export --rcj` writes one
 from a job. Nothing is run. Import keeps unknown and hidden switches and flags them, shows the explanation first, and
 saves only with `--output` and `--accept`. Export refuses a job with errors, never writes `/REG` or a credential,
-and includes the safe defaults. The format reading is conservative and still to be checked on real Windows; see
+and includes the safe defaults. The desktop app has Import RCJ and Export RCJ in the designer: Import shows the
+explanation (switches with their flags, import notes, errors and warnings) and loads the job into the designer
+only after you confirm; Export shows the text first, offers the encoding (automatic by default), and writes a
+new owner-only file through the save dialog without replacing an existing one. Neither runs Robocopy. The format reading is conservative and still to be checked on real Windows; see
 [design section 9.4](docs/design.md).
 
 ## Jobs and evidence

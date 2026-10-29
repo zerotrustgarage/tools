@@ -15,6 +15,15 @@ production support claim.
   unknown, hidden (`/REG`, `/JOB`, `/SAVE`, `/DEBUG`) and badly valued switches are kept and flagged. Export refuses jobs
   with errors (never writes `/REG`), writes the safe defaults and no credentials, and reads back to the same job
   arguments (property tests over generated jobs and a fuzz target, `FuzzRCJReader`).
+- RCJ in the desktop app (October 29, 2026; design sections 9.2 and 9.4; `app/rcj.go`, `app/frontend/rcj.js`):
+  Import RCJ reads through `internal/rcj` with its limits from a native open dialog and shows the explanation
+  (switches with unknown, hidden, destructive and not-enabled flags, list items, import notes, errors and warnings)
+  before anything is loaded; the job reaches the designer only after confirmation (an acknowledgement is required
+  when something is flagged), nothing is saved or run, and file text is inserted with `textContent` only. Export RCJ
+  applies the exporter's refusals before any dialog, shows the text and size, offers encoding auto (default), UTF-8
+  or UTF-16, writes through the native save dialog with the owner-only writer, never replaces a file, and shows the
+  `robocopy /JOB:FILE /QUIT` hint. Go tests use the app's fake platform; the UI tests drive both flows with the
+  binding mock. The native open and save dialogs and the Windows DACL still need a run on real Windows.
 - Typed option values from the catalog `type` field (`job.CheckValue`): numbers, sizes with units, day counts or
   dates, attribute and copy flag letters, run windows, y or n, and log paths. Hidden options are job errors.
 - Strict schema-versioned jobs. Unknown switches survive import and are flagged. Unknown fields
@@ -62,7 +71,7 @@ are treated as completed bytes.
   exported file in each encoding mode, a `/SAVE:` capture read back by `import --rcj`, and non-ASCII behavior. Wire
   `FuzzRCJReader` into `.github/workflows/copy.yml` (its seeds already run under `go test`).
 - Preset validation: design section 9.2 lists seven presets but the designer has three buttons; the listed option
-  sets validate (tests), but presets are not data yet. The desktop app has no RCJ import or export action.
+  sets validate (tests), but presets are not data yet.
 - More Windows releases/locales and optimized-copy fixtures as tracked in rc0.md.
 - Broader diagnostic format/locale coverage and the remaining run-record metadata required by
   design section 10. Grouped native-log error headers are implemented; other diagnostic formats
