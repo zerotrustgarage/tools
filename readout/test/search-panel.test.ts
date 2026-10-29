@@ -194,6 +194,7 @@ function appPlatform(): { platform: Platform; reads: string[] } {
     saveAs: async () => null,
     exportFile: async () => undefined,
     openExternal: async () => undefined,
+    copyRichText: async () => undefined,
     loadLocalImage: async () => null,
     initial: async () => ({ listing, file: file('README.md') }),
     remember: () => undefined,

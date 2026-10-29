@@ -1,4 +1,5 @@
 import { LISTED_EXTENSIONS, resolveInFolder, skipFolder } from '../core/paths';
+import { writeRichText } from './clipboard';
 import { FileTooLargeError, type Arrival, type FileRef, type Listing, type OpenedFile, type Platform } from './types';
 
 // Browser build. Files never leave the machine: they are read and written locally through the
@@ -244,6 +245,8 @@ export const webPlatform: Platform = {
   async exportFile(bytes, suggestedName) {
     download(bytes, suggestedName, 'text/html');
   },
+
+  copyRichText: writeRichText,
 
   async openExternal(url) {
     window.open(url, '_blank', 'noopener,noreferrer');

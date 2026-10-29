@@ -16,6 +16,7 @@ import { ExternalChangeWatcher, type WatchHost } from '../core/reload';
 import { defaultDocument, documentFor, resolveInFolder, resolveWikiLink, splitHref } from '../core/paths';
 import { postprocess } from '../core/postprocess';
 import { renderMarkdown } from '../core/render';
+import { blobUrlToDataUrl, buildRichText, fragmentForRange, isEmptyFragment } from '../core/richtext';
 import { DEFAULT_BOUNDS, type SearchMatch } from '../core/search';
 import type { Arrival, FileRef, Listing, OpenedFile, PendingSession, Platform } from '../platform/types';
 import { el, icon } from './dom';
@@ -119,6 +120,16 @@ export class App {
   private readonly modeButtons = new Map<ViewMode, HTMLButtonElement>();
   private readonly formatBar = el('div', { class: 'format-bar', role: 'toolbar', 'aria-label': 'Formatting' });
   private readonly themeButton = el('button', { class: 'icon-button', type: 'button' });
+  private readonly copyRichButton = el(
+    'button',
+    {
+      class: 'icon-button',
+      type: 'button',
+      title: 'Copy as rich text: the selection in the preview, or the whole document (pastes into Outlook, Teams and Word)',
+      'aria-label': 'Copy as rich text',
+    },
+    icon('copy'),
+  );
   private readonly backButton = el('button', { class: 'icon-button', type: 'button', title: 'Back (Alt+Left)', 'aria-label': 'Back', disabled: '' }, icon('back'));
   private readonly sidebar = new Sidebar(
     (path) => void this.openFolderPath(path, null, true),
@@ -209,6 +220,9 @@ export class App {
       this.applyTheme();
     });
     this.backButton.addEventListener('click', () => void this.back());
+    // A click on the button must not clear the selection in the preview that it is about to copy.
+    this.copyRichButton.addEventListener('mousedown', (event) => event.preventDefault());
+    this.copyRichButton.addEventListener('click', () => void this.copyRichText());
     this.outlineButton.addEventListener('click', () => this.toggleOutline());
     this.searchButton.addEventListener('click', () => this.toggleSearch());
 
@@ -231,6 +245,7 @@ export class App {
         el('span', { class: 'divider' }),
         this.outlineButton,
         this.searchButton,
+        this.copyRichButton,
         button('Export', 'Export as HTML', () => void this.exportHtml(), 'export'),
         button('Print', 'Print or save as PDF (Ctrl+P)', () => void this.print(), 'print'),
         this.measureButton,
@@ -830,6 +845,45 @@ export class App {
       await this.platform.exportFile(new TextEncoder().encode(html), name, 'html');
     } catch (error) {
       this.notify(`Could not export: ${message(error)}`);
+    }
+  }
+
+  /**
+   * Copy as rich text (core/richtext.ts): the selection in the preview when there is one, else the
+   * whole document. The clipboard gets text/html and text/plain together. The preview is only
+   * read; nothing is written to the document or to disk.
+   */
+  private async copyRichText(): Promise<void> {
+    let fragment: DocumentFragment | null = null;
+    const selection = window.getSelection();
+    // The selection is captured before anything is awaited: a render replaces the preview.
+    if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
+      const range = selection.getRangeAt(0);
+      if (this.preview.contains(range.commonAncestorContainer)) fragment = fragmentForRange(range, this.preview);
+    }
+    const whole = fragment === null;
+    try {
+      if (!fragment) {
+        // The preview is not kept current in edit mode, so it is rendered first.
+        window.clearTimeout(this.renderTimer);
+        await this.renderPreview();
+        const range = document.createRange();
+        range.selectNodeContents(this.preview);
+        fragment = range.cloneContents();
+      }
+      if (isEmptyFragment(fragment)) {
+        this.notify('There is nothing to copy.');
+        return;
+      }
+      const { html, text } = await buildRichText(fragment, { resolveImage: blobUrlToDataUrl });
+      await this.platform.copyRichText(html, text);
+      this.notify(
+        whole
+          ? 'Copied the whole document as rich text. Select part of the preview first to copy only that part.'
+          : 'Copied the selection as rich text.',
+      );
+    } catch (error) {
+      this.notify(`Could not copy: ${message(error)}`);
     }
   }
 

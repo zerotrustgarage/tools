@@ -13,6 +13,9 @@ These properties are requirements, each held by tests:
    `src/core/document.ts`, `test/line-endings.test.ts`). Invalid UTF-8 is never converted.
 2. Documents are untrusted input. Rendered HTML goes through `src/core/sanitize.ts`; remote
    content is never fetched; the CSP forbids inline and remote script. `test/sanitize.test.ts`.
+   Copy as rich text (RD11) obeys the same rule: `src/core/richtext.ts` sanitizes the copy before and
+   after rebuilding it, parses only in an inert document, fetches nothing, and takes its colours from
+   `design-tokens.json`. `test/richtext.test.ts`.
 3. The WebView holds no file system, dialog or shell permission. Every file operation is a Rust
    command in `src-tauri/src/lib.rs` limited to paths the user chose, and paths written in
    documents never name a drive, root or UNC host. A new command must be added to `build.rs`

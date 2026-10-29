@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { writeRichText } from './clipboard';
 import type { Arrival, FileRef, Listing, OpenedFile, Platform } from './types';
 
 // The WebView has no file system, dialog or shell permission. Every file operation is a Rust
@@ -137,6 +138,8 @@ export const desktopPlatform: Platform = {
   async exportFile(bytes, suggestedName) {
     await writeVia('export_html', bytes, { 'x-ztg-name': encodeURIComponent(suggestedName) });
   },
+
+  copyRichText: writeRichText,
 
   async openExternal(url) {
     await invoke('open_external', { url });

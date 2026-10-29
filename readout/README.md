@@ -59,6 +59,17 @@ returns along the links you followed.
     picker is watched the same way, but only while the page is visible. A file dropped on the
     page, a folder opened through the upload fallback (Firefox, Safari) and a file saved with
     the download fallback have no handle to read again, so they are not watched.
+- Copy as rich text (the copy button in the top bar) puts the rendered preview on the clipboard
+  so it pastes into Outlook, Teams or Word with its tables, code blocks, callouts and colours.
+  It copies the selection in the preview, or the whole document when nothing is selected, as
+  `text/html` and `text/plain` together. The HTML is a sanitized copy of the rendered output with
+  its styles inline, in the ZTG palette on a white background whatever theme the preview shows:
+  no script, no event handlers, no classes or ids, and no address that could be fetched. A
+  remote image is replaced by a note that names it without its address (remote images are never
+  fetched), a local image is embedded as a data URL (up to 2 MiB each), math is pasted as its
+  TeX source, and a diagram is replaced by a note because diagrams do not paste as rich text.
+  Folded callouts and `<details>` blocks are copied open. Callouts and code blocks are built as
+  single-cell tables, which is what Outlook and Word keep. The preview is only read.
 - The Outline button opens a panel with the document's headings as a tree (ATX and setext
   headings; none are taken from code blocks, comments or front matter). Click a heading, or use
   the arrow keys, Home and End and press Enter, to jump to it: the editor in edit and split view,

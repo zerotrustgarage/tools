@@ -142,6 +142,7 @@ async function started(initial: Uint8Array): Promise<Rig> {
     exportFile: async () => undefined,
     openExternal: async () => undefined,
     loadLocalImage: async () => null,
+    copyRichText: async () => undefined,
     initial: async () => ({ file: file(initial) }),
     remember: () => undefined,
     onDrop: () => undefined,
