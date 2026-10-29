@@ -67,7 +67,7 @@ func TestGentlePlanSettings(t *testing.T) {
 	if fmt.Sprint(p.Ports) != "[22 80 443 445 515 631 8080 9100]" {
 		t.Fatalf("ports %v", p.Ports)
 	}
-	if p.Probes != (Probes{Ports: true, ReverseDNS: true}) {
+	if p.Probes != (Probes{Ports: true, ReverseDNS: true, IPv6: true}) {
 		t.Fatalf("probes %+v", p.Probes)
 	}
 	if len(p.Ports) >= len(DefaultPorts) || p.Concurrency >= 128 {
@@ -105,7 +105,7 @@ func TestGentleMayOnlyAskForLess(t *testing.T) {
 		t.Fatalf("probes %+v", p.Probes)
 	}
 	on := base
-	on.Probes = Probes{Ports: true, Banners: true, NetBIOS: true, MDNS: true, SSDP: true, ReverseDNS: true}
+	on.Probes = Probes{Ports: true, Banners: true, NetBIOS: true, MDNS: true, SSDP: true, ReverseDNS: true, IPv6: true, IPv6Ping: true}
 	if p, _ := BuildPlan(on); p.Probes != GentleProbes {
 		t.Fatalf("gentle enabled extra probes: %+v", p.Probes)
 	}

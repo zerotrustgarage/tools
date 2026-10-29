@@ -36,16 +36,19 @@ const (
 var GentlePorts = []int{22, 80, 443, 445, 515, 631, 8080, 9100}
 
 // GentleProbes is the reduced probe set: ICMP, ARP and a short list of TCP
-// connects, plus reverse DNS (which asks the resolver, not the device).
-// Banner grabs, NetBIOS, mDNS, SSDP, WS-Discovery, LLMNR, SMB2 negotiate, favicon
-// reads and SNMP are off. The list is spelled out field by field so a probe added
+// connects, plus reverse DNS (which asks the resolver, not the device) and the
+// IPv6 neighbor table (which the system already holds: reading it sends
+// nothing, and the IPv6 devices it lists are then scanned with the gentle ports,
+// rate and pacing like any other host). Banner grabs, NetBIOS, mDNS, SSDP,
+// WS-Discovery, LLMNR, SMB2 negotiate, favicon reads, SNMP and the IPv6
+// multicast echo are off. The list is spelled out field by field so a probe added
 // later is off in gentle mode until someone decides otherwise.
-var GentleProbes = Probes{Ports: true, ReverseDNS: true}
+var GentleProbes = Probes{Ports: true, ReverseDNS: true, IPv6: true}
 
 // GentleTradeoff states what gentle mode does and does not promise. It is
 // shown verbatim in the CLI help and the Desktop settings.
 const GentleTradeoff = "Gentle mode lowers the load a scan puts on a network and skips the more intrusive probes. " +
-	"It is slower and identifies less: no service banners, NetBIOS, mDNS, UPnP, WS-Discovery, LLMNR, SMB or favicon probes, no SNMP, and only a few ports. " +
+	"It is slower and identifies less: no service banners, NetBIOS, mDNS, UPnP, WS-Discovery, LLMNR, SMB or favicon probes, no SNMP, no IPv6 multicast echo, and only a few ports. " +
 	"It reduces risk but does not remove it: any scan can upset a very fragile device, so get approval and watch the network."
 
 // Pacer spaces out probe starts. Wait blocks until the caller may start one
@@ -115,6 +118,9 @@ type PlanRequest struct {
 	Concurrency    int
 	ConnectTimeout time.Duration
 	SNMP           *probe.SNMPCredentials
+	// AllowPublic is the technician's authorization for public space; the engine
+	// applies it to the IPv6 neighbors it finds as the caller did to Targets.
+	AllowPublic bool
 }
 
 // Plan is the fully resolved scan: every number the engine will use. The
@@ -131,6 +137,7 @@ type Plan struct {
 	ConnectTimeout  time.Duration
 	ProbeInterval   time.Duration // 0 means unpaced
 	SNMP            *probe.SNMPCredentials
+	AllowPublic     bool
 }
 
 // ValidMode reports whether m names a mode ("" means default).
@@ -158,13 +165,15 @@ func BuildPlan(r PlanRequest) (Plan, error) {
 		return Plan{
 			Mode: ModeDefault, Targets: r.Targets, Ports: r.Ports, Probes: r.Probes,
 			Concurrency: r.Concurrency, ConnectTimeout: r.ConnectTimeout, SNMP: r.SNMP,
+			AllowPublic: r.AllowPublic,
 		}, nil
 	}
 	p := Plan{
 		Mode:            ModeGentle,
 		Targets:         r.Targets,
 		Ports:           GentlePorts,
-		Probes:          Probes{Ports: r.Probes.Ports && GentleProbes.Ports, ReverseDNS: r.Probes.ReverseDNS && GentleProbes.ReverseDNS},
+		Probes:          Probes{Ports: r.Probes.Ports && GentleProbes.Ports, ReverseDNS: r.Probes.ReverseDNS && GentleProbes.ReverseDNS, IPv6: r.Probes.IPv6 && GentleProbes.IPv6},
+		AllowPublic:     r.AllowPublic,
 		Concurrency:     GentleConcurrency,
 		PortConcurrency: GentlePortConcurrency,
 		PingAttempts:    GentlePingAttempts,
@@ -222,6 +231,7 @@ func (p Plan) Config() Config {
 		PingAttempts:    p.PingAttempts,
 		ConnectTimeout:  p.ConnectTimeout,
 		SNMP:            p.SNMP,
+		AllowPublic:     p.AllowPublic,
 	}
 	if p.Mode == ModeGentle {
 		c.Mode = ModeGentle
@@ -266,7 +276,7 @@ func GentleInfo() ModeInfo {
 func GentleSummary() string {
 	ports := portList(GentlePorts)
 	return fmt.Sprintf("%d hosts at a time, %d connections per host, at most %d probe starts per second in total, "+
-		"%d ping per host, %s connect timeout, TCP ports %s. Skips service banners, NetBIOS, mDNS, UPnP, WS-Discovery, LLMNR, SMB, favicon and SNMP probes.",
+		"%d ping per host, %s connect timeout, TCP ports %s. Skips service banners, NetBIOS, mDNS, UPnP, WS-Discovery, LLMNR, SMB, favicon, SNMP and the IPv6 multicast echo.",
 		GentleConcurrency, GentlePortConcurrency, int(time.Second/GentleProbeInterval), GentlePingAttempts,
 		GentleConnectTimeout, ports)
 }
