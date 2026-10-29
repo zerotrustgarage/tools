@@ -482,7 +482,14 @@ const scenarios = [
     await page.locator('.markdown-body h1', { hasText: 'Setup' }).waitFor();
     assert.equal(await docTitle(page).textContent(), 'docs/guide/setup.md');
     assert.ok((await cursor(page)).startsWith('Ln 7,'), await cursor(page));
-    assert.equal(await page.locator('.cm-selectionBackground').count() >= 1, true, 'the match is selected');
+    // CodeMirror draws the selection layer in its next measure frame, after the cursor has moved;
+    // wait for it (bounded) rather than counting immediately, which raced on slower CI runners.
+    const selected = await page
+      .locator('.cm-selectionBackground')
+      .first()
+      .waitFor({ state: 'attached', timeout: 5000 })
+      .then(() => true, () => false);
+    assert.equal(selected, true, 'the match is selected');
 
     await input.fill('no such text anywhere');
     await input.press('Enter');
