@@ -28,6 +28,11 @@ import { showUpdateDialog } from "./updates.js";
     targetSetsBusy: false,
     targetSetsReturnFocus: null,
     targetSetDraft: null,
+    schedules: [], // saved schedules: { site, name, interval_minutes, desktop_toast, scan }; targets come from the saved set
+    schedulesError: "",
+    scheduleStatuses: [],
+    scheduleNotices: new Map(), // schedule key -> latest new-device notice
+    scheduleBusy: false,
     openWith: { commands: [], error: "", editing: -1, busy: false, returnFocus: null },
   };
 
@@ -750,6 +755,8 @@ import { showUpdateDialog } from "./updates.js";
     state.targetSets = sets;
     state.targetSetsError = "";
     targetSetStatus("");
+    // A schedule follows its saved set: a changed set is rescheduled with its new targets, a deleted one is dropped.
+    if (api && state.schedules.length) pushSchedules().catch((e) => scheduleStatus(errText(e)));
   }
 
   async function normalizeDraftTargets(value) {
@@ -772,6 +779,7 @@ import { showUpdateDialog } from "./updates.js";
       readTargetSets();
       renderTargetSets();
       targetSetStatus();
+      fillScheduleForm(null);
       $("target-sets").hidden = false;
       $("target-sets-btn").setAttribute("aria-expanded", "true");
       $("target-set-list").focus();
@@ -881,10 +889,214 @@ import { showUpdateDialog } from "./updates.js";
       state.targetSetsError = "";
       renderTargetSets();
       targetSetStatus("Saved target sets were reset.");
+      if (api && state.schedules.length) pushSchedules().catch((e) => scheduleStatus(errText(e)));
     } catch (e) {
       state.targetSetsError = String(e && e.message ? e.message : e);
       targetSetStatus();
     } finally { setTargetSetBusy(false); }
+  }
+
+  // ---------- scheduled rescans (SC7) ----------
+  //
+  // Opt-in per saved target set, off by default, and only while this app is open. Schedules live in this
+  // WebView's local storage beside the saved sets (they carry no targets: those come from the set) and are
+  // handed to the app on every change and at launch. The app validates them again, so a refusal here is a
+  // convenience, never the guard: a public range is refused in Go whatever this page sends.
+
+  const SCHEDULES_KEY = "ztg-scanner:schedules";
+  const SCHEDULE_MAX = 20;
+  const SCHEDULE_MIN_MINUTES = 15;
+  const SCHEDULE_MAX_MINUTES = 1440;
+  const scheduleKey = (site, name) => targetSetKey(site, name);
+
+  function validScanShape(scan) {
+    if (!scan || typeof scan !== "object" || Array.isArray(scan)) return false;
+    if (Object.keys(scan).some((k) => !["mode", "ports", "probes", "concurrency", "timeout_ms"].includes(k))) return false;
+    if (typeof scan.mode !== "string" || typeof scan.ports !== "string" || !Number.isInteger(scan.concurrency) || !Number.isInteger(scan.timeout_ms)) return false;
+    return !!scan.probes && typeof scan.probes === "object" && !Array.isArray(scan.probes) && Object.values(scan.probes).every((v) => typeof v === "boolean");
+  }
+
+  function validateSchedulesShape(value) {
+    const bad = "Saved schedules have an unsupported or malformed format. The stored data was left untouched and scheduled rescans are off until it is reset.";
+    if (!value || typeof value !== "object" || Array.isArray(value) || value.version !== 1 || !Array.isArray(value.schedules) || value.schedules.length > SCHEDULE_MAX || Object.keys(value).some((k) => !["version", "schedules"].includes(k))) throw new Error(bad);
+    const seen = new Set();
+    return value.schedules.map((e) => {
+      if (!e || typeof e !== "object" || Array.isArray(e) || Object.keys(e).some((k) => !["site", "name", "interval_minutes", "desktop_toast", "scan"].includes(k))
+        || typeof e.site !== "string" || typeof e.name !== "string" || !Number.isInteger(e.interval_minutes) || e.interval_minutes < SCHEDULE_MIN_MINUTES || e.interval_minutes > SCHEDULE_MAX_MINUTES
+        || typeof e.desktop_toast !== "boolean" || !validScanShape(e.scan) || !e.site.trim() || !e.name.trim()) throw new Error(bad);
+      const key = scheduleKey(e.site.trim(), e.name.trim());
+      if (seen.has(key)) throw new Error(bad);
+      seen.add(key);
+      return { site: e.site.trim(), name: e.name.trim(), interval_minutes: e.interval_minutes, desktop_toast: e.desktop_toast, scan: e.scan };
+    });
+  }
+
+  function readSchedules() {
+    state.schedulesError = "";
+    state.schedules = [];
+    try {
+      const raw = localStorage.getItem(SCHEDULES_KEY);
+      if (raw === null) return;
+      state.schedules = validateSchedulesShape(JSON.parse(raw));
+    } catch (e) {
+      state.schedulesError = errText(e);
+      state.schedules = [];
+    }
+  }
+
+  function writeSchedules(list) {
+    const value = { version: 1, schedules: list };
+    validateSchedulesShape(value);
+    const serialized = JSON.stringify(value);
+    localStorage.setItem(SCHEDULES_KEY, serialized);
+    if (localStorage.getItem(SCHEDULES_KEY) !== serialized) throw new Error("Saved schedules could not be verified after writing.");
+    state.schedules = list;
+  }
+
+  // The scan plan a schedule uses: what a manual scan would send now, without SNMP.
+  function currentScanSettings() {
+    const r = request(false);
+    return { mode: r.mode, ports: r.ports, probes: { ...r.probes, snmp: false }, concurrency: r.concurrency, timeout_ms: r.timeout_ms };
+  }
+
+  const selectedTargetSet = () => {
+    const option = $("target-set-list").selectedOptions[0];
+    return option ? state.targetSets[Number(option.value)] : undefined;
+  };
+  const scheduleFor = (entry) => entry && state.schedules.find((s) => scheduleKey(s.site, s.name) === scheduleKey(entry.site, entry.name));
+  const clockTime = (iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+  function scheduleStatus(message) {
+    $("schedule-status").textContent = message || "";
+  }
+
+  function scheduleDescription(entry) {
+    const sched = scheduleFor(entry);
+    if (!sched) return "";
+    const st = state.scheduleStatuses.find((s) => s.key === scheduleKey(entry.site, entry.name));
+    const parts = ["Plan: " + (sched.scan.mode === "gentle" ? "gentle mode" : "default mode") + ", every " + sched.interval_minutes + " minutes."];
+    if (!st) return parts.join(" ");
+    if (st.error) return "Not running: " + st.error;
+    if (st.running) parts.push("Rescanning now.");
+    else if (st.next_run) parts.push("Next rescan at about " + clockTime(st.next_run) + ".");
+    if (st.last_run && st.last_result) parts.push("Last rescan " + clockTime(st.last_run) + ": " + st.last_result + ".");
+    if (st.last_error) parts.push("Problem: " + st.last_error + ".");
+    if (st.skipped) parts.push("Skipped " + st.skipped + " cycle" + (st.skipped === 1 ? "" : "s") + " because " + st.skip_reason + ".");
+    return parts.join(" ");
+  }
+
+  // Shows the schedule of the selected saved set. entry is undefined when no set is selected.
+  function fillScheduleForm(entry) {
+    const sched = scheduleFor(entry);
+    const usable = !!entry && !state.schedulesError;
+    $("schedule-enabled").checked = !!sched;
+    $("schedule-interval").value = String(sched ? sched.interval_minutes : 60);
+    $("schedule-toast").checked = sched ? sched.desktop_toast : false;
+    for (const id of ["schedule-enabled", "schedule-interval", "schedule-toast", "schedule-apply"]) $(id).disabled = !usable || state.scheduleBusy;
+    $("schedule-reset").hidden = !state.schedulesError;
+    const folder = (state.scheduleStatuses.find((s) => s.folder) || {}).folder;
+    $("schedule-folder").hidden = !folder;
+    $("schedule-folder").textContent = folder ? "Results folder: " + folder : "";
+    scheduleStatus(state.schedulesError || (entry ? scheduleDescription(entry) : "Choose a saved set above to schedule it."));
+  }
+
+  function paintScheduleState() {
+    const statuses = state.scheduleStatuses;
+    const live = statuses.filter((s) => !s.error);
+    const running = live.find((s) => s.running);
+    const refused = statuses.length - live.length;
+    const next = live.map((s) => s.next_run).filter(Boolean).sort()[0];
+    let text = "";
+    if (running) text = "Scheduled rescan running: " + running.site + " · " + running.name;
+    else if (live.length) text = "Scheduled rescans on: " + live.length + (next ? " · next at about " + clockTime(next) : "");
+    if (refused) text += (text ? " · " : "") + refused + " not running (see Target sets)";
+    $("schedule-state").textContent = text;
+    $("schedule-state").hidden = !text;
+    $("schedule-stop").hidden = !running;
+    if (!$("target-sets").hidden) fillScheduleForm(selectedTargetSet());
+  }
+
+  // Resolves each schedule against its saved set and hands the list to the app.
+  async function pushSchedules() {
+    if (!api || state.schedulesError || state.targetSetsError) return;
+    const configs = [];
+    const orphans = [];
+    for (const sched of state.schedules) {
+      const set = state.targetSets.find((s) => scheduleKey(s.site, s.name) === scheduleKey(sched.site, sched.name));
+      if (set) configs.push({ ...sched, targets: set.targets });
+      else orphans.push(sched);
+    }
+    if (orphans.length) {
+      writeSchedules(state.schedules.filter((s) => !orphans.includes(s)));
+      toast("Stopped the schedule for a saved set that no longer exists.");
+    }
+    state.scheduleStatuses = (await api.SetSchedules(configs)) || [];
+    paintScheduleState();
+  }
+
+  async function applySchedule() {
+    const entry = selectedTargetSet();
+    if (!api || !entry || state.schedulesError || state.scheduleBusy) return;
+    // Read the form before anything redraws it.
+    const enabled = $("schedule-enabled").checked;
+    const interval = Number($("schedule-interval").value);
+    const toastOn = $("schedule-toast").checked;
+    state.scheduleBusy = true;
+    fillScheduleForm(entry);
+    try {
+      let next = state.schedules.filter((s) => scheduleKey(s.site, s.name) !== scheduleKey(entry.site, entry.name));
+      if (enabled) {
+        const sched = { site: entry.site, name: entry.name, interval_minutes: interval, desktop_toast: toastOn, scan: currentScanSettings() };
+        await api.ValidateSchedule({ ...sched, targets: entry.targets });
+        next = [...next, sched];
+      }
+      writeSchedules(next);
+      await pushSchedules();
+      state.scheduleBusy = false;
+      fillScheduleForm(entry);
+      scheduleStatus((enabled ? "Schedule saved. " : "Schedule turned off. ") + scheduleDescription(entry));
+    } catch (e) {
+      state.scheduleBusy = false;
+      fillScheduleForm(entry);
+      scheduleStatus("Not scheduled: " + errText(e));
+    }
+  }
+
+  async function resetSchedules() {
+    if (!state.schedulesError) return;
+    if (!await confirmDialog("Reset saved schedules?", "This permanently removes the malformed saved schedule data from this app. Scheduled rescans stay off.", "Reset schedules")) return;
+    try {
+      localStorage.removeItem(SCHEDULES_KEY);
+      if (localStorage.getItem(SCHEDULES_KEY) !== null) throw new Error("Saved schedules could not be removed from local storage.");
+      state.schedules = [];
+      state.schedulesError = "";
+      if (api) state.scheduleStatuses = (await api.SetSchedules([])) || [];
+      paintScheduleState();
+      fillScheduleForm(selectedTargetSet());
+      scheduleStatus("Saved schedules were reset.");
+    } catch (e) { scheduleStatus(errText(e)); }
+  }
+
+  // New devices found by a scheduled rescan: an in-app banner (always), the window title, and, in the app, a
+  // taskbar flash and an optional Windows notification. All of it is counts, labels you typed and addresses.
+  function renderScheduleBanner() {
+    const notices = [...state.scheduleNotices.values()];
+    $("schedule-banner").hidden = !notices.length;
+    $("schedule-banner-list").replaceChildren(...notices.map((n) => el("li", null,
+      el("span", { text: n.title.replace(/^ZTG Scanner: /, "") + " on " + n.site + " · " + n.name + ": " + n.text }),
+      el("button", { type: "button", class: "link", text: "Show changes", "data-key": n.key, onclick: () => showScheduleChanges(n.key) }))));
+    const total = notices.reduce((sum, n) => sum + n.new_count, 0);
+    if (rt && rt.WindowSetTitle) rt.WindowSetTitle(total ? document.title + ": " + total + " new device" + (total === 1 ? "" : "s") : document.title);
+  }
+
+  function onScheduleNotice(n) {
+    if (!n || typeof n.key !== "string") return;
+    state.scheduleNotices.set(n.key, n);
+    renderScheduleBanner();
+  }
+
+  async function showScheduleChanges(key) {
+    try { showComparison(await api.ScheduleChanges(key)); } catch (e) { toast(errText(e)); }
   }
 
   // ---------- Open with commands (SC10) ----------
@@ -1139,11 +1351,19 @@ import { showUpdateDialog } from "./updates.js";
     }
   }
 
+  function showComparison(result) {
+    state.comparison = result;
+    $("comparison").hidden = false;
+    $("open-with").hidden = true;
+    $("diagnostics").hidden = true;
+    renderComparison();
+  }
+
   function renderComparison() {
     const result = state.comparison;
     if (!result) return;
     const labels = { new: "New", missing: "Missing", changed: "Changed", unchanged: "Unchanged", not_scanned: "Not assessed" };
-    $("comparison-source").textContent = "Baseline: " + result.path;
+    $("comparison-source").textContent = (/^Previous rescan of /.test(result.path) ? "" : "Baseline: ") + result.path;
     const changes = result.changes || [];
     $("comparison-counts").textContent = Object.entries(labels).map(([k, label]) => changes.filter(c => c.kind === k).length + " " + label.toLowerCase()).join(" · ");
     const filter = $("change-filter").value;
@@ -1471,12 +1691,17 @@ import { showUpdateDialog } from "./updates.js";
     $("target-set-list").addEventListener("change", () => {
       const option = $("target-set-list").selectedOptions[0];
       fillTargetSetDraft(option && state.targetSets[Number(option.value)]);
+      fillScheduleForm(selectedTargetSet());
     });
     $("target-set-save").addEventListener("click", saveTargetSet);
     $("target-set-load").addEventListener("click", useTargetSetDraft);
     $("target-set-delete").addEventListener("click", deleteTargetSet);
     $("target-set-import").addEventListener("click", importTargetSetFile);
     $("target-set-reset").addEventListener("click", resetTargetSets);
+    $("schedule-apply").addEventListener("click", applySchedule);
+    $("schedule-reset").addEventListener("click", resetSchedules);
+    $("schedule-stop").addEventListener("click", () => api && api.StopScheduled());
+    $("schedule-banner-dismiss").addEventListener("click", () => { state.scheduleNotices.clear(); renderScheduleBanner(); });
     $("save-scan").addEventListener("click", async () => {
       try {
         const path = await api.SaveScan($("site").value);
@@ -1489,11 +1714,7 @@ import { showUpdateDialog } from "./updates.js";
       try {
         const result = await api.CompareScan($("site").value);
         if (!result.path) return;
-        state.comparison = result;
-        $("comparison").hidden = false;
-        $("open-with").hidden = true;
-        $("diagnostics").hidden = true;
-        renderComparison();
+        showComparison(result);
       } catch (e) { toast(String(e)); }
     });
     $("change-filter").addEventListener("change", renderComparison);
@@ -1580,6 +1801,8 @@ import { showUpdateDialog } from "./updates.js";
     rt.EventsOn("scan:host", onHost);
     rt.EventsOn("scan:progress", (p) => setProgress(p.done, p.total, p.up));
     rt.EventsOn("scan:done", onDone);
+    rt.EventsOn("schedule:status", (st) => { state.scheduleStatuses = st || []; paintScheduleState(); });
+    rt.EventsOn("schedule:notice", onScheduleNotice);
 
     const [version, defaults, suggestions] = await Promise.all([api.Version(), api.Defaults(), api.Suggestions()]);
     document.title = "ZTG Scanner " + version;
@@ -1592,6 +1815,10 @@ import { showUpdateDialog } from "./updates.js";
     state.defaults = defaults;
     loadSettings();
     await loadOpenWith();
+    // Saved schedules start again with the app; the first rescan is one interval away, never at launch.
+    readTargetSets();
+    readSchedules();
+    pushSchedules().catch((e) => toast("Scheduled rescans could not start: " + errText(e)));
 
     const menu = $("suggest-menu");
     if (!suggestions || !suggestions.length) {

@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -30,7 +31,10 @@ import (
 var assets embed.FS
 
 // wailsPlatform adapts the Wails runtime to Platform.
-type wailsPlatform struct{ ctx context.Context }
+type wailsPlatform struct {
+	ctx   context.Context
+	toast *toastState
+}
 
 func (p wailsPlatform) Emit(event string, data any) { runtime.EventsEmit(p.ctx, event, data) }
 
@@ -132,6 +136,108 @@ func (p wailsPlatform) LaunchProgram(argv []string) error {
 	return nil
 }
 
+// toastState makes sure the Wails notification service is set up once, and only
+// when a scheduled rescan first has something to announce with a Windows
+// notification. Setting it up registers the app for notifications in the
+// current user's registry (HKCU), so it is not done at startup.
+type toastState struct {
+	once sync.Once
+	err  error
+}
+
+// Alert flashes the taskbar button until the window is brought forward and, if
+// toast is set, sends a Windows notification through Wails. Both are best
+// effort: the in-app banner is the notice of record. The text is built in
+// internal/schedule from counts and addresses only.
+func (p wailsPlatform) Alert(title, body string, toast bool) {
+	flashMainWindow()
+	if !toast || p.toast == nil {
+		return
+	}
+	p.toast.once.Do(func() { p.toast.err = runtime.InitializeNotifications(p.ctx) })
+	if p.toast.err != nil {
+		return
+	}
+	_ = runtime.SendNotification(p.ctx, runtime.NotificationOptions{ID: "ztg-scanner-new-devices", Title: title, Body: body})
+}
+
+// systemPowerStatus is SYSTEM_POWER_STATUS (winbase.h).
+type systemPowerStatus struct {
+	ACLineStatus        byte
+	BatteryFlag         byte
+	BatteryLifePercent  byte
+	SystemStatusFlag    byte // 1: battery saver is on
+	BatteryLifeTime     uint32
+	BatteryFullLifeTime uint32
+}
+
+var (
+	kernel32              = winapi.NewLazySystemDLL("kernel32.dll")
+	procGetSystemPower    = kernel32.NewProc("GetSystemPowerStatus")
+	user32                = winapi.NewLazySystemDLL("user32.dll")
+	procFlashWindowEx     = user32.NewProc("FlashWindowEx")
+	procGetClassName      = user32.NewProc("GetClassNameW")
+	procEnumWindows       = user32.NewProc("EnumWindows")
+	procIsWindowVisible   = user32.NewProc("IsWindowVisible")
+	procGetWindowThreadID = user32.NewProc("GetWindowThreadProcessId")
+)
+
+// PowerSaving reports whether battery saver is on. Metered connections are not
+// checked: that needs the WinRT networking API, which is not worth a
+// dependency for this.
+func (wailsPlatform) PowerSaving() bool {
+	var st systemPowerStatus
+	if r, _, _ := procGetSystemPower.Call(uintptr(unsafe.Pointer(&st))); r == 0 {
+		return false
+	}
+	return st.SystemStatusFlag&1 != 0
+}
+
+type flashInfo struct {
+	Size    uint32
+	Hwnd    uintptr
+	Flags   uint32
+	Count   uint32
+	Timeout uint32
+}
+
+const (
+	flashwTray       = 0x2
+	flashwTimerNoFg  = 0xC
+	wailsWindowClass = "wailsWindow"
+)
+
+// flashMainWindow flashes this process's Wails window on the taskbar until it
+// comes to the foreground.
+func flashMainWindow() {
+	pid := winapi.GetCurrentProcessId()
+	var target uintptr
+	cb := syscall.NewCallback(func(hwnd uintptr, _ uintptr) uintptr {
+		var owner uint32
+		procGetWindowThreadID.Call(hwnd, uintptr(unsafe.Pointer(&owner)))
+		if owner != pid {
+			return 1
+		}
+		if vis, _, _ := procIsWindowVisible.Call(hwnd); vis == 0 {
+			return 1
+		}
+		buf := make([]uint16, 64)
+		n, _, _ := procGetClassName.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+		if n > 0 && syscall.UTF16ToString(buf[:n]) == wailsWindowClass {
+			target = hwnd
+			return 0
+		}
+		return 1
+	})
+	procEnumWindows.Call(cb, 0)
+	if target == 0 {
+		return
+	}
+	fi := flashInfo{Hwnd: target, Flags: flashwTray | flashwTimerNoFg}
+	fi.Size = uint32(unsafe.Sizeof(fi))
+	procFlashWindowEx.Call(uintptr(unsafe.Pointer(&fi)))
+}
+
 func main() {
 	app := NewApp()
 	frontend, err := fs.Sub(assets, "frontend")
@@ -155,9 +261,9 @@ func main() {
 		CSSDragValue:     "drag",
 		BackgroundColour: &options.RGBA{R: 2, G: 12, B: 27, A: 255}, // ZTG bg (#020C1B); the frontend switches it with the theme
 		OnStartup: func(ctx context.Context) {
-			app.setPlatform(ctx, wailsPlatform{ctx: ctx})
+			app.setPlatform(ctx, wailsPlatform{ctx: ctx, toast: &toastState{}})
 		},
-		OnShutdown: func(context.Context) { app.StopScan() },
+		OnShutdown: func(context.Context) { app.Shutdown() },
 		OnBeforeClose: func(ctx context.Context) bool {
 			if !app.UnsavedChanges() {
 				return false
