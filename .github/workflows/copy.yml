@@ -41,6 +41,7 @@ jobs:
           # Counts are the median final execs of 3 recent green runs, rounded down (runs 40038268965 40024460965 40023738848); timeout-minutes bounds wall time.
           go test ./internal/cmdline -run '^$' -fuzz '^FuzzRoundTrip$' -fuzztime 410000x -parallel 2
           go test ./internal/template -run '^$' -fuzz '^FuzzTemplateReader$' -fuzztime 190000x -parallel 2
+          go test ./internal/rcj -run '^$' -fuzz '^FuzzRCJReader$' -fuzztime 200000x -parallel 2
           go test ./internal/parse -run '^$' -fuzz '^FuzzNativeSummary$' -fuzztime 350000x -parallel 2
           go test ./internal/parse -run '^$' -fuzz '^FuzzNativeDiagnostics$' -fuzztime 290000x -parallel 2
           go test ./internal/spike -run '^$' -fuzz '^FuzzDecodeUnicode$' -fuzztime 540000x -parallel 2
