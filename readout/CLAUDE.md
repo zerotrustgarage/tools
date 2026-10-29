@@ -8,8 +8,14 @@ These properties are requirements, each held by tests:
 1. Byte fidelity. The editor's text is the file; there is no document model in between. An
    unedited save reproduces the original bytes (BOM, CRLF, no final newline). Formats that
    cannot be saved safely (mixed endings, invalid UTF-8) open read-only. `test/roundtrip.test.ts`.
+   Mixed endings can be converted, only by the reader's explicit choice: the text is normalized in
+   memory, the document is unsaved, and nothing is written until Save (RD15, `convertDocument` in
+   `src/core/document.ts`, `test/line-endings.test.ts`). Invalid UTF-8 is never converted.
 2. Documents are untrusted input. Rendered HTML goes through `src/core/sanitize.ts`; remote
    content is never fetched; the CSP forbids inline and remote script. `test/sanitize.test.ts`.
+   Copy as rich text (RD11) obeys the same rule: `src/core/richtext.ts` sanitizes the copy before and
+   after rebuilding it, parses only in an inert document, fetches nothing, and takes its colours from
+   `design-tokens.json`. `test/richtext.test.ts`.
 3. The WebView holds no file system, dialog or shell permission. Every file operation is a Rust
    command in `src-tauri/src/lib.rs` limited to paths the user chose, and paths written in
    documents never name a drive, root or UNC host. A new command must be added to `build.rs`

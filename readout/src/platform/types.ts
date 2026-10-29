@@ -125,6 +125,12 @@ export interface Platform {
   saveAs(bytes: Uint8Array, suggestedName: string): Promise<FileRef | null>;
   /** Saves an export (HTML) through a save dialog or a download. */
   exportFile(bytes: Uint8Array, suggestedName: string, kind: 'html'): Promise<void>;
+  /**
+   * Puts rich text on the system clipboard: html as text/html (what Outlook, Teams and Word paste
+   * with formatting) and text as text/plain, in one clipboard entry. Rejects when the clipboard
+   * refuses the write. Called from a click, which is what browsers require.
+   */
+  copyRichText(html: string, text: string): Promise<void>;
   /** Opens an http, https or mailto address in the system browser. */
   openExternal(url: string): Promise<void>;
   /** Resolves an image path (decoded, relative to ref or folder-rooted) to an object URL. */

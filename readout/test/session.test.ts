@@ -28,6 +28,7 @@ function fakePlatform(initial: Arrival | null, overrides: PlatformOverrides = {}
     saveAs: async (_bytes, name) => ({ name, path: `/elsewhere/${name}` }),
     exportFile: async () => undefined,
     openExternal: async () => undefined,
+    copyRichText: async () => undefined,
     loadLocalImage: async () => null,
     initial: async () => initial,
     remember: (l, ref) => void remembered.push([l, ref]),
