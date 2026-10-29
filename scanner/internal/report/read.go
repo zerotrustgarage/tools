@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/zerotrustgarage/tools/scanner/internal/inventory"
+	"github.com/zerotrustgarage/tools/scanner/internal/scan"
 	"github.com/zerotrustgarage/tools/scanner/internal/targets"
 )
 
@@ -92,12 +93,19 @@ func Read(r io.Reader) (Document, error) {
 			return d, fmt.Errorf("too many services")
 		}
 		ports := map[int]bool{}
-		for _, s := range h.Services {
+		for j := range h.Services {
+			s := &h.Services[j]
 			if s.Port < 1 || s.Port > 65535 || ports[s.Port] {
 				return d, fmt.Errorf("invalid or duplicate service port")
 			}
 			ports[s.Port] = true
+			if s.Favicon != nil {
+				if s.Favicon.Sanitize(); s.Favicon.SHA256 == "" {
+					s.Favicon = nil
+				}
+			}
 		}
+		sanitizeSC11(h)
 		if err := inventory.ValidateAnnotation(h.Annotation); err != nil {
 			return d, err
 		}
@@ -111,6 +119,28 @@ func Read(r io.Reader) (Document, error) {
 		}
 	}
 	return d, nil
+}
+
+// sanitizeSC11 re-applies the bounds and character checks to the fields the SC11
+// probes add. A saved file is as untrusted as a reply on the wire: a hand-edited
+// or hostile file must not smuggle control characters, huge values or markup
+// that a probe would have refused. A field that is left empty is dropped.
+func sanitizeSC11(h *scan.Host) {
+	if h.WSD != nil {
+		if h.WSD.Sanitize(); len(h.WSD.Types)+len(h.WSD.Scopes)+len(h.WSD.XAddrs) == 0 && h.WSD.Name == "" {
+			h.WSD = nil
+		}
+	}
+	if h.LLMNR != nil {
+		if h.LLMNR.Sanitize(); len(h.LLMNR.Names) == 0 {
+			h.LLMNR = nil
+		}
+	}
+	if h.SMB != nil {
+		if h.SMB.Sanitize(); h.SMB.Dialect == "" {
+			h.SMB = nil
+		}
+	}
 }
 
 // WriteFile replaces a file only after the complete export was flushed and

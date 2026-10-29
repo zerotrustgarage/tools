@@ -106,8 +106,12 @@ func cmdScan(args []string) error {
 		portsFlag   = fs.String("ports", "", "comma-separated TCP ports and ranges to probe (default: built-in list of 40)")
 		noPorts     = fs.Bool("no-ports", false, "discovery only: skip port and service probes")
 		noBanners   = fs.Bool("no-banners", false, "list open ports without identifying services")
-		noNames     = fs.Bool("no-names", false, "skip reverse DNS, NetBIOS and mDNS name queries")
+		noNames     = fs.Bool("no-names", false, "skip reverse DNS, NetBIOS, mDNS and LLMNR name queries")
 		noSSDP      = fs.Bool("no-ssdp", false, "skip the UPnP/SSDP multicast discovery")
+		noWSD       = fs.Bool("no-wsd", false, "skip the WS-Discovery multicast probe (printers, ONVIF cameras, Windows hosts)")
+		noLLMNR     = fs.Bool("no-llmnr", false, "skip the LLMNR name query (RFC 4795) to on-link hosts")
+		noSMB       = fs.Bool("no-smb", false, "skip the SMB2 NEGOTIATE sent to hosts with TCP 445 open (dialect and signing policy only)")
+		noFavicon   = fs.Bool("no-favicon", false, "skip the one GET of /favicon.ico on identified web ports (needs banners)")
 		concurrency = fs.Int("concurrency", 128, "hosts scanned in parallel")
 		timeout     = fs.Duration("timeout", 800*time.Millisecond, "TCP connect timeout")
 		maxHosts    = fs.Int("max-hosts", targets.DefaultMaxHosts, "refuse target lists larger than this")
@@ -171,6 +175,7 @@ func cmdScan(args []string) error {
 		mode: *mode, concurrency: *concurrency, concurrencySet: set["concurrency"],
 		timeout: *timeout, timeoutSet: set["timeout"], ports: *portsFlag,
 		noPorts: *noPorts, noBanners: *noBanners, noNames: *noNames, noSSDP: *noSSDP,
+		noWSD: *noWSD, noLLMNR: *noLLMNR, noSMB: *noSMB, noFavicon: *noFavicon,
 	}, addrs)
 	if err != nil {
 		return err
@@ -244,6 +249,7 @@ type planFlags struct {
 	timeoutSet                          bool
 	ports                               string
 	noPorts, noBanners, noNames, noSSDP bool
+	noWSD, noLLMNR, noSMB, noFavicon    bool
 }
 
 // planRequest turns flags into the shared scan.PlanRequest. In gentle mode
@@ -269,13 +275,25 @@ func planRequest(f planFlags, addrs []netip.Addr) (scan.PlanRequest, error) {
 		}
 	}
 	if f.noPorts {
-		req.Probes.Ports, req.Probes.Banners = false, false
+		req.Probes.Ports, req.Probes.Banners, req.Probes.SMB, req.Probes.Favicon = false, false, false, false
 	}
 	if f.noBanners {
-		req.Probes.Banners = false
+		req.Probes.Banners, req.Probes.Favicon = false, false
 	}
 	if f.noNames {
-		req.Probes.ReverseDNS, req.Probes.NetBIOS, req.Probes.MDNS = false, false, false
+		req.Probes.ReverseDNS, req.Probes.NetBIOS, req.Probes.MDNS, req.Probes.LLMNR = false, false, false, false
+	}
+	if f.noWSD {
+		req.Probes.WSD = false
+	}
+	if f.noLLMNR {
+		req.Probes.LLMNR = false
+	}
+	if f.noSMB {
+		req.Probes.SMB = false
+	}
+	if f.noFavicon {
+		req.Probes.Favicon = false
 	}
 	if f.noSSDP {
 		req.Probes.SSDP = false

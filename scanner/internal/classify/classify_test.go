@@ -38,6 +38,18 @@ func TestClassify(t *testing.T) {
 		{"linux", Evidence{OpenPorts: ports(22), TTL: 64}, "Linux / Unix host"},
 		{"phone", Evidence{MACRandomized: true, OpenPorts: ports()}, "Private-MAC device (phone, laptop or VM)"},
 		{"nothing", Evidence{OpenPorts: ports()}, "Unknown"},
+		// SC11: WS-Discovery and SMB2 negotiate evidence.
+		{"wsd printer", Evidence{WSDTypes: []string{"device", "printdevicetype"}, OpenPorts: ports(80)}, "Printer"},
+		{"wsd scanner", Evidence{WSDTypes: []string{"scandevicetype"}, OpenPorts: ports()}, "Printer"},
+		{"wsd onvif camera", Evidence{WSDTypes: []string{"networkvideotransmitter"}, OpenPorts: ports(80)}, "IP camera / NVR"},
+		{"wsd onvif nvr", Evidence{WSDTypes: []string{"networkvideorecorder"}, OpenPorts: ports(80)}, "IP camera / NVR"},
+		{"wsd onvif scope only", Evidence{WSDONVIF: true, WSDTypes: []string{"device"}, OpenPorts: ports(80)}, "IP camera / NVR"},
+		{"wsd computer", Evidence{WSDTypes: []string{"computer", "device"}, OpenPorts: ports()}, "Windows host"},
+		{"wsd bare device is no evidence", Evidence{WSDTypes: []string{"device"}, OpenPorts: ports()}, "Unknown"},
+		{"smb legacy dialect with windows ttl", Evidence{SMBDialect: "2.1", SMBLegacyWindows: true, TTL: 128, OpenPorts: ports(445)}, "Windows host"},
+		{"smb legacy dialect with unix ttl is samba", Evidence{SMBDialect: "3.0", SMBLegacyWindows: true, TTL: 64, OpenPorts: ports(445)}, "Linux / Unix host"},
+		{"smb 3.1.1 alone proves nothing", Evidence{SMBDialect: "3.1.1", TTL: 128, OpenPorts: ports()}, "Unknown"},
+		{"vendor rule outranks wsd computer", Evidence{Vendor: "Brother Industries, LTD.", WSDTypes: []string{"computer"}, OpenPorts: ports(9100)}, "Printer"},
 	}
 	for _, c := range cases {
 		got := Classify(&c.e)

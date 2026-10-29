@@ -46,7 +46,7 @@ async function gentleTests(scheme) {
   await page.check("#mode-gentle");
   await page.waitForSelector("#gentle-info:not([hidden])");
   const summary = await page.textContent("#gentle-summary");
-  for (const want of ["4 hosts at a time", "2 connections per host", "10 probe starts per second", "1500 ms", "22, 80, 443, 445, 515, 631, 8080, 9100"]) {
+  for (const want of ["4 hosts at a time", "2 connections per host", "10 probe starts per second", "1500 ms", "22, 80, 443, 445, 515, 631, 8080, 9100", "WS-Discovery, LLMNR, SMB, favicon"]) {
     assert.ok(summary.includes(want), "gentle summary missing " + want + ": " + summary);
   }
   const tradeoff = await page.textContent("#gentle-tradeoff");
@@ -54,7 +54,7 @@ async function gentleTests(scheme) {
   for (const id of ["#ports", "#concurrency", "#timeout", "#snmp-on", "#snmp-user"]) {
     assert.equal(await page.isDisabled(id), true, id + " must be disabled in gentle mode");
   }
-  for (const key of ["banners", "netbios", "mdns", "ssdp", "snmp"]) {
+  for (const key of ["banners", "netbios", "mdns", "ssdp", "wsd", "llmnr", "smb", "favicon", "snmp"]) {
     assert.equal(await page.isChecked(`[data-probe="${key}"]`), false, key + " shown on in gentle mode");
   }
   assert.equal(await page.isChecked('[data-probe="ports"]'), true);
@@ -70,13 +70,76 @@ async function gentleTests(scheme) {
   assert.equal(req.timeout_ms, 0);
   assert.equal(req.probes.snmp, false);
   assert.equal(req.snmp, null);
-  assert.deepEqual(req.probes, { ports: true, banners: false, reverse_dns: true, netbios: false, mdns: false, ssdp: false, snmp: false });
+  assert.deepEqual(req.probes, { ports: true, banners: false, reverse_dns: true, netbios: false, mdns: false, ssdp: false, wsd: false, llmnr: false, smb: false, favicon: false, snmp: false });
   // Back to default restores the user's own probe choices and fields.
   await page.click("#settings-btn");
   await page.check("#mode-default");
   assert.equal(await page.isDisabled("#concurrency"), false);
   assert.equal(await page.isChecked('[data-probe="banners"]'), true, "default probe choices restored");
   assert.equal(await page.isHidden("#gentle-info"), true);
+  assert.deepEqual(errors, [], "page errors");
+  await page.close();
+}
+
+// SC11: the four new probe toggles, settings saved before they existed, and device-reported
+// WS-Discovery, LLMNR, SMB2 and favicon text shown only as text.
+async function identificationTests(scheme) {
+  const page = await browser.newPage({ viewport: { width: 1320, height: 820 }, colorScheme: scheme });
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  await page.addInitScript({ path: join(here, "mock.js") });
+  // Settings saved by an earlier version: no entries for the new probes, mDNS switched off by the user.
+  await page.addInitScript(() => {
+    if (!localStorage.getItem("ztg-scanner:settings")) {
+      localStorage.setItem("ztg-scanner:settings", JSON.stringify({ ports: "22,80", concurrency: 64, timeout_ms: 800, mode: "default",
+        probes: { ports: true, banners: true, reverse_dns: true, netbios: true, mdns: false, ssdp: true, snmp: false } }));
+    }
+  });
+  await page.goto(url);
+  await page.waitForFunction(() => document.getElementById("targets")?.value === "192.168.50.0/24");
+  await page.click("#settings-btn");
+  for (const key of ["wsd", "llmnr", "smb", "favicon"]) {
+    assert.equal(await page.locator(`[data-probe="${key}"]`).count(), 1, key + " toggle missing");
+    assert.equal(await page.isChecked(`[data-probe="${key}"]`), true, key + " should take the default for old saved settings");
+  }
+  assert.equal(await page.isChecked('[data-probe="mdns"]'), false, "a probe the user switched off stays off");
+  await page.uncheck('[data-probe="smb"]');
+  await page.uncheck('[data-probe="wsd"]');
+  await page.click("#settings-close");
+  await page.click("#scan-btn");
+  await page.waitForSelector("#rows tr:nth-child(5)");
+  const req = (await page.evaluate(() => window.__calls)).find((c) => c[0] === "StartScan")[1];
+  assert.equal(req.mode, "default");
+  assert.deepEqual([req.probes.wsd, req.probes.llmnr, req.probes.smb, req.probes.favicon], [false, true, false, true]);
+
+  // Device-reported WS-Discovery text (with markup in it) is text, never markup.
+  await page.click('#rows tr[data-ip="192.168.50.40"]');
+  await page.waitForSelector("#detail:not([hidden])");
+  const camera = await page.textContent("#detail");
+  assert.ok(camera.includes("WS-Discovery (device-reported)") && camera.includes("NetworkVideoTransmitter"), camera);
+  assert.ok(camera.includes('<img src=x onerror="window.__pwned=1">Cam') && camera.includes("DS-2CD<b>1</b>"), "markup shown as text");
+  assert.ok(camera.includes("Announced addresses (not contacted)"));
+  assert.equal(await page.locator("#detail img, #detail b").count(), 0);
+  assert.equal(await page.locator('#detail a[href^="http://192.168.50.40"]').count(), 0, "an announced address must not become a link");
+  assert.equal(await page.evaluate(() => window.__pwned), undefined);
+
+  await page.click('#rows tr[data-ip="192.168.50.20"]');
+  const pc = await page.textContent("#detail");
+  for (const want of ["LLMNR", "frontdesk-pc", "SMB2 negotiate (server-reported)", "3.0.2", "enabled, not required", "2026-10-29T12:00:00Z", "inferred"]) {
+    assert.ok(pc.includes(want), "SMB or LLMNR detail missing " + want);
+  }
+  await page.click('#rows tr[data-ip="192.168.50.77"]');
+  const printer = await page.textContent("#detail");
+  assert.ok(printer.includes("33d499a752b8bfaddefd2358485f5e2014da2570d1e5f8b2e94b5cd87c0b6cb8") && printer.includes("-1338840234"), "favicon hashes missing");
+
+  // Optional columns exist, start hidden, and export as plain text.
+  await page.click("#columns-btn");
+  for (const col of ["llmnr", "wsd", "smb"]) {
+    assert.equal(await page.locator(`#columns-menu input[data-col="${col}"]`).count(), 1, col + " column missing");
+    assert.equal(await page.isChecked(`#columns-menu input[data-col="${col}"]`), false, col + " column should start hidden");
+  }
+  await page.check('#columns-menu input[data-col="smb"]');
+  assert.match(await page.textContent('#rows tr[data-ip="192.168.50.20"]'), /3\.0\.2/);
   assert.deepEqual(errors, [], "page errors");
   await page.close();
 }
@@ -993,6 +1056,8 @@ try {
     console.log(`ok  ${scheme} target sets`);
     await gentleTests(scheme);
     console.log(`ok  ${scheme} gentle mode`);
+    await identificationTests(scheme);
+    console.log(`ok  ${scheme} identification probes`);
     await openWithTests(scheme);
     console.log(`ok  ${scheme} open with`);
     await scheduleTests(scheme);

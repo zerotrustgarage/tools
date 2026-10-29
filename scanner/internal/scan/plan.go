@@ -37,13 +37,15 @@ var GentlePorts = []int{22, 80, 443, 445, 515, 631, 8080, 9100}
 
 // GentleProbes is the reduced probe set: ICMP, ARP and a short list of TCP
 // connects, plus reverse DNS (which asks the resolver, not the device).
-// Banner grabs, NetBIOS, mDNS, SSDP and SNMP are off.
+// Banner grabs, NetBIOS, mDNS, SSDP, WS-Discovery, LLMNR, SMB2 negotiate, favicon
+// reads and SNMP are off. The list is spelled out field by field so a probe added
+// later is off in gentle mode until someone decides otherwise.
 var GentleProbes = Probes{Ports: true, ReverseDNS: true}
 
 // GentleTradeoff states what gentle mode does and does not promise. It is
 // shown verbatim in the CLI help and the Desktop settings.
 const GentleTradeoff = "Gentle mode lowers the load a scan puts on a network and skips the more intrusive probes. " +
-	"It is slower and identifies less: no service banners, NetBIOS, mDNS, UPnP or SNMP, and only a few ports. " +
+	"It is slower and identifies less: no service banners, NetBIOS, mDNS, UPnP, WS-Discovery, LLMNR, SMB or favicon probes, no SNMP, and only a few ports. " +
 	"It reduces risk but does not remove it: any scan can upset a very fragile device, so get approval and watch the network."
 
 // Pacer spaces out probe starts. Wait blocks until the caller may start one
@@ -264,7 +266,7 @@ func GentleInfo() ModeInfo {
 func GentleSummary() string {
 	ports := portList(GentlePorts)
 	return fmt.Sprintf("%d hosts at a time, %d connections per host, at most %d probe starts per second in total, "+
-		"%d ping per host, %s connect timeout, TCP ports %s. Skips service banners, NetBIOS, mDNS, UPnP and SNMP.",
+		"%d ping per host, %s connect timeout, TCP ports %s. Skips service banners, NetBIOS, mDNS, UPnP, WS-Discovery, LLMNR, SMB, favicon and SNMP probes.",
 		GentleConcurrency, GentlePortConcurrency, int(time.Second/GentleProbeInterval), GentlePingAttempts,
 		GentleConnectTimeout, ports)
 }
