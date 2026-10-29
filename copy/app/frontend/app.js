@@ -1,5 +1,6 @@
 import {showUpdateDialog} from './updates.js';
 import {initBits} from './bits.js';
+import {initRCJ} from './rcj.js';
 
 const $ = id => document.getElementById(id);
 const make = (tag, text, cls) => {
@@ -316,7 +317,7 @@ $('start-copy').onclick = () => {
 };
 $('stop').onclick = attempt(async () => {await api.Stop(); $('phase').textContent = 'Stopping'; await poll();});
 function lockForm(running) {
-  for (const node of document.querySelectorAll('#job-name,#source,#destination,#files,[data-browse],[data-preset],#swap,#save-template,#import-job,#import-command,#records-location,#option-search,#show-reference')) node.disabled = running;
+  for (const node of document.querySelectorAll('#job-name,#source,#destination,#files,[data-browse],[data-preset],#swap,#save-template,#import-job,#import-rcj,#import-command,#records-location,#option-search,#show-reference')) node.disabled = running;
   $('preview').disabled = running || !review?.can_run;
   $('running-dot').hidden = !running;
   renderChips(); renderCatalog();
@@ -550,6 +551,7 @@ async function init() {
   installJob(boot.default_job);
   renderCatalog();
   await initBits({api,make,modal,field,toast,attempt});
+  initRCJ({api,make,modal,toast,attempt,readDraft,loadJob:j => {installJob(j); return navigate('design');},isBusy:() => Boolean(state?.running)});
   await loadTemplates();
   await poll();
 }

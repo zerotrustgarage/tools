@@ -49,6 +49,33 @@
     Explain:async text=>{calls.push(['Explain',text]);return describe({schema:1,source:'C:\\Data',destination:'D:\\Archive',options:text.includes('/FUTURE')?['/E','/FUTURE:9']:['/E']});},
     ImportJob:async()=>describe({...base,source:'C:\\Imported',destination:'D:\\Imported'}),
     ExportJob:async j=>{calls.push(['ExportJob',j]);return 'D:\\copy-job.json';},
+    ImportRCJ:async()=>{
+      calls.push(['ImportRCJ']);
+      if(window.__rcjCancel)return null;
+      const j=copy(window.__rcjJob),options=j.options||[],switches=[];
+      for(let i=0;i<options.length;i++){
+        const a=options[i],o=known.get(a.split(':')[0].toUpperCase()),s={argument:a,known:Boolean(o&&a.startsWith('/')),hidden:Boolean(o?.tags?.includes('hidden')),destructive:Boolean(o?.tags?.includes('destructive')),available:Boolean(o?.available),help:o?.help||'',handling:o?.handling||'',tags:o?.tags||[]};
+        if(o?.argument==='list')for(s.items=[];i+1<options.length&&!options[i+1].startsWith('/');)s.items.push(options[++i]);
+        switches.push(s);
+      }
+      const view=describe(j);
+      const notes=switches.some(s=>s.destructive)?[{severity:'warning',argument:'/MIR',message:'destructive: a list-only preview and a confirmation are required before it can run'}]:[];
+      return {file:window.__rcjFile,encoding:'UTF-8',bytes:321,view,notes,switches,needs_review:view.issues.length>0||switches.some(s=>!s.known||s.hidden||s.destructive)};
+    },
+    PreviewRCJExport:async(j,mode)=>{
+      calls.push(['PreviewRCJExport',copy(j),mode]);
+      const bad=describe(j).issues.find(i=>i.severity==='error');
+      if(!j.source||!j.destination)throw Error('job requires review before export: '+(j.source?'destination':'source')+': use an absolute drive or UNC path without device prefixes or wildcards');
+      if(bad)throw Error('job requires review before export: '+bad.argument+': '+bad.message);
+      const text='::\r\n:: Robocopy job file written by ZTG Copy. It holds no credentials.\r\n\t/SD:'+j.source+'\r\n\t/DD:'+j.destination+'\r\n';
+      return {text,encoding:mode==='utf16'?'UTF-16LE with byte order mark':mode==='utf8'?'UTF-8 without byte order mark':'ASCII (plain bytes, the same in ANSI and UTF-8)',bytes:text.length*(mode==='utf16'?2:1)};
+    },
+    ExportRCJ:async(j,mode)=>{
+      calls.push(['ExportRCJ',copy(j),mode]);
+      if(window.__rcjCancel)return null;
+      if(window.__rcjExists)throw Error('a file with that name already exists; ZTG Copy does not replace files, so choose a new name');
+      return {path:'D:\\Exports\\<img src=x onerror="window.__pwned=true">.rcj',encoding:mode==='utf16'?'UTF-16LE with byte order mark':'ASCII (plain bytes, the same in ANSI and UTF-8)',bytes:96,check:'No credentials are written. ZTG Copy does not run Robocopy for this; to have the installed Robocopy check the file, run robocopy /JOB:FILE /QUIT yourself.'};
+    },
     Start:async(j,data)=>{
       calls.push(['Start',copy(j),data]);
       if(state.running)throw Error('operation already running');

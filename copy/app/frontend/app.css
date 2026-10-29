@@ -67,3 +67,13 @@ main{min-width:0;padding:34px 34px 0}.page-heading{display:flex;align-items:cent
 #bits-catalog .catalog-row{grid-template-columns:148px minmax(0,1fr) auto}#bits-catalog .catalog-token{word-break:normal;overflow-wrap:anywhere}
 
 .diagnostic-card{border:1px solid var(--line);border-radius:7px;padding:14px;margin-top:14px}.diagnostic-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.diagnostic-heading strong{font-size:13px;color:var(--bright)}.diagnostic-advice{font-size:12px;line-height:1.7;color:var(--text);margin:10px 0}.diagnostic-card summary{font-size:11px;color:var(--muted);cursor:pointer}.diagnostic-samples{font:11px/1.7 ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:200px;overflow:auto;margin:10px 0 0;color:var(--text)}.record-phases{width:100%;font-size:11px;margin:16px 0}.record-phases th,.record-phases td{text-align:left;padding:8px;border-bottom:1px solid var(--line)}.record-phases td:last-child{white-space:normal}.record-phases+h3{font-size:14px;color:var(--bright);margin:20px 0 0}
+
+.rcj-file{font:11px/1.6 ui-monospace,monospace;color:var(--muted);overflow-wrap:anywhere;margin:10px 0}
+.rcj-section{margin-top:18px}.rcj-section h3{font-size:12px;color:var(--bright);margin:0 0 8px}
+.rcj-list{list-style:none;margin:0;padding:0;max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:6px}
+.rcj-item{padding:9px 11px;border-bottom:1px solid var(--line);font-size:12px;overflow-wrap:anywhere}.rcj-item:last-child{border-bottom:0}
+.rcj-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.rcj-head code,.rcj-items{font:11px/1.6 ui-monospace,monospace;color:var(--bright)}
+.rcj-items{display:block;white-space:pre-wrap;margin-top:6px;color:var(--text)}
+.rcj-help{font-size:11px;line-height:1.6;color:var(--muted);margin:6px 0 0}
+.rcj-flag{font-size:9px;border:1px solid var(--line-strong);border-radius:20px;padding:2px 7px;white-space:nowrap}
+.rcj-flag.warn{color:var(--medium);border-color:var(--medium)}.rcj-flag.bad{color:var(--high);border-color:var(--high)}

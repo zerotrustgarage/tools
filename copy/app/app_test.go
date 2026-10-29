@@ -127,11 +127,12 @@ func TestDesignerKeepsUnknownOptionsAndQuotesPowerShell(t *testing.T) {
 	}
 }
 
-type fakePlatform struct{ open string }
+type fakePlatform struct{ open, save string }
 
 func (p fakePlatform) Directory(string) (string, error) { return "", nil }
 func (p fakePlatform) OpenFile(string) (string, error)  { return p.open, nil }
-func (p fakePlatform) SaveFile(string) (string, error)  { return "", nil }
+func (p fakePlatform) OpenRCJ() (string, error)         { return p.open, nil }
+func (p fakePlatform) SaveFile(string) (string, error)  { return p.save, nil }
 func (p fakePlatform) RevealDirectory(string) error     { return nil }
 
 func TestTemplateImportIsStrictAndRequiresAcceptance(t *testing.T) {
