@@ -33,6 +33,7 @@ plain `cargo build` makes a development build that loads its UI from localhost.
 
 ```
 npm run check --workspace @ztg-tools/readout                  # typecheck and tests
+npm run build --workspace @ztg-tools/readout && npm run uitest --workspace @ztg-tools/readout   # browser UI suite (needs Playwright and Chromium, see uitest/run.mjs)
 cd src-tauri && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked
 scripts/ci/build-windows.sh readout                           # from the repository root
 scripts/ci/test-installer-wine.sh <Setup.exe>                 # installer under Wine
