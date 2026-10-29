@@ -19,7 +19,9 @@ These properties are requirements, each held by tests:
 3. The WebView holds no file system, dialog or shell permission. Every file operation is a Rust
    command in `src-tauri/src/lib.rs` limited to paths the user chose, and paths written in
    documents never name a drive, root or UNC host. A new command must be added to `build.rs`
-   and granted in `capabilities/default.json` deliberately.
+   and granted in `capabilities/default.json` deliberately. A link to a non-Markdown file (RD16,
+   `src-tauri/src/linked.rs`) opens only an allow-listed document type after a confirmation;
+   programs and scripts are refused and Readout never runs anything.
 4. Formatting commands change only the characters they add or remove.
 5. The recent-files list is Rust's on the desktop (`src-tauri/src/recent.rs`): only a granted
    document is added, and `open_recent` grants a path only when it is on the list. The window's
@@ -33,6 +35,7 @@ plain `cargo build` makes a development build that loads its UI from localhost.
 
 ```
 npm run check --workspace @ztg-tools/readout                  # typecheck and tests
+npm run build --workspace @ztg-tools/readout && npm run uitest --workspace @ztg-tools/readout   # browser UI suite (needs Playwright and Chromium, see uitest/run.mjs)
 cd src-tauri && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked
 scripts/ci/build-windows.sh readout                           # from the repository root
 scripts/ci/test-installer-wine.sh <Setup.exe>                 # installer under Wine

@@ -35,7 +35,13 @@ func (p wailsPlatform) SaveFile(name string) (string, error) {
 	if strings.HasSuffix(name, ".ps1") {
 		filter = runtime.FileFilter{DisplayName: "PowerShell script", Pattern: "*.ps1"}
 	}
+	if strings.HasSuffix(name, ".rcj") {
+		filter = runtime.FileFilter{DisplayName: "Robocopy job file", Pattern: "*.rcj"}
+	}
 	return runtime.SaveFileDialog(p.ctx, runtime.SaveDialogOptions{Title: "Export to a new file", DefaultFilename: name, Filters: []runtime.FileFilter{filter}})
+}
+func (p wailsPlatform) OpenRCJ() (string, error) {
+	return runtime.OpenFileDialog(p.ctx, runtime.OpenDialogOptions{Title: "Import a Robocopy job file", Filters: []runtime.FileFilter{{DisplayName: "Robocopy job file", Pattern: "*.rcj"}, {DisplayName: "All files", Pattern: "*.*"}}})
 }
 func (p wailsPlatform) TransferFile(kind string) (string, error) {
 	if kind == "source" {

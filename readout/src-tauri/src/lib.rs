@@ -18,6 +18,10 @@
 //! - Folder listings never follow symbolic links or junctions, so a repository cannot point the
 //!   walk outside itself or into a loop.
 //! - External links open in the system browser only for http, https and mailto.
+//! - A link to a file that is not Markdown (`linked.rs`, RD16) is resolved here with the same
+//!   rules, judged by an allow-list of document types (programs and scripts are refused, never
+//!   run), shown to the reader in a confirmation, and only then opened in the operating system's
+//!   default application, with no arguments and no shell.
 //! - The session (the open folder and document, so the next start reopens them) is kept by Rust
 //!   in the app's local data folder. The WebView can only ask to remember paths that are already
 //!   granted, and a stored path is checked again (it must still exist and be a folder or a
@@ -28,6 +32,7 @@
 //!   API and restored onto a monitor that exists now. The WebView is given no window permission
 //!   for it and holds no say in it.
 
+mod linked;
 mod recent;
 mod window_state;
 
@@ -614,6 +619,75 @@ async fn resolve_link(
     Ok(Some(path.to_string_lossy().into_owned()))
 }
 
+/// Which of the two answers a link to a non-Markdown file gets (RD16).
+#[derive(Serialize)]
+struct LinkFileCheck {
+    /// `confirm` (ask the reader), `refused` (say why) or `folder` (a Markdown rule applies).
+    status: &'static str,
+    /// The resolved full path, shown in the confirmation.
+    path: String,
+    name: String,
+    /// The type, for example `PDF document (.pdf)`.
+    kind: String,
+    /// The reason, when refused.
+    message: String,
+}
+
+fn link_check(document: &str, target: &str, granted: &Granted) -> Result<linked::LinkCheck, String> {
+    let document = granted.check(document)?;
+    let root = granted.root_of(&document);
+    Ok(linked::check(&document, target, root.as_deref()))
+}
+
+/// Judges a link to a file that is not Markdown without opening anything: the WebView shows the
+/// answer and asks the reader.
+#[tauri::command]
+async fn inspect_link_file(
+    document: String,
+    target: String,
+    granted: State<'_, Granted>,
+) -> Result<LinkFileCheck, String> {
+    let blank = |status, message: String| LinkFileCheck {
+        status,
+        path: String::new(),
+        name: String::new(),
+        kind: String::new(),
+        message,
+    };
+    Ok(match link_check(&document, &target, &granted)? {
+        linked::LinkCheck::Folder => blank("folder", String::new()),
+        linked::LinkCheck::Refused(message) => blank("refused", message),
+        linked::LinkCheck::Confirm(file) => LinkFileCheck {
+            status: "confirm",
+            path: file.path,
+            name: file.name,
+            kind: file.kind,
+            message: String::new(),
+        },
+    })
+}
+
+/// Opens a linked file in its default application. Everything is resolved and judged again, and
+/// the file must still be the one the reader confirmed. No arguments, no shell.
+#[tauri::command]
+async fn open_link_file(
+    app: AppHandle,
+    document: String,
+    target: String,
+    confirmed: String,
+    granted: State<'_, Granted>,
+) -> Result<(), String> {
+    match link_check(&document, &target, &granted)? {
+        linked::LinkCheck::Confirm(file) if file.path == confirmed => app
+            .opener()
+            .open_path(file.path, None::<&str>)
+            .map_err(|e| format!("Could not open the file: {e}")),
+        linked::LinkCheck::Confirm(_) => Err("The link now points to a different file".into()),
+        linked::LinkCheck::Refused(message) => Err(message),
+        linked::LinkCheck::Folder => Err("The link points to a folder".into()),
+    }
+}
+
 #[tauri::command]
 fn initial_document(granted: State<'_, Granted>) -> Option<Initial> {
     granted.initial.lock().expect("initial lock").take()
@@ -910,6 +984,8 @@ pub fn run() {
             open_external,
             read_image,
             resolve_link,
+            inspect_link_file,
+            open_link_file,
             initial_document,
             remember_session,
             recent_files,
