@@ -35,6 +35,38 @@ type ErrorGroup struct {
 // decimal/hex codes so filenames and unrelated numbers do not become errors.
 var errorHeader = regexp.MustCompile(`^[ \t]*[0-9]{4}/[0-9]{2}/[0-9]{2}[ \t]+[0-9]{2}:[0-9]{2}:[0-9]{2}[ \t]+[^0-9()\r\n]+([0-9]+)[ \t]+\(0[xX]([0-9a-fA-F]{8})\)([ \t]+.*)?$`)
 
+type headerStatus int
+
+const (
+	headerNone headerStatus = iota
+	headerDisagrees
+	headerOK
+)
+
+// errorHeaderCode reads the timestamped native-log error header shape used by
+// NativeDiagnostics. The localized label is ignored.
+func errorHeaderCode(line string) (uint64, headerStatus) {
+	match := errorHeader.FindStringSubmatch(line)
+	if match == nil {
+		return 0, headerNone
+	}
+	code, decErr := strconv.ParseUint(match[1], 10, 32)
+	hexCode, hexErr := strconv.ParseUint(match[2], 16, 32)
+	if decErr != nil || hexErr != nil || code != hexCode {
+		return 0, headerDisagrees
+	}
+	return code, headerOK
+}
+
+// ErrorHeader reports whether line is a native-log error header whose decimal and
+// hexadecimal Windows codes agree, and returns the code. Code 0 is a header too
+// (the engine prints it for some informational entries); callers that count real
+// errors should ignore it.
+func ErrorHeader(line string) (uint32, bool) {
+	code, status := errorHeaderCode(strings.TrimSuffix(line, "\r"))
+	return uint32(code), status == headerOK
+}
+
 // NativeDiagnostics streams UTF-16LE with bounded memory, even for long lines.
 // A malformed or oversized line is skipped and counted; later headers survive.
 func NativeDiagnostics(r io.Reader) (Diagnostics, error) {
@@ -62,13 +94,11 @@ func NativeDiagnostics(r io.Reader) (Diagnostics, error) {
 			report.SkippedLines++
 			return
 		}
-		match := errorHeader.FindStringSubmatch(strings.TrimSuffix(text, "\r"))
-		if match == nil {
+		code, status := errorHeaderCode(strings.TrimSuffix(text, "\r"))
+		if status == headerNone {
 			return
 		}
-		code, decErr := strconv.ParseUint(match[1], 10, 32)
-		hexCode, hexErr := strconv.ParseUint(match[2], 16, 32)
-		if decErr != nil || hexErr != nil || code != hexCode {
+		if status == headerDisagrees {
 			report.SkippedLines++
 			return
 		}

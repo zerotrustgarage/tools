@@ -5,6 +5,7 @@
   const templates = [{schema:1,catalog_version:1,id:'sample',description:'<img src=x onerror="window.__pwned=true">',fields:[{name:'source',kind:'path',description:'Source folder'},{name:'destination',kind:'path',description:'Destination folder'}],job:{...base,source:'{source}',destination:'{destination}'}}];
   let state={id:0,running:false,messages:[],phase:''}, sequence=0, ticks=0, active, approved='';
   const summary={directories:{total:2,copied:0,skipped:2,mismatch:0,failed:0,extras:0},files:{total:12,copied:12,skipped:0,mismatch:0,failed:0,extras:0},bytes:{total:8388608,copied:8388608,skipped:0,mismatch:0,failed:0,extras:0}};
+  const finalMetrics={phase:'copy',elapsed_ms:92000,source:'summary',completed:{files:12,bytes:8388608},log_completed:{files:12,bytes:8388608},seen:{files:12,bytes:8388608,dirs:2},average_bytes_per_sec:91180,peak_bytes_per_sec:2097152,files_per_sec_average:0.13,activity_available:true,activity_read_bytes:8388608,activity_average_bytes_per_sec:91180,error_lines:0,stalls:[{start_ms:30000,end_ms:41000}],stalled_ms:11000,concurrent:false,list_only:false,progress_available:true,limits:['<img src=x onerror="window.__pwned=true"> and a plain limit.'],window_seconds:5,stall_after_seconds:60,timeline:[]};
   const diagnostics={errors:[{code:32,count:2,cause:'File in use',suggestion:'Close the application holding the file, or retry during a maintenance window.',samples:['2026/10/23 12:34:56 ERROR 32 (0x00000020) Copying File C:\\日本語\\<img src=x onerror="window.__pwned=true">.txt']}]};
   const known = new Map(window.__catalog.map(x=>[x.token,x]));
   const describe = j => {
@@ -87,13 +88,13 @@
       if(state.running && ++ticks>=3 && !window.__holdRun){
         const failed=state.mode==='run' && window.__failNextCopy;
         const outcome=failed?'failed':state.mode==='plan'?'planned':'copied';
-        const copyPhase={name:'copy',process:{native_exit:failed?8:1},summary:copy(summary),...(failed?{diagnostics:copy(diagnostics)}:{})};
+        const copyPhase={name:'copy',process:{native_exit:failed?8:1},summary:copy(summary),...(failed?{diagnostics:copy(diagnostics)}:{metrics:copy(finalMetrics)})};
         const verifyPhase={name:'convergence',process:{native_exit:failed?1:0},summary:{...copy(summary),files:{...summary.files,copied:failed?1:0},bytes:{...summary.bytes,copied:failed?1024:0}}};
         state={...state,running:false,phase:outcome,messages:[...state.messages,outcome],record:{schema:1,job:active,mode:state.mode,state:outcome,normalized_exit:failed?2:0,started:state.started,finished:new Date().toISOString(),directory:'C:\\records\\2026-10-22\\0123456789abcdef01234567',phases:[{name:'preview',process:{native_exit:1},summary:copy(summary)},...(state.mode==='run'?[copyPhase,verifyPhase]:[])]}};
         if(state.mode==='plan')approved=JSON.stringify(active);
         if(failed)window.__failNextCopy=false;
       }
-      return copy(state);
+      return copy(state.running && window.__liveMetrics ? {...state,metrics:window.__liveMetrics} : state);
     },
     Stop:async()=>{calls.push(['Stop']);state={...state,running:false,phase:'canceled',record:{job:active,state:'canceled',normalized_exit:3,mode:state.mode,finished:new Date().toISOString(),phases:[]}};approved='';},
     Templates:async()=>templates.map(t=>({template:copy(t),view:describe(t.job)})),

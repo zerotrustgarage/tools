@@ -41,6 +41,35 @@ func Discover() (Engine, error) {
 	return Engine{Path: path, SHA256: hex.EncodeToString(h.Sum(nil))}, nil
 }
 
+// IOCounters are the process I/O counters of the running engine
+// (GetProcessIoCounters). They are activity, not completed bytes: RC0 measured
+// reads equal to the data copied, writes that include the log, and no promise for
+// offloaded or cloned copies.
+type IOCounters struct {
+	ReadOperations  uint64
+	WriteOperations uint64
+	OtherOperations uint64
+	ReadBytes       uint64
+	WriteBytes      uint64
+	OtherBytes      uint64
+}
+
+// SampleInterval is how often a running engine is sampled (design section 6).
+const SampleInterval = 500 * time.Millisecond
+
+// Observer receives live readings while the engine runs. A zero Observer is valid.
+type Observer struct {
+	// IO is called about every SampleInterval, and once more after the process
+	// exits, from the goroutine that waits for the process. It must not block.
+	IO func(IOCounters)
+}
+
 func (e Engine) Run(ctx context.Context, args []string, stdout, stderr string) (Result, error) {
-	return launch(ctx, e.Path, args, stdout, stderr)
+	return launch(ctx, e.Path, args, stdout, stderr, Observer{})
+}
+
+// RunObserved is Run with live readings. On platforms without the counters the
+// observer is never called.
+func (e Engine) RunObserved(ctx context.Context, args []string, stdout, stderr string, obs Observer) (Result, error) {
+	return launch(ctx, e.Path, args, stdout, stderr, obs)
 }
