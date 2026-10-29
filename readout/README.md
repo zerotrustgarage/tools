@@ -31,6 +31,30 @@ Relative images load from the folder. The listing skips `.git`, `node_modules`, 
 other noise, keeps `.github`, and never follows symbolic links or junctions. Back (Alt+Left)
 returns along the links you followed.
 
+### Links to other files
+
+A link to a file that is not Markdown (`[Spec](files/spec.pdf)`) opens it in the program your
+system uses for that type, on the desktop only, after one confirmation. The dialog shows the full
+path and the file type; Cancel is the default button, so Enter and Escape both decline. The browser
+version cannot open local programs and keeps saying that only Markdown files open.
+
+Readout never runs programs. A Markdown file is untrusted input, so a link must not become code
+execution by one click. Only these types open: pdf, png, jpg, jpeg, gif, webp, txt, csv, log, docx,
+xlsx, pptx, odt, ods, odp, rtf, json, xml, yaml and yml. Programs and scripts are refused with a
+message that names the file: exe, com, bat, cmd, ps1, psm1, vbs, vbe, js, jse, wsf, wsh, msi, msp,
+scr, pif, lnk, url, hta, cpl, jar, reg, inf, chm, appx, msix, application and gadget, plus dll,
+sys, py, sh and other script and library types, and any file with no extension. Other types (HTML,
+SVG, archives, macro-enabled Office files) are refused too, because their default program may run
+their content. Open those from File Explorer yourself if you trust them.
+
+The path is resolved in Rust, never in the page: it must be relative, exist, be a regular file and
+stay inside the open folder (a document opened on its own may link only to files in its own
+folder). A drive, a root, a network share (`\\host\share`), a `file:` address and an alternate
+data stream (`a.pdf:stream`) are refused. The type is checked on the name as written and on the
+real file, so a shortcut or symbolic link cannot rename a program into a document. The file is
+handed to the system with no arguments and no shell (`ShellExecuteExW` on Windows through the
+opener already bundled for web links).
+
 ## Working with it
 
 - The app reopens what you had open last: the folder and the document you were reading in it,
@@ -172,7 +196,9 @@ defences are layered:
 3. A strict Content Security Policy forbids inline and remote script and remote loads.
 4. On the desktop, the WebView has no file system, dialog or shell permission. Rust shows the
    native dialogs and keeps an allow-list of what the user chose. A link to a file outside the
-   open folder asks first, in a native dialog page script cannot answer. Paths written in
+   open folder asks first, in a native dialog page script cannot answer. A link to a document file
+   (PDF, spreadsheet) opens it in its default app only after a confirmation, and a link to a
+   program or script is refused outright (see Links to other files). Paths written in
    documents may not name a drive or UNC host, which closes the Windows NTLM hash leak through
    `\\host\share` image paths. Only Markdown and text files can be written. The stored session
    and the recent-files list can only hold paths already on that allow-list, and are checked

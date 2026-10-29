@@ -123,6 +123,23 @@ export class FileTooLargeError extends Error {
   }
 }
 
+/**
+ * What the desktop's Rust side decided about a link to a file that is not Markdown (RD16).
+ * `confirm`: a document type that may open after the reader agrees; `refused`: message says why
+ * (a program or script, a type that is not listed, a path that is not allowed); `folder`: the link
+ * points to a folder, so the Markdown rules apply.
+ */
+export interface LinkedFileCheck {
+  status: 'confirm' | 'refused' | 'folder';
+  /** The resolved full path, shown in the confirmation. */
+  path: string;
+  name: string;
+  /** The file type, for example "PDF document (.pdf)". */
+  kind: string;
+  /** Why the link is refused; empty otherwise. */
+  message: string;
+}
+
 export interface Platform {
   kind: 'desktop' | 'web';
   /** Present when the app draws its own title bar. */
@@ -153,6 +170,17 @@ export interface Platform {
    * null when the platform cannot or the user declines.
    */
   followLink(from: FileRef, target: string): Promise<OpenedFile | null>;
+  /**
+   * Desktop only (absent in the browser, which cannot open local applications). Asks Rust whether a
+   * relative link (decoded path, no fragment) to a file that is not Markdown may be opened,
+   * without opening anything.
+   */
+  inspectLinkedFile?(from: FileRef, target: string): Promise<LinkedFileCheck>;
+  /**
+   * Desktop only. Opens that file in the system's default application. Call it only after the
+   * reader confirmed `check.path`; Rust judges the link again and refuses if the file changed.
+   */
+  openLinkedFile?(from: FileRef, target: string, check: LinkedFileCheck): Promise<void>;
   /** Reads a file opened earlier again (for Back), or null when that is no longer possible. */
   reopen(ref: FileRef): Promise<OpenedFile | null>;
   /** Writes to ref, or behaves like saveAs when ref cannot be written in place. */

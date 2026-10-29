@@ -11,6 +11,8 @@ const COMMANDS: &[&str] = &[
     "open_external",
     "read_image",
     "resolve_link",
+    "inspect_link_file",
+    "open_link_file",
     "initial_document",
     "remember_session",
     "recent_files",

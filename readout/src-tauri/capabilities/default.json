@@ -25,6 +25,8 @@
     "allow-open-external",
     "allow-read-image",
     "allow-resolve-link",
+    "allow-inspect-link-file",
+    "allow-open-link-file",
     "allow-initial-document",
     "allow-remember-session",
     "allow-recent-files",

@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { writeRichText } from './clipboard';
-import type { Arrival, FileRef, Listing, OpenedFile, Platform, RecentFiles } from './types';
+import type { Arrival, FileRef, LinkedFileCheck, Listing, OpenedFile, Platform, RecentFiles } from './types';
 
 // The WebView has no file system, dialog or shell permission. Every file operation is a Rust
 // command that only touches paths the user chose through a native dialog, a file association
@@ -153,6 +153,16 @@ export const desktopPlatform: Platform = {
     if (!from.path) return null;
     const path = await invoke<string | null>('resolve_link', { document: from.path, target });
     return path ? read(path) : null;
+  },
+
+  async inspectLinkedFile(from, target) {
+    if (!from.path) throw new Error('This document has no location to resolve the link against');
+    return invoke<LinkedFileCheck>('inspect_link_file', { document: from.path, target });
+  },
+
+  async openLinkedFile(from, target, check) {
+    if (!from.path) throw new Error('This document has no location to resolve the link against');
+    await invoke('open_link_file', { document: from.path, target, confirmed: check.path });
   },
 
   async reopen(ref) {

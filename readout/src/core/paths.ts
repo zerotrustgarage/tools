@@ -13,6 +13,10 @@ export const SKIPPED_FOLDERS = new Set([
 export const KEPT_HIDDEN_FOLDERS = new Set(['.github', '.gitlab']);
 export const LISTED_EXTENSIONS = /\.(md|markdown|mdown|mkd|mkdn)$/i;
 
+/** Links to these open in Readout itself (Markdown, and text from a lone file); see resolve_link. */
+export const OPENS_IN_READOUT = /\.(md|markdown|mdown|mkd|mkdn|txt)$/i;
+export const opensInReadout = (path: string): boolean => OPENS_IN_READOUT.test(path);
+
 export function skipFolder(name: string): boolean {
   if (name.startsWith('.') && !KEPT_HIDDEN_FOLDERS.has(name)) return true;
   return SKIPPED_FOLDERS.has(name.toLowerCase());

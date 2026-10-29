@@ -13,12 +13,12 @@ import {
 import { exportHtml } from '../core/export';
 import { extractOutline } from '../core/outline';
 import { ExternalChangeWatcher, type WatchHost } from '../core/reload';
-import { defaultDocument, documentFor, resolveInFolder, resolveWikiLink, splitHref } from '../core/paths';
+import { defaultDocument, documentFor, LISTED_EXTENSIONS, opensInReadout, resolveInFolder, resolveWikiLink, splitHref } from '../core/paths';
 import { postprocess } from '../core/postprocess';
 import { renderMarkdown } from '../core/render';
 import { blobUrlToDataUrl, buildRichText, fragmentForRange, isEmptyFragment } from '../core/richtext';
 import { DEFAULT_BOUNDS, type SearchMatch } from '../core/search';
-import type { Arrival, FileRef, Listing, OpenedFile, PendingSession, Platform, RecentEntry } from '../platform/types';
+import type { Arrival, FileRef, LinkedFileCheck, Listing, OpenedFile, PendingSession, Platform, RecentEntry } from '../platform/types';
 import { el, icon } from './dom';
 import { createEditor, documentText, scrollToLine, type JumpOptions } from './editor';
 import { runFormat, type FormatCommand } from './format';
@@ -1249,8 +1249,16 @@ export class App {
       const target = resolved === null ? null : documentFor(resolved, this.listing!.files);
       if (target !== null) await this.openFolderPath(target, split.fragment || null, true);
       else if (resolved === null) this.notify(`That link leaves the open folder: ${href}`);
-      else this.notify(`Only Markdown files open here: ${href}`);
+      else if (ref && !LISTED_EXTENSIONS.test(resolved) && this.platform.inspectLinkedFile) {
+        // RD16: a document, a spreadsheet or a script. Only a folder is left to the Markdown rule.
+        if ((await this.linkedFile(ref, href, split.path)) === 'folder') this.notify(`Only Markdown files open here: ${href}`);
+      } else this.notify(`Only Markdown files open here: ${href}`);
       return;
+    }
+    // RD16: a link from a lone file to something that is not Markdown or text never discards the
+    // open document, so it is judged first. A link to a folder carries on to the README rule.
+    if (ref && this.platform.inspectLinkedFile && !opensInReadout(split.path)) {
+      if ((await this.linkedFile(ref, href, split.path)) === 'handled') return;
     }
     if (!ref || !(await this.confirmDiscard())) return;
     try {
@@ -1260,6 +1268,30 @@ export class App {
     } catch (error) {
       this.notify(`Could not open ${href}: ${message(error)}`);
     }
+  }
+
+  /**
+   * RD16 (desktop only): a relative link to a file that is not Markdown. Rust resolves and judges
+   * it; a refusal is explained, an allowed document type opens in its default application only
+   * after the reader confirms, and Cancel, Escape or a closed dialog do nothing. Resolves
+   * `folder` when the link points to a folder, which the caller treats as a Markdown link.
+   */
+  private async linkedFile(ref: FileRef, href: string, path: string): Promise<'handled' | 'folder'> {
+    const platform = this.platform;
+    try {
+      const check = await platform.inspectLinkedFile!(ref, path);
+      if (check.status === 'folder') return 'folder';
+      if (check.status === 'refused') {
+        this.notify(check.message);
+        return 'handled';
+      }
+      if (!(await linkedFileDialog(check))) return 'handled';
+      await platform.openLinkedFile!(ref, path, check);
+      this.notify(null);
+    } catch (error) {
+      this.notify(`Could not open ${href}: ${message(error)}`);
+    }
+    return 'handled';
   }
 
   /** Double-clicking rendered text moves the editor to its source line. */
@@ -1285,6 +1317,44 @@ function message(error: unknown): string {
 }
 
 let openDialogs = 0;
+
+/**
+ * The confirmation before a linked file opens in another program (RD16): the full path and the
+ * file type, Open as an ordinary button and Cancel as the default (focused, so Enter and Escape
+ * both decline). Resolves true only when the reader clicks Open.
+ */
+function linkedFileDialog(check: LinkedFileCheck): Promise<boolean> {
+  return new Promise((resolve) => {
+    const dialog = el('dialog', { class: 'modal', 'aria-label': 'Open linked file' }) as HTMLDialogElement;
+    const open = el('button', { type: 'button', class: 'text-button' }, 'Open');
+    const cancel = el('button', { type: 'button', class: 'primary' }, 'Cancel');
+    let answer = false;
+    open.addEventListener('click', () => {
+      answer = true;
+      dialog.close();
+    });
+    cancel.addEventListener('click', () => dialog.close());
+    dialog.append(
+      el('h2', {}, 'Open linked file?'),
+      el('p', {}, 'This link points to a file that is not Markdown. Readout will hand it to the program your system uses for this type of file. Readout does not run programs.'),
+      el('p', { class: 'linked-file' }, el('code', {}, check.path)),
+      el('p', {}, `Type: ${check.kind}`),
+      el('div', { class: 'modal-actions' }, open, cancel),
+    );
+    dialog.addEventListener('cancel', () => {
+      answer = false;
+    });
+    dialog.addEventListener('close', () => {
+      openDialogs--;
+      dialog.remove();
+      resolve(answer);
+    });
+    openDialogs++;
+    document.body.append(dialog);
+    dialog.showModal();
+    cancel.focus();
+  });
+}
 
 function confirmDialog(title: string, body: string, choices: string[]): Promise<string | null> {
   return new Promise((resolve) => {
