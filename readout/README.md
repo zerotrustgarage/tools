@@ -41,6 +41,36 @@ returns along the links you followed.
   holds only paths you had already opened; anything that has since been moved or deleted is
   skipped. In the browser, Chromium keeps the folder or file handle, and unless you allowed
   access on every visit the page asks with a Reopen button, since access needs a click.
+- Recent files (the Recent button in the top bar, or Ctrl+Shift+E) lists the last 10 documents you
+  opened or saved, newest first, with the folder each is in. The panel is a plain list of
+  buttons: Tab and the arrow keys move through it, Enter opens the file, Delete removes the
+  focused line, and Escape closes it. Choosing a file opens it the way Open does, so unsaved
+  edits are asked about first; a file inside the open folder stays in it with the file list
+  beside it, and any other file replaces the folder. A file that no longer exists is reported in
+  the note under the top bar and marked Not found in the list, where it can be removed with its
+  x button; Clear list empties the whole list. A file opened again moves to the top, and a file
+  reached two ways is one line.
+  - Desktop: the list is kept by the Rust side next to the session (`recent.json` in
+    `%LOCALAPPDATA%\sh.ztg.readout`) and holds only paths you had already opened. Choosing a line
+    is a request to Rust, which opens only a path that is on the list, so the list is not a way
+    for the page to reach any other file. Lines whose file is gone are marked when the panel
+    opens.
+  - Browser with the File System Access API (Chromium): the list keeps file handles in
+    IndexedDB, beside the stored session. The browser may ask for access again, with the click
+    that opens the line. A file with no handle (a file dropped on the page, one chosen through
+    the upload fallback, a download-only save) is not kept, and a file the browser reports as
+    gone is only found out when you choose it.
+  - Browser without that API (Firefox, Safari): there is nothing to reopen a file with, so
+    the Recent button and the shortcut are not offered at all.
+- On the desktop the window opens where and how large you left it, maximized again if it was.
+  Rust saves the window's normal size and position when the window closes and restores them
+  before the window is shown, using Tauri's own window API (no plugin). The saved rectangle is
+  checked against the monitors connected now: it is moved and shrunk to lie inside the usable
+  area (taskbar excluded) of the monitor it overlaps most, and with no overlap (a monitor that
+  was unplugged) it opens on the primary monitor, so the window never opens off screen. A
+  damaged or missing `window.json` is ignored. A crash or a forced kill loses a change made
+  since the last normal close. Opening a second file from Explorer starts a second window; a
+  single running instance is not built, because it needs a plugin.
 - Changes made outside Readout (a git pull, an AI agent rewriting a file, a sync client) are
   picked up. The open file is checked every 1.5 seconds and the folder tree every 6 seconds,
   and again when the window regains focus; a change is acted on only after it has looked the
@@ -145,8 +175,8 @@ defences are layered:
    open folder asks first, in a native dialog page script cannot answer. Paths written in
    documents may not name a drive or UNC host, which closes the Windows NTLM hash leak through
    `\\host\share` image paths. Only Markdown and text files can be written. The stored session
-   can only hold paths already on that allow-list, and is checked again before the next start
-   grants them.
+   and the recent-files list can only hold paths already on that allow-list, and are checked
+   again before they grant anything; a recent file is reopened only if it is on the list.
 5. Mermaid runs with `securityLevel: 'strict'` and its SVG is sanitized again; KaTeX runs with
    `trust: false`.
 

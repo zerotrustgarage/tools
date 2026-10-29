@@ -324,6 +324,25 @@ body.resizing .pane, body.resizing .sidebar { pointer-events: none; }
 .outline-item.level-1 { color: var(--bright); font-weight: 600; }
 .outline-item.active { background: color-mix(in srgb, var(--acc) 16%, transparent); color: var(--bright); border-color: transparent; }
 .outline-item:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.recent-list { list-style: none; margin: 0; padding: 0; }
+.recent-row { display: flex; align-items: center; gap: 2px; }
+.recent-item {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 6px;
+  text-align: left;
+}
+.recent-item .icon { flex: none; color: var(--acc); }
+.recent-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.recent-name, .recent-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-detail { font-size: 11px; color: var(--dim); }
+.recent-item.missing .recent-name { text-decoration: line-through; color: var(--dim); }
+.recent-missing { flex: none; font-size: 11px; color: var(--warn); }
+.recent-item:focus-visible, .recent-remove:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.recent-remove { flex: none; width: 24px; height: 24px; }
 .search-bar { display: flex; align-items: center; gap: 8px; padding: 0 10px 6px; min-height: 24px; }
 .search-bar .text-button { height: 24px; padding: 0 8px; font-size: 12px; }
 .search-status { flex: 1; font-size: 12px; color: var(--dim); }

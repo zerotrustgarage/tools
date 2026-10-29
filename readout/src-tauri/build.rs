@@ -13,6 +13,11 @@ const COMMANDS: &[&str] = &[
     "resolve_link",
     "initial_document",
     "remember_session",
+    "recent_files",
+    "add_recent",
+    "remove_recent",
+    "clear_recent",
+    "open_recent",
 ];
 
 fn main() {

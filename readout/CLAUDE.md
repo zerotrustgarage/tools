@@ -21,6 +21,10 @@ These properties are requirements, each held by tests:
    documents never name a drive, root or UNC host. A new command must be added to `build.rs`
    and granted in `capabilities/default.json` deliberately.
 4. Formatting commands change only the characters they add or remove.
+5. The recent-files list is Rust's on the desktop (`src-tauri/src/recent.rs`): only a granted
+   document is added, and `open_recent` grants a path only when it is on the list. The window's
+   remembered size and position (`src-tauri/src/window_state.rs`) is Rust's too, restored onto a
+   monitor that exists now; neither gives the WebView any permission, and neither adds a plugin.
 
 The Windows executable is built only through the Tauri CLI (`scripts/ci/build-windows.sh`);
 plain `cargo build` makes a development build that loads its UI from localhost.

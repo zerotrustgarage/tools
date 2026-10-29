@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { writeRichText } from './clipboard';
-import type { Arrival, FileRef, Listing, OpenedFile, Platform } from './types';
+import type { Arrival, FileRef, Listing, OpenedFile, Platform, RecentFiles } from './types';
 
 // The WebView has no file system, dialog or shell permission. Every file operation is a Rust
 // command that only touches paths the user chose through a native dialog, a file association
@@ -60,6 +60,39 @@ async function arrival(initial: RustInitial | null): Promise<Arrival | null> {
   return { listing, file };
 }
 
+interface RustRecent {
+  path: string;
+  name: string;
+  dir: string;
+  exists: boolean;
+}
+
+// The list lives in Rust, which writes only paths it has granted and opens only paths on the list
+// (open_recent), so the WebView cannot use it to reach any other file.
+const recentFiles: RecentFiles = {
+  async list() {
+    try {
+      const entries = await invoke<RustRecent[]>('recent_files');
+      return entries.map((e) => ({ id: e.path, name: e.name, detail: e.dir, missing: !e.exists }));
+    } catch {
+      return [];
+    }
+  },
+  async add(ref) {
+    if (ref.path) await invoke('add_recent', { path: ref.path }).catch(() => undefined);
+  },
+  async open(id, listing) {
+    const path = await invoke<string | null>('open_recent', { path: id });
+    return path ? read(path, listing?.folder.root) : null;
+  },
+  async remove(id) {
+    await invoke('remove_recent', { path: id }).catch(() => undefined);
+  },
+  async clear() {
+    await invoke('clear_recent').catch(() => undefined);
+  },
+};
+
 const writeVia = (command: string, bytes: Uint8Array, headers: Record<string, string>) =>
   invoke<string | null>(command, bytes, { headers });
 
@@ -79,6 +112,8 @@ const appWindow = getCurrentWindow();
 
 export const desktopPlatform: Platform = {
   kind: 'desktop',
+
+  recent: recentFiles,
 
   window: {
     minimize: () => appWindow.minimize(),

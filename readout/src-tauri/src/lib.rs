@@ -22,6 +22,14 @@
 //!   in the app's local data folder. The WebView can only ask to remember paths that are already
 //!   granted, and a stored path is checked again (it must still exist and be a folder or a
 //!   document) before it is granted at the next start.
+//! - The recent-files list is kept the same way (`recent.rs`). Only a granted document can be
+//!   added, and `open_recent` grants a path only when it is on that list.
+//! - The window's size and position are remembered (`window_state.rs`) with Tauri's own window
+//!   API and restored onto a monitor that exists now. The WebView is given no window permission
+//!   for it and holds no say in it.
+
+mod recent;
+mod window_state;
 
 use std::collections::HashSet;
 use std::fs;
@@ -32,7 +40,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tauri::ipc::{InvokeBody, Request, Response};
-use tauri::{AppHandle, DragDropEvent, Emitter, Manager, State, WindowEvent};
+use tauri::{AppHandle, DragDropEvent, Emitter, Manager, State, Window, WindowEvent};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_opener::OpenerExt;
 
@@ -83,7 +91,14 @@ struct Granted {
     files: Mutex<HashSet<PathBuf>>,
     roots: Mutex<HashSet<PathBuf>>,
     initial: Mutex<Option<Initial>>,
+    /// Held while the recent-files file is read and rewritten, so two quick opens cannot drop one.
+    recent_lock: Mutex<()>,
 }
+
+/// The window's latest normal rectangle (kept from move and resize events) and whether it is
+/// maximized, written when the window closes.
+#[derive(Default)]
+struct TrackedWindow(Mutex<Option<window_state::WindowState>>);
 
 #[derive(Clone, Serialize, Debug, PartialEq)]
 struct Initial {
@@ -616,12 +631,217 @@ async fn remember_session(
     write_session(&session_file(&app)?, &session)
 }
 
+fn local_file(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
+    app.path()
+        .app_local_data_dir()
+        .map(|dir| dir.join(name))
+        .map_err(|e| format!("No folder for {name}: {e}"))
+}
+
+fn load_recent(app: &AppHandle) -> Vec<String> {
+    local_file(app, recent::RECENT_FILE)
+        .ok()
+        .and_then(|file| read_limited(&file, MAX_SESSION_BYTES).ok())
+        .map(|bytes| recent::parse(&bytes, recent::MAX_RECENT))
+        .unwrap_or_default()
+}
+
+/// Writes the list, or removes the file when it is empty.
+fn store_recent(app: &AppHandle, list: &[String]) -> Result<(), String> {
+    let file = local_file(app, recent::RECENT_FILE)?;
+    if list.is_empty() {
+        return match fs::remove_file(&file) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(format!("Could not clear the recent files: {e}")),
+            _ => Ok(()),
+        };
+    }
+    let folder = file.parent().ok_or("The path has no folder")?;
+    fs::create_dir_all(folder).map_err(|e| format!("Could not create the data folder: {e}"))?;
+    write_atomic(&file, &recent::serialize(list))
+}
+
+#[derive(Serialize)]
+struct RecentFile {
+    path: String,
+    name: String,
+    dir: String,
+    exists: bool,
+}
+
+/// The recent documents, newest first, each marked when it is no longer there.
+#[tauri::command]
+async fn recent_files(app: AppHandle, granted: State<'_, Granted>) -> Result<Vec<RecentFile>, String> {
+    let _guard = granted.recent_lock.lock().expect("recent lock");
+    Ok(load_recent(&app)
+        .into_iter()
+        .map(|path| {
+            let (name, dir) = recent::name_and_dir(&path);
+            let exists = Path::new(&path).is_file();
+            RecentFile {
+                path,
+                name,
+                dir,
+                exists,
+            }
+        })
+        .collect())
+}
+
+/// Puts a document first on the list. Only a document the user already opened is accepted.
+#[tauri::command]
+async fn add_recent(app: AppHandle, path: String, granted: State<'_, Granted>) -> Result<(), String> {
+    let path = granted.check(&path)?;
+    if !has_extension(&path, DOCUMENT_EXTENSIONS) {
+        return Err("Only Markdown and text files can be remembered".into());
+    }
+    let _guard = granted.recent_lock.lock().expect("recent lock");
+    let list = recent::push(
+        load_recent(&app),
+        path.to_string_lossy().into_owned(),
+        recent::MAX_RECENT,
+    );
+    store_recent(&app, &list)
+}
+
+#[tauri::command]
+async fn remove_recent(app: AppHandle, path: String, granted: State<'_, Granted>) -> Result<(), String> {
+    let _guard = granted.recent_lock.lock().expect("recent lock");
+    store_recent(&app, &recent::remove(load_recent(&app), &path))
+}
+
+#[tauri::command]
+async fn clear_recent(app: AppHandle, granted: State<'_, Granted>) -> Result<(), String> {
+    let _guard = granted.recent_lock.lock().expect("recent lock");
+    store_recent(&app, &[])
+}
+
+/// Grants a document from the list again and returns its path; None when it no longer exists.
+/// A path that is not on the list is refused, which is what keeps this from being a way in.
+#[tauri::command]
+async fn open_recent(app: AppHandle, path: String, granted: State<'_, Granted>) -> Result<Option<String>, String> {
+    {
+        let _guard = granted.recent_lock.lock().expect("recent lock");
+        if !load_recent(&app).iter().any(|known| recent::same_path(known, &path)) {
+            return Err("That file is not in the recent files".into());
+        }
+    }
+    let Ok(file) = fs::canonicalize(&path) else {
+        return Ok(None);
+    };
+    if !file.is_file() || !has_extension(&file, DOCUMENT_EXTENSIONS) {
+        return Ok(None);
+    }
+    granted.grant_file(&file);
+    Ok(Some(file.to_string_lossy().into_owned()))
+}
+
+/// Puts the window where it was, on a monitor that exists now, before it is shown. Best effort:
+/// whatever fails, the window is still shown where the system put it.
+fn restore_window(app: &tauri::App) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let state = local_file(app.handle(), window_state::WINDOW_FILE)
+        .ok()
+        .and_then(|file| read_limited(&file, MAX_SESSION_BYTES).ok())
+        .and_then(|bytes| window_state::parse(&bytes));
+    if let Some(state) = state {
+        let primary = window.primary_monitor().ok().flatten();
+        let mut areas: Vec<window_state::Area> = window
+            .available_monitors()
+            .unwrap_or_default()
+            .iter()
+            .map(|m| {
+                let work = m.work_area();
+                window_state::Area {
+                    work: window_state::Rect {
+                        x: work.position.x,
+                        y: work.position.y,
+                        width: work.size.width,
+                        height: work.size.height,
+                    },
+                    scale: m.scale_factor(),
+                }
+            })
+            .collect();
+        // The primary monitor first: it is where a window with no monitor of its own goes.
+        if let Some(primary) = primary {
+            let at = primary.work_area().position;
+            if let Some(i) = areas.iter().position(|a| a.work.x == at.x && a.work.y == at.y) {
+                areas.swap(0, i);
+            }
+        }
+        if let Some(rect) = window_state::place(&state.rect(), &areas, window_state::MIN_LOGICAL) {
+            // Position first: moving to a monitor with another scale factor can resize the
+            // window, so the size is set once it is there, and the position once more after.
+            let position = tauri::PhysicalPosition::new(rect.x, rect.y);
+            let size = tauri::PhysicalSize::new(rect.width, rect.height);
+            let _ = window.set_position(position);
+            let _ = window.set_size(size);
+            let _ = window.set_position(position);
+        }
+        if state.maximized {
+            let _ = window.maximize();
+        }
+    }
+    let _ = window.show();
+    track_window(&window.as_ref().window());
+}
+
+/// Keeps the window's normal rectangle current. A maximized, minimized or full-screen window
+/// reports a rectangle that is not the one to come back to, so only the maximized flag changes.
+fn track_window(window: &Window) {
+    if window.label() != "main" {
+        return;
+    }
+    let tracked = window.state::<TrackedWindow>();
+    let mut current = tracked.0.lock().expect("window state lock");
+    if window.is_minimized().unwrap_or(false) || window.is_fullscreen().unwrap_or(false) {
+        return;
+    }
+    if window.is_maximized().unwrap_or(false) {
+        if let Some(state) = current.as_mut() {
+            state.maximized = true;
+        }
+        return;
+    }
+    let (Ok(position), Ok(size)) = (window.outer_position(), window.outer_size()) else {
+        return;
+    };
+    *current = Some(window_state::WindowState {
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height,
+        maximized: false,
+    });
+}
+
+/// Writes the window's state; best effort, called when the window is closing.
+fn save_window(window: &Window) {
+    if window.label() != "main" {
+        return;
+    }
+    let Some(state) = *window.state::<TrackedWindow>().0.lock().expect("window state lock") else {
+        return;
+    };
+    let Ok(file) = local_file(window.app_handle(), window_state::WINDOW_FILE) else {
+        return;
+    };
+    let Some(folder) = file.parent() else { return };
+    if fs::create_dir_all(folder).is_ok() {
+        let _ = write_atomic(&file, &window_state::serialize(&state));
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(Granted::default())
+        .manage(TrackedWindow::default())
         .setup(|app| {
+            restore_window(app);
             // A file or folder named on the command line wins over the stored session.
             let initial = match startup_argument(std::env::args().skip(1)) {
                 Some((path, folder)) => Some(Initial {
@@ -640,7 +860,13 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            let WindowEvent::DragDrop(drag) = event else { return };
+            let drag = match event {
+                WindowEvent::DragDrop(drag) => drag,
+                WindowEvent::Moved(_) | WindowEvent::Resized(_) => return track_window(window),
+                // Closing is where the state is written; a refused close does no harm.
+                WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed => return save_window(window),
+                _ => return,
+            };
             match drag {
                 DragDropEvent::Enter { .. } => {
                     let _ = window.emit("document-drag", true);
@@ -685,7 +911,12 @@ pub fn run() {
             read_image,
             resolve_link,
             initial_document,
-            remember_session
+            remember_session,
+            recent_files,
+            add_recent,
+            remove_recent,
+            clear_recent,
+            open_recent
         ])
         .run(tauri::generate_context!())
         .expect("error while running ZTG Readout");
