@@ -79,7 +79,9 @@ body {
   color: var(--text);
   font: 13px/1.4 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   display: grid;
-  grid-template-rows: auto auto auto auto auto 1fr;
+  /* Seven rows: the new-device banner (SC7) is hidden most of the time, and the workspace is
+     pinned to the last row so the layout is the same with or without it. */
+  grid-template-rows: auto auto auto auto auto auto 1fr;
   overflow: hidden;
 }
 button, input, select, textarea { font: inherit; color: inherit; }
@@ -194,7 +196,7 @@ button.link { border: 0; background: none; padding: 0; color: var(--accent); tex
 .filters select { width: 220px; }
 .check { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 
-.workspace { display: grid; grid-template-columns: 1fr auto; min-height: 0; border-top: 1px solid var(--line); }
+.workspace { display: grid; grid-column: 1; grid-row: 7; grid-template-columns: 1fr auto; min-height: 0; border-top: 1px solid var(--line); }
 .grid-wrap { overflow: auto; min-height: 0; position: relative; }
 /* Fixed layout: columns keep the widths the user set instead of stretching to
    fill the window; the table is exactly as wide as its columns. */
@@ -282,3 +284,16 @@ td.mono, .mono { font-family: var(--mono); font-size: 12px; }
 #ow-preview:empty { display: none; }
 .open-with .target-set-actions #ow-save { margin-left: auto; }
 .menu.floating { position: fixed; top: 0; left: 0; min-width: 220px; max-width: 360px; }
+
+/* Scheduled rescans (SC7) */
+.banner { display: flex; align-items: flex-start; gap: 12px; padding: 8px 16px; background: var(--panel-2); border-bottom: 1px solid var(--line); border-left: 4px solid var(--medium); }
+.banner[hidden] { display: none; }
+.banner ul { list-style: none; margin: 0; padding: 0; flex: 1; display: grid; gap: 4px; min-width: 0; }
+.banner li { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; overflow-wrap: anywhere; }
+.banner li .link { padding: 0; }
+.schedule select { width: 100%; }
+.schedule [role=status]:empty { display: none; }
+.schedule .target-set-actions { justify-content: flex-end; }
+#schedule-state { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
+#schedule-stop { padding: 3px 9px; }
+.schedule p { margin: 0; }

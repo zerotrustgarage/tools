@@ -5,6 +5,7 @@
   const handlers = {};
   const emit = (name, data) => (handlers[name] || []).forEach((f) => f(data));
   const calls = (window.__calls = []);
+  window.__emit = emit; // lets a test deliver a runtime event such as schedule:notice
 
   const hosts = [
     { ip: "192.168.50.1", status: "up", name: "gw.lab.lan", type: "Firewall", type_reason: "vendor fortinet", mac: "00:09:0f:aa:bb:01", vendor: "Fortinet, Inc.", evidence: ["icmp", "arp", "tcp-open"], rtt_ms: 0.6, ttl: 255, os_hint: "Network equipment or Solaris (initial TTL 255)", dns_name: "gw.lab.lan",
@@ -55,7 +56,32 @@
     const sub = (t) => t.replaceAll("{ip}", ip).replaceAll("{hostname}", host);
     return c.kind === "url" ? { kind: "url", url: sub(c.url) } : { kind: "program", argv: [c.program, ...(c.args || []).map(sub)] };
   };
+  // Stand-ins for the scheduled rescan bindings (SC7). The real scheduling, scope guard and comparison are
+  // tested in Go (internal/schedule, app/schedule_test.go); this keeps the shape and the refusal text the UI relies on.
+  let scheduleStatuses = [];
+  const scheduleCheck = (c) => {
+    if (!Number.isInteger(c.interval_minutes) || c.interval_minutes < 15 || c.interval_minutes > 1440) throw "the interval must be between 15 minutes and 24 hours";
+    for (const spec of c.targets.split(/[\s,;]+/).filter(Boolean)) {
+      if (!/^\d+\.\d+\.\d+\.\d+/.test(spec)) throw spec + " is a host name. Scheduled rescans take addresses, ranges and CIDR blocks only, because a name can point somewhere else later";
+      const [a, b] = spec.split(/[./-]/).map(Number);
+      const priv = a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 127) || (a === 100 && b >= 64 && b <= 127);
+      if (!priv) throw "scheduled rescans cover private and link-local addresses only: " + spec + " includes public address " + spec.split("/")[0] + ". A scan of public addresses needs fresh authorization each time, so use Scan for it";
+    }
+  };
   window.go = { main: { App: {
+    ValidateSchedule: async (c) => { calls.push(["ValidateSchedule", structuredClone(c)]); scheduleCheck(c); },
+    SetSchedules: async (list) => {
+      calls.push(["SetSchedules", structuredClone(list)]);
+      scheduleStatuses = list.map((c) => {
+        const key = c.site.toLowerCase() + "\u0000" + c.name.toLowerCase();
+        try { scheduleCheck(c); return { key, site: c.site, name: c.name, interval_minutes: c.interval_minutes, running: false, skipped: 0, next_run: new Date(Date.now() + c.interval_minutes * 60000).toISOString(), folder: "C:\\Users\\tech\\AppData\\Local\\ZTG Scanner\\scheduled" }; }
+        catch (e) { return { key, site: c.site, name: c.name, interval_minutes: c.interval_minutes, error: String(e), running: false, skipped: 0 }; }
+      });
+      return structuredClone(scheduleStatuses);
+    },
+    ScheduleStatuses: async () => structuredClone(scheduleStatuses),
+    ScheduleChanges: async (key) => { calls.push(["ScheduleChanges", key]); return { path: "Previous rescan of Clinic · Main LAN (2026-10-29 09:00)", changes: [{ kind: "new", after: { ip: "10.0.0.50", status: "up", name: '<img src=x onerror="window.__pwned=1">' } }] }; },
+    StopScheduled: async () => calls.push(["StopScheduled"]),
     SetOpenWithCommands: async (list) => {
       calls.push(["SetOpenWithCommands", structuredClone(list)]);
       if (window.__openWithRefuse) throw window.__openWithRefuse;
@@ -138,6 +164,7 @@
   let maximised = false;
   window.runtime = {
     BrowserOpenURL: (url) => calls.push(["BrowserOpenURL", url]),
+    WindowSetTitle: (t) => calls.push(["WindowSetTitle", t]),
     EventsOn: (name, f) => (handlers[name] = handlers[name] || []).push(f),
     ClipboardSetText: async (t) => calls.push(["Clipboard", t]),
     WindowMinimise: () => calls.push(["WindowMinimise"]),

@@ -2,7 +2,7 @@
 
 Status (October 29, 2026): slices S1 (engine and CLI), S2 (desktop app), S3 (SNMPv3 inventory) and S4 (packaging
 and release pipeline), and S5 (actions, local inventories and comparison) are built, as are SC9 (saved target sets),
-SC10 (Open with commands) and SC13 (gentle mode). Owner signing setup is
+SC10 (Open with commands), SC13 (gentle mode) and SC7 (scheduled rescans). Owner signing setup is
 complete; S4's first signed release awaits a successful production release run. S6 is planned.
 
 ## 1. Purpose
@@ -272,6 +272,63 @@ Using a target set starts a new site inventory after an unsaved-changes confirma
 into another client's scan. It clears SNMP credentials and disables SNMP. Importing fills the editable draft;
 the technician explicitly chooses when to use it. Duplicate names within a client require overwrite confirmation,
 and deletion requires confirmation. Storage failures must be reported as failures to save.
+
+### Scheduled rescans (SC7)
+
+A saved target set can be rescanned on a timer, with a notification when a new device appears. It is a convenience
+for the technician at the keyboard, not a monitoring service: the schedule exists only while the desktop app runs.
+
+Boundaries, each tested (`internal/schedule`, `app/schedule_test.go`, `app/uitest`):
+
+- Opt-in and local. A schedule is off for every set until the technician turns it on. It adds no Windows service,
+  scheduled task, autostart entry or background installer, and nothing runs when the app is closed or before the
+  window has loaded. The schedule list lives in the WebView's local storage beside the saved sets (a schedule holds
+  the set's client label and name, an interval, the notification choice and a snapshot of the scan plan, never
+  targets, credentials or authorization) and the UI hands it to the app at launch and on every change. The app
+  validates it again.
+- Bounded interval with jitter. 15 minutes to 24 hours in whole minutes, at most 20 schedules. Every cycle adds a
+  random delay of up to a tenth of the interval, capped at 5 minutes, so machines set to the same interval do not
+  probe at the same second. A new or changed schedule, and every app launch, first runs one interval later, never at
+  once. The next cycle is one interval after the previous rescan ended, so a slow rescan cannot queue another.
+- No overlap. One scheduled rescan runs at a time (a second one that falls due waits), and none starts while a
+  manual scan runs: that cycle is skipped, not made up, and the skip is shown. The same applies while Windows
+  battery saver is on (`GetSystemPowerStatus`, a lazy kernel32 call made through `golang.org/x/sys/windows`). A manual scan
+  started while a rescan runs stops the rescan, waits for it, then starts, so the two never overlap. Metered
+  connections are not detected: that needs the WinRT networking API and is not trivially available.
+- Private and link-local only. The targets must pass `schedule.CheckTargets`: valid target syntax, no host names
+  (a name resolves later to an address nothing classified), and every address inside the scope guard's internal
+  ranges (`targets.IsInternal`: RFC 1918, carrier-grade NAT, link-local, loopback). A schedule with any public
+  address is refused when it is saved, and the scope guard runs again with `AllowPublic` false whenever a rescan
+  starts. Public ranges need fresh authorization (S5, SC9), which a stored schedule cannot carry, so there is no
+  way to allow them.
+- Same plan as a manual scan. A rescan builds its engine settings with `scan.BuildPlan` from the technician's mode
+  and probe settings captured when the schedule is applied, so a Gentle set keeps its pacing and probe limits.
+  SNMP is never used, because passphrases are never stored.
+- Same comparison as SC6. Each completed rescan is compared with the previous completed rescan of the same
+  schedule using `inventory.Compare`, so identity rules are those of SC6: unique stable MACs first (a DHCP move is a
+  move, not a new device), then addresses; a randomized MAC is tied to its address; another MAC at an address
+  already in use is a changed device, not a new one. Only `new` triggers a notice. The first rescan, and the first
+  after the target list or the mode changed, is a baseline that reports nothing; a canceled rescan is discarded.
+  A device is announced once, because each completed rescan replaces the baseline. A device that drops out of one
+  rescan and returns in the next is announced again.
+- Results stay in the existing inventory format. The latest completed rescan of each schedule is one local file in
+  the same JSON format as a saved scan (`report.Document`), written with the same atomic replace, in
+  `ZTG Scanner\scheduled` under the user's local application data folder (it does not roam). The file name is a hash
+  of the schedule, so it does not carry the client label. A rescan keeps its own results and never touches the
+  inventory on screen, its annotations or its unsaved state. Turning a schedule off deletes its file. Nothing is
+  sent anywhere.
+- Notification. The banner in the window is the notice of record and is always shown. It lists, with `textContent`
+  only, the client label and set name the technician typed, the count and the new addresses, and offers Show changes,
+  which opens the SC6 comparison view. The app also flashes the taskbar button until the window is foreground
+  (`FlashWindowEx` on the Wails window) and the UI puts the count in the window title. If the schedule allows it, a
+  native Windows toast is sent through Wails v2's own notification API (`runtime.SendNotification`), which adds no
+  dependency. The toast and the title text are built by `schedule.NoticeText` from counts and re-parsed IPv4
+  addresses only (at most five named); a name a device reported is never part of it. Wails sets the toast service up
+  the first time a toast is needed, not at launch, and doing so registers the app for notifications in the current
+  user's registry (HKCU), including a COM activation entry that starts the executable if the technician clicks a
+  notification after the app has closed.
+- Not validated here: real toasts, the taskbar flash and the battery saver flag need a Windows machine; Linux tests
+  use a fake platform and the UI tests a binding mock.
 
 ## 10. Not in scope
 

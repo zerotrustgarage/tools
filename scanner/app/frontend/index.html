@@ -43,6 +43,11 @@
       <button type="button" class="caption caption-close" id="win-close" title="Close" aria-label="Close"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M.5 .5l9 9"/><path d="M9.5 .5l-9 9"/></svg></button>
     </div>
   </header>
+  <!-- New devices found by a scheduled rescan (SC7). Text is set with textContent: counts, labels and addresses. -->
+  <section id="schedule-banner" class="banner" role="alert" aria-label="New devices found by scheduled rescans" hidden>
+    <ul id="schedule-banner-list"></ul>
+    <button type="button" id="schedule-banner-dismiss" class="ghost">Dismiss</button>
+  </section>
   <header class="topbar">
     <form id="scan-form" class="targets" autocomplete="off">
       <label for="targets" class="sr-only">Networks to scan</label>
@@ -69,6 +74,8 @@
     <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="progress-bar"></div></div>
     <span id="status-text">Ready. Choose a network and press Scan.</span>
     <span id="warnings" class="warn"></span>
+    <span id="schedule-state" class="muted small" role="status" hidden></span>
+    <button type="button" id="schedule-stop" class="ghost" hidden>Stop scheduled rescan</button>
   </section>
 
   <section class="filters">
@@ -161,6 +168,25 @@
       <button type="button" id="target-set-load">Use targets</button>
       <button type="button" id="target-set-delete" class="danger">Delete</button>
     </div>
+    <fieldset id="schedule-fields" class="schedule">
+      <legend>Scheduled rescan (off by default)</legend>
+      <label class="check"><input type="checkbox" id="schedule-enabled"> Rescan the selected saved set automatically</label>
+      <label for="schedule-interval">Every
+        <select id="schedule-interval">
+          <option value="15">15 minutes</option><option value="30">30 minutes</option><option value="60">1 hour</option>
+          <option value="120">2 hours</option><option value="240">4 hours</option><option value="480">8 hours</option>
+          <option value="720">12 hours</option><option value="1440">24 hours</option>
+        </select>
+      </label>
+      <label class="check"><input type="checkbox" id="schedule-toast" checked> Also show a Windows notification for new devices</label>
+      <p id="schedule-help" class="muted small">Runs only while ZTG Scanner is open on this computer. It installs no Windows service, scheduled task or startup entry, and nothing runs when the app is closed. Only private and link-local addresses: a public range is never rescanned automatically, and host names are not accepted. It uses the scan mode and probes chosen in Settings when you apply it, and never SNMP. The first rescan records a baseline; later ones report new devices. A cycle is skipped while you scan manually or Windows battery saver is on. Results stay in a folder on this computer.</p>
+      <p id="schedule-folder" class="muted small" hidden></p>
+      <p id="schedule-status" class="muted small" role="status" aria-live="polite"></p>
+      <div class="target-set-actions">
+        <button type="button" id="schedule-reset" class="danger" hidden>Reset saved schedules</button>
+        <button type="button" id="schedule-apply" class="primary">Apply schedule</button>
+      </div>
+    </fieldset>
   </aside>
 
   <aside id="open-with" class="drawer open-with" hidden role="dialog" aria-modal="false" aria-labelledby="open-with-title" tabindex="-1">
