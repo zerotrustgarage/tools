@@ -92,6 +92,8 @@ function describeRemoteImages(root: ParentNode): void {
     const url = img.dataset.remoteSrc ?? '';
     const chip = document.createElement('a');
     chip.className = 'remote-image-placeholder';
+    // Read back by remote-images.ts to count the images; the address is already in href.
+    chip.setAttribute('data-remote-url', url);
     chip.href = url;
     chip.rel = 'noopener noreferrer';
     let host = url;

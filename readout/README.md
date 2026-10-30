@@ -270,8 +270,13 @@ defences are layered:
 
 1. Rendered HTML passes DOMPurify, then hooks that keep only presentational inline styles,
    remove forms, and drop any style value that could load a resource.
-2. Remote images are never fetched; a placeholder shows the address. Opening a file cannot
-   notify a tracking server.
+2. Remote images are never fetched; a placeholder shows the address, and the status bar says
+   once how many the document has and from which sites ("4 remote images not loaded").
+   Opening a file cannot notify a tracking server. There is no "Load remote images" choice yet:
+   the Content Security Policy cannot be widened for one document, and the desktop app has no
+   HTTPS client to fetch an image through a narrow, size-limited Rust command. Allowing
+   every https origin all the time would remove the policy as a second line of defence, so that
+   decision is left to the owner (docs/roadmap.md, RD14).
 3. A strict Content Security Policy forbids inline and remote script and remote loads.
 4. On the desktop, the WebView has no file system, dialog or shell permission. Rust shows the
    native dialogs and keeps an allow-list of what the user chose. A link to a file outside the

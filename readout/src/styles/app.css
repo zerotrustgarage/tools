@@ -248,6 +248,8 @@ body.resizing .pane, body.resizing .sidebar { pointer-events: none; }
   border-top: 1px solid var(--line);
 }
 .status-bar .spacer { flex: 1; }
+/* Remote images are counted from the preview, which is not rendered in edit view. */
+.app[data-mode='edit'] .status-remote { display: none; }
 
 /* Folder sidebar */
 .sidebar {
