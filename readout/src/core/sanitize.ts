@@ -102,6 +102,9 @@ function configure(purify: typeof DOMPurify): void {
       if (filtered) el.setAttribute('style', filtered);
       else el.removeAttribute('style');
     }
+    // data-line is the source-line marker the scroll sync reads (render.ts); only a plain number is kept.
+    const line = el.getAttribute('data-line');
+    if (line !== null && !/^\d{1,9}$/.test(line)) el.removeAttribute('data-line');
     const tag = el.tagName.toLowerCase();
     if (tag === 'input') {
       // Only the display-only checkbox of a task list item survives; any other control is
