@@ -211,6 +211,38 @@ opener already bundled for web links).
   which appears when hovering a native maximize button, is not available on it; Win+Z and
   Win+arrow keys still snap the window.
 
+### Printing
+
+Print (the Print button or Ctrl+P) opens a small dialog first, then the system print dialog.
+The dialog has one optional field, Client name. Choose Print to continue, Cancel or Escape to
+stop, or Clear to forget the remembered name. The name is typed by you and is never taken from
+the document, because documents are untrusted. It is remembered for that document (its path on the
+desktop, its path in the open folder or its file name in the browser) in the app's own storage, on
+this computer only, up to 200 documents; a document that is not saved yet cannot remember one.
+
+Every printed page has the ZTG template, drawn with CSS page margin boxes (Chromium and the
+Windows WebView2 support them, so it needs no script at print time and adds no dependency):
+
+- Header: the "ZTG Readout" mark on the left, the document title in the centre (its first
+  heading, else the file name) and `Client: <name>` on the right when you gave one, over a rule
+  in the ZTG accent colour.
+- Footer: `Printed <year-month-day>` on the left and `Page N of M` on the right.
+- Body: black text on white and the light palette in both themes, with no app chrome. Code
+  blocks wrap long lines instead of being cut off. Table rows, code blocks, callouts, quotes,
+  figures and images are not split across pages, a table's header row repeats on each page, and a
+  heading stays with the text after it. Backgrounds (code, table headers, highlights) are kept
+  where the print dialog allows, and each has a border as well, so the page still reads when
+  "Background graphics" is off. Folded callouts and `<details>` print open and fold again after.
+
+The header text reaches the page as CSS custom properties holding quoted strings (control and
+direction-changing characters removed, quotes and backslashes escaped, 100 characters for the
+title and 80 for the client name); no element is built from it. The browser's own print command
+(Ctrl+P is handled by the app; the browser menu is not) prints the same template, using the
+remembered client name without asking. An exported HTML file does not carry the template.
+
+Not built: DOCX export, and PDF with bookmarks written without the print dialog. Both need a
+library or a plugin and so a new dependency, which is a decision for the owner (roadmap RD12).
+
 ## Accessibility
 
 RD20 is a pass against WCAG 2.1 level AA. What it covers, and what it does not:

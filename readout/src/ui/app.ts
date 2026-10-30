@@ -15,6 +15,7 @@ import { extractOutline } from '../core/outline';
 import { ExternalChangeWatcher, type WatchHost } from '../core/reload';
 import { defaultDocument, documentFor, LISTED_EXTENSIONS, opensInReadout, resolveInFolder, resolveWikiLink, splitHref } from '../core/paths';
 import { postprocess } from '../core/postprocess';
+import { clearPrintTemplate, forgetClient, printDate, printKey, printTitle, rememberClient, rememberedClient, setPrintTemplate } from '../core/print';
 import { describeRemoteImages, summarizeRemoteImages } from '../core/remote-images';
 import { renderMarkdown } from '../core/render';
 import { EchoGuard, lineAtOffset, previewBlocks } from '../core/scrollsync';
@@ -22,11 +23,13 @@ import { blobUrlToDataUrl, buildRichText, fragmentForRange, isEmptyFragment } fr
 import { DEFAULT_BOUNDS, type SearchMatch } from '../core/search';
 import type { Arrival, FileRef, ImageSource, LinkedFileCheck, Listing, OpenedFile, PendingSession, Platform, RecentEntry } from '../platform/types';
 import { IMAGE_REFUSED, MAX_IMAGE_BYTES, imageKindFromMime, imageMarkdown, imageProblem } from '../core/images';
+import { dialogState, trapTab } from './dialog';
 import { el, icon } from './dom';
 import { isolateHistory } from '@codemirror/commands';
 import { createEditor, documentText, scrollToEnd, scrollToLine, scrollToTopLine, setFocusMode, setTypewriterMode, topLine, type JumpOptions } from './editor';
 import { runFormat, type FormatCommand } from './format';
 import { OutlinePanel } from './outline';
+import { printOptionsDialog } from './print-dialog';
 import { rovingToolbar } from './roving';
 import { RecentPanel } from './recent';
 import { SearchPanel } from './search';
@@ -123,6 +126,8 @@ export class App {
   /** Polite and always present: banners, saves and setting changes are said here, never keystrokes. */
   private readonly announcer = el('div', { class: 'sr-only', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true' });
   private announceTimer: number | undefined;
+  /** Set while a print is being prepared; undoes what preparePrint did. */
+  private endPrint: (() => void) | null = null;
   private readonly editorHost = el('div', { class: 'pane editor-pane' });
   private readonly preview = el('article', { class: 'markdown-body', 'aria-label': 'Preview' });
   /** Folded callouts and <details> the reader opened or closed in this document, by position. */
@@ -214,6 +219,8 @@ export class App {
         ),
     });
     window.addEventListener('resize', () => this.applySizes());
+    window.addEventListener('beforeprint', () => this.preparePrint(rememberedClient(printKey(this.doc.ref))));
+    window.addEventListener('afterprint', () => this.endPrint?.());
     // Coming back to the window checks at once instead of waiting for the next poll.
     window.addEventListener('focus', () => void this.watcher.tick());
     document.addEventListener('visibilitychange', () => void this.watcher.tick());
@@ -697,7 +704,7 @@ export class App {
     };
     return {
       active: () => this.listing !== null || this.canReread(),
-      paused: () => document.hidden || openDialogs > 0,
+      paused: () => document.hidden || dialogState.open > 0,
       currentPath: () => (this.listing ? (this.doc.ref?.folderPath ?? null) : null),
       hasFile: () => this.canReread(),
       isDirty: () => this.dirty,
@@ -1045,15 +1052,45 @@ export class App {
     }
   }
 
-  /** The preview is not kept current in edit mode, so it is rendered before printing. */
+  /**
+   * Print (Ctrl+P, RD12): the preview is not kept current in edit mode, so it is rendered first;
+   * then the reader may give a client name for the page header. Cancelling prints nothing.
+   */
   private async print(): Promise<void> {
     window.clearTimeout(this.renderTimer);
     await this.renderPreview();
-    // Folded callouts and <details> print open; the reader's folds return afterwards.
+    const key = printKey(this.doc.ref);
+    const client = await printOptionsDialog({
+      client: rememberedClient(key),
+      remembered: key !== null,
+      onClear: () => forgetClient(key),
+    });
+    if (client === null) return;
+    rememberClient(key, client);
+    this.preparePrint(client);
+    window.print();
+  }
+
+  /**
+   * Fills the header and footer text and opens folded callouts and <details> for printing; the
+   * reader's folds and the template return after printing. Also runs on the browser's own print
+   * command (the beforeprint event), with the name remembered for the document.
+   */
+  private preparePrint(client: string): void {
+    if (this.endPrint) return;
+    const root = document.documentElement;
+    setPrintTemplate(root, {
+      title: printTitle(this.preview, this.doc.ref?.name ?? 'Untitled.md'),
+      client,
+      date: printDate(new Date()),
+    });
     const closed = [...this.preview.querySelectorAll('details')].filter((d) => !d.open);
     closed.forEach((d) => (d.open = true));
-    window.addEventListener('afterprint', () => closed.forEach((d) => (d.open = false)), { once: true });
-    window.print();
+    this.endPrint = () => {
+      closed.forEach((d) => (d.open = false));
+      clearPrintTemplate(root);
+      this.endPrint = null;
+    };
   }
 
   private globalShortcut(event: KeyboardEvent): void {
@@ -1505,8 +1542,6 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-let openDialogs = 0;
-
 /**
  * The confirmation before a linked file opens in another program (RD16): the full path and the
  * file type, Open as an ordinary button and Cancel as the default (focused, so Enter and Escape
@@ -1534,38 +1569,15 @@ function linkedFileDialog(check: LinkedFileCheck): Promise<boolean> {
       answer = false;
     });
     dialog.addEventListener('close', () => {
-      openDialogs--;
+      dialogState.open--;
       dialog.remove();
       resolve(answer);
     });
-    openDialogs++;
+    dialogState.open++;
     document.body.append(dialog);
     trapTab(dialog);
     dialog.showModal();
     cancel.focus();
-  });
-}
-
-/**
- * A modal dialog makes the page behind it inert, but a browser lets Tab run on into its own
- * toolbar. Tab on the last control and Shift+Tab on the first wrap inside the dialog, so focus
- * stays put in every shell. When the dialog closes the browser returns focus to the control
- * that opened it.
- */
-function trapTab(dialog: HTMLDialogElement): void {
-  dialog.addEventListener('keydown', (event) => {
-    if (event.key !== 'Tab') return;
-    const controls = [...dialog.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter((c) => !(c as HTMLButtonElement).disabled);
-    const first = controls[0];
-    const last = controls[controls.length - 1];
-    if (!first || !last) return;
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
   });
 }
 
@@ -1583,10 +1595,10 @@ function confirmDialog(title: string, body: string, choices: string[]): Promise<
     dialog.append(el('h2', { id: 'confirm-title' }, title), el('p', { id: 'confirm-body' }, body), el('div', { class: 'modal-actions' }, ...buttons));
     dialog.addEventListener('cancel', () => resolve(null));
     dialog.addEventListener('close', () => {
-      openDialogs--;
+      dialogState.open--;
       dialog.remove();
     });
-    openDialogs++;
+    dialogState.open++;
     document.body.append(dialog);
     trapTab(dialog);
     dialog.showModal();

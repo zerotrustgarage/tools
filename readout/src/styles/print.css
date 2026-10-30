@@ -1,0 +1,66 @@
+/* The ZTG print template (RD12): a running header and footer on every printed page, drawn in @page
+   margin boxes (Chromium and WebView2). The words come from custom properties that the app sets
+   just before printing (src/core/print.ts), each already a quoted CSS string:
+
+     --print-title   the document title (first heading, else the file name)
+     --print-client  "Client: <name>" when the reader typed one, else ""
+     --print-date    "Printed YYYY-MM-DD"
+
+   The page number and the page count are CSS counters, so they need no script. Colours are the
+   ZTG palette on white paper: bg #020C1B (ink), acc #00FF41 (the one brand colour, used as the
+   header rule only, never for text), light-dim #526377 (secondary text), light-line-strong #BAC6D4.
+   This file is loaded by the app and is not part of an exported HTML file. */
+
+@media print {
+  @page {
+    size: auto;
+    margin: 24mm 18mm 22mm;
+    background: #fff;
+
+    @top-left {
+      vertical-align: bottom;
+      padding-bottom: 3mm;
+      margin-bottom: 5mm;
+      border-bottom: 1.5pt solid #00ff41;
+      content: 'ZTG Readout';
+      font: 700 9pt ui-monospace, Consolas, 'Liberation Mono', monospace;
+      color: #020c1b;
+    }
+    @top-center {
+      vertical-align: bottom;
+      padding-bottom: 3mm;
+      margin-bottom: 5mm;
+      border-bottom: 1.5pt solid #00ff41;
+      content: var(--print-title, '');
+      font: 600 9pt ui-sans-serif, system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
+      color: #020c1b;
+    }
+    @top-right {
+      vertical-align: bottom;
+      padding-bottom: 3mm;
+      margin-bottom: 5mm;
+      border-bottom: 1.5pt solid #00ff41;
+      content: var(--print-client, '');
+      font: 9pt ui-sans-serif, system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
+      color: #020c1b;
+    }
+    @bottom-left {
+      vertical-align: top;
+      padding-top: 3mm;
+      margin-top: 5mm;
+      border-top: 0.75pt solid #bac6d4;
+      content: var(--print-date, '');
+      font: 8pt ui-sans-serif, system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
+      color: #526377;
+    }
+    @bottom-right {
+      vertical-align: top;
+      padding-top: 3mm;
+      margin-top: 5mm;
+      border-top: 0.75pt solid #bac6d4;
+      content: 'Page ' counter(page) ' of ' counter(pages);
+      font: 8pt ui-sans-serif, system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
+      color: #526377;
+    }
+  }
+}

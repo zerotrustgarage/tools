@@ -1,5 +1,6 @@
 import 'katex/dist/katex.min.css';
 import './styles/preview.css';
+import './styles/print.css';
 import './styles/app.css';
 import { App } from './ui/app';
 import type { Platform } from './platform/types';
