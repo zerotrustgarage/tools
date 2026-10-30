@@ -3,9 +3,13 @@ import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { HighlightStyle, bracketMatching, syntaxHighlighting } from '@codemirror/language';
 import { languages } from '@codemirror/language-data';
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search';
-import { Compartment, EditorState, type Extension } from '@codemirror/state';
+import { Compartment, EditorState, type Extension, type Range } from '@codemirror/state';
 import {
+  Decoration,
+  type DecorationSet,
   EditorView,
+  ViewPlugin,
+  type ViewUpdate,
   drawSelection,
   highlightActiveLine,
   highlightActiveLineGutter,
@@ -14,6 +18,7 @@ import {
 } from '@codemirror/view';
 import { tags as t } from '@lezer/highlight';
 import type { DocumentFormat } from '../core/document';
+import { focusRange } from '../core/focus';
 import { formattingKeymap } from './format';
 
 // The source editor. Its text IS the file: there is no document model in between, so bytes
@@ -83,6 +88,13 @@ const ztgEditorTheme = EditorView.theme({
   },
   '.cm-panel.cm-search label': { color: 'var(--dim)' },
   '.cm-tooltip': { backgroundColor: 'var(--panel2)', color: 'var(--text)', border: '1px solid var(--line)' },
+  // Focus mode (RD17): lines outside the current paragraph take one palette colour (--focus-dim,
+  // 3:1 or better on the editor background, see test/contrast.test.ts); the current paragraph is untouched.
+  '.cm-focus-dim, .cm-focus-dim span': { color: 'var(--focus-dim)' },
+  // A find match keeps a legible colour on its highlight (the dim colour would drop under 3:1 on it).
+  '.cm-focus-dim .cm-searchMatch': { color: 'var(--bright)' },
+  // Typewriter mode: room above and below the text so the first and last lines can reach the middle too.
+  '&.cm-typewriter .cm-content': { paddingTop: 'var(--typewriter-pad, 40vh)', paddingBottom: 'var(--typewriter-pad, 40vh)' },
 });
 
 export interface EditorOptions {
@@ -95,9 +107,138 @@ export interface EditorOptions {
   onScroll: (topLine: number) => void;
   /** An image was pasted (RD13). Called instead of the paste; absent keeps the editor's own paste. */
   onPasteImage?: (file: File) => void;
+  /** Focus mode and typewriter mode (RD17); both off when absent. */
+  focusMode?: boolean;
+  typewriterMode?: boolean;
 }
 
 const readOnlyCompartment = new Compartment();
+const focusCompartment = new Compartment();
+const typewriterCompartment = new Compartment();
+
+// ---- focus mode (RD17) -----------------------------------------------------------------
+
+const dimLine = Decoration.line({ class: 'cm-focus-dim' });
+
+/** A dim decoration on every line of [from, to] outside the current paragraph (the paragraphs each selection range touches). */
+export function focusDecorations(state: EditorState, from: number, to: number): DecorationSet {
+  const doc = state.doc;
+  // Every selection range keeps its paragraphs lit, so a selected line is never dimmed.
+  const lit = state.selection.ranges.map((r) =>
+    focusRange((n) => doc.line(n).text, doc.lines, doc.lineAt(r.from).number, doc.lineAt(r.to).number),
+  );
+  const ranges: Range<Decoration>[] = [];
+  const first = doc.lineAt(from).number;
+  const last = doc.lineAt(Math.min(to, doc.length)).number;
+  for (let n = first; n <= last; n++) if (!lit.some((r) => n >= r.from && n <= r.to)) ranges.push(dimLine.range(doc.line(n).from));
+  return Decoration.set(ranges);
+}
+
+const focusPlugin = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = focusDecorations(view.state, view.viewport.from, view.viewport.to);
+    }
+    update(update: ViewUpdate): void {
+      if (update.docChanged || update.selectionSet || update.viewportChanged)
+        this.decorations = focusDecorations(update.state, update.view.viewport.from, update.view.viewport.to);
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
+);
+
+// ---- typewriter mode (RD17) ------------------------------------------------------------
+
+/** Typing, deleting, undo and keyboard cursor moves keep the line centred; a click or a programmatic jump does not. */
+function recentres(update: ViewUpdate): boolean {
+  return update.transactions.some(
+    (tr) =>
+      tr.isUserEvent('input') ||
+      tr.isUserEvent('delete') ||
+      tr.isUserEvent('undo') ||
+      tr.isUserEvent('redo') ||
+      tr.isUserEvent('move') ||
+      (tr.isUserEvent('select') && !tr.isUserEvent('select.pointer')),
+  );
+}
+
+const typewriterPlugin = ViewPlugin.fromClass(
+  class {
+    constructor(private readonly view: EditorView) {
+      this.setPadding();
+      this.centre();
+    }
+    update(update: ViewUpdate): void {
+      if (update.geometryChanged) this.setPadding();
+      if (recentres(update)) this.centre();
+    }
+    /** Half the editor's height, so a line at either end of the document can still be centred. */
+    private setPadding(): void {
+      const half = Math.max(0, Math.floor(this.view.scrollDOM.clientHeight / 2) - 24);
+      if (half > 0) this.view.dom.style.setProperty('--typewriter-pad', `${half}px`);
+    }
+    private centre(): void {
+      this.view.requestMeasure({
+        key: this,
+        read: (view) => {
+          const caret = view.coordsAtPos(view.state.selection.main.head);
+          if (!caret) return null;
+          const box = view.scrollDOM.getBoundingClientRect();
+          return (caret.top + caret.bottom) / 2 - (box.top + box.height / 2);
+        },
+        write: (delta, view) => {
+          if (delta !== null && Math.abs(delta) > 1) view.scrollDOM.scrollTop += delta;
+        },
+      });
+    }
+    destroy(): void {
+      this.view.dom.style.removeProperty('--typewriter-pad');
+    }
+  },
+);
+
+const typewriterExtensions = (on: boolean): Extension => (on ? [typewriterPlugin, EditorView.editorAttributes.of({ class: 'cm-typewriter' })] : []);
+const focusExtensions = (on: boolean): Extension => (on ? focusPlugin : []);
+
+export function setFocusMode(view: EditorView, on: boolean): void {
+  view.dispatch({ effects: focusCompartment.reconfigure(focusExtensions(on)) });
+}
+
+export function setTypewriterMode(view: EditorView, on: boolean): void {
+  view.dispatch({ effects: typewriterCompartment.reconfigure(typewriterExtensions(on)) });
+}
+
+// ---- scroll sync (RD18) ----------------------------------------------------------------
+
+/** The zero-based line at the top of the editor's viewport (document padding above the text excluded). */
+export function topLine(view: EditorView): number {
+  const block = view.lineBlockAtHeight(Math.max(0, view.scrollDOM.scrollTop - view.documentPadding.top));
+  return view.state.doc.lineAt(block.from).number - 1;
+}
+
+/**
+ * Scrolls so a (fractional) zero-based source line sits at the top of the viewport, without moving the
+ * cursor. Returns the scroll position it ended on. The reverse of topLine.
+ */
+export function scrollToTopLine(view: EditorView, line: number): number {
+  const doc = view.state.doc;
+  const clamped = Math.min(Math.max(line, 0), doc.lines - 1);
+  if (clamped === 0) {
+    view.scrollDOM.scrollTop = 0;
+    return view.scrollDOM.scrollTop;
+  }
+  const index = Math.floor(clamped);
+  const block = view.lineBlockAt(doc.line(index + 1).from);
+  view.scrollDOM.scrollTop = block.top + (clamped - index) * block.height + view.documentPadding.top;
+  return view.scrollDOM.scrollTop;
+}
+
+/** Scrolls to the very bottom, returning the position reached. */
+export function scrollToEnd(view: EditorView): number {
+  view.scrollDOM.scrollTop = view.scrollDOM.scrollHeight;
+  return view.scrollDOM.scrollTop;
+}
 
 /**
  * Line endings: CodeMirror's lineSeparator decides both how the file is split into lines and
@@ -137,6 +278,8 @@ export function createEditorState(options: Omit<EditorOptions, 'parent'>): Edito
       keymap.of([{ key: 'Escape', run: (view) => (temporarilySetTabFocusMode(view), false) }]),
       keymap.of([...formattingKeymap, ...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
       readOnlyCompartment.of([EditorState.readOnly.of(options.readOnly), EditorView.editable.of(!options.readOnly)]),
+      focusCompartment.of(focusExtensions(options.focusMode === true)),
+      typewriterCompartment.of(typewriterExtensions(options.typewriterMode === true)),
       EditorView.contentAttributes.of({ spellcheck: 'true', 'aria-label': 'Markdown source' }),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) options.onChange();
@@ -159,8 +302,7 @@ export function createEditorState(options: Omit<EditorOptions, 'parent'>): Edito
           return true;
         },
         scroll: (_event, view) => {
-          const block = view.lineBlockAtHeight(view.scrollDOM.scrollTop);
-          options.onScroll(view.state.doc.lineAt(block.from).number - 1);
+          options.onScroll(topLine(view));
         },
       }),
     ],

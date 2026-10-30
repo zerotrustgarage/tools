@@ -183,6 +183,29 @@ opener already bundled for web links).
   and the widths are remembered. The editor's share is kept as a proportion, so it scales with
   the window.
 - The reading-width button switches the preview between a comfortable column and the full pane.
+- Scroll sync works both ways in split view. Scrolling the editor moves the preview to the matching
+  block (as before); scrolling the preview moves the editor to the source line at the top of the
+  preview, smoothly within a long table, list or code block, and to the end of the file when the
+  preview reaches its end. Rendered blocks carry a `data-line` marker for this (only a plain number
+  is kept by the sanitizer). The panes never drive each other in a loop, a scroll is followed at most
+  once per frame, and nothing is synced in Edit or Preview view. Scrolling moves neither the cursor
+  nor the text. There is no setting to turn it off. Raw HTML blocks have no marker, so they count as
+  part of the block above them.
+- Focus mode (the Focus mode button in the top bar, or F8) dims every line of the editor except the
+  current paragraph, meaning the run of non-blank lines around the cursor (or around each end of a
+  selection). Dimmed lines are drawn in one palette colour (`dim2`), 5.06:1 (light) and 3.70:1 (dark)
+  against the editor background, so they stay readable; the current paragraph keeps its normal
+  colours. Pressing Enter twice puts the cursor on a blank line, where all text is dimmed until you
+  type. A find match in a dimmed line is drawn in the bright text colour.
+- Typewriter mode (the Typewriter mode button, or F9) keeps the line you are typing on in the
+  vertical middle of the editor: typing, deleting, undo, redo and moving the cursor by keyboard
+  re-center it, and the editor gains half a screen of space above and below the text so the first and
+  last lines can be centered too. A click is not re-centered, so the page does not move under the
+  pointer.
+  Both modes are off by default, are remembered per viewer (a browser's or the desktop window's local
+  storage, keys `ztg-readout-focus` and `ztg-readout-typewriter`), say "Focus mode on", "Typewriter
+  mode off" and so on in the polite live region, and the buttons report their state (`aria-pressed`).
+  F8 and F9 are the Typora keys; no other shortcut in the app or in the editor uses them.
 - On the desktop the app draws its own title bar in the current theme (the native frame is off):
   drag it to move the window, double-click it to maximize. Windows 11's snap layout flyout,
   which appears when hovering a native maximize button, is not available on it; Win+Z and
@@ -199,7 +222,7 @@ RD20 is a pass against WCAG 2.1 level AA. What it covers, and what it does not:
   their size, minimum and maximum. The editor is a named multi-line text box; the preview is a
   named region that takes focus, so it scrolls from the keyboard.
 - Announcements. One polite, always-present live region says banners (a changed file, a read-only
-  note, a failed save), "Opened name", "Saved name" and setting changes (theme, reading width). The
+  note, a failed save), "Opened name", "Saved name" and setting changes (theme, reading width, focus and typewriter mode). The
   folder filter says its match count a moment after you stop typing. Typing in the editor and the
   cursor position in the status bar are never announced. Folder search and the recent list keep
   their own polite status lines.

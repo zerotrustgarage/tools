@@ -17,13 +17,14 @@ import { defaultDocument, documentFor, LISTED_EXTENSIONS, opensInReadout, resolv
 import { postprocess } from '../core/postprocess';
 import { describeRemoteImages, summarizeRemoteImages } from '../core/remote-images';
 import { renderMarkdown } from '../core/render';
+import { EchoGuard, lineAtOffset, previewBlocks } from '../core/scrollsync';
 import { blobUrlToDataUrl, buildRichText, fragmentForRange, isEmptyFragment } from '../core/richtext';
 import { DEFAULT_BOUNDS, type SearchMatch } from '../core/search';
 import type { Arrival, FileRef, ImageSource, LinkedFileCheck, Listing, OpenedFile, PendingSession, Platform, RecentEntry } from '../platform/types';
 import { IMAGE_REFUSED, MAX_IMAGE_BYTES, imageKindFromMime, imageMarkdown, imageProblem } from '../core/images';
 import { el, icon } from './dom';
 import { isolateHistory } from '@codemirror/commands';
-import { createEditor, documentText, scrollToLine, type JumpOptions } from './editor';
+import { createEditor, documentText, scrollToEnd, scrollToLine, scrollToTopLine, setFocusMode, setTypewriterMode, topLine, type JumpOptions } from './editor';
 import { runFormat, type FormatCommand } from './format';
 import { OutlinePanel } from './outline';
 import { rovingToolbar } from './roving';
@@ -105,6 +106,12 @@ export class App {
   private renderGeneration = 0;
   private objectUrls: string[] = [];
   private syncLine = 0;
+  /** Focus mode and typewriter mode (RD17): remembered per viewer, off by default. */
+  private focusMode = stored('ztg-readout-focus', ['on', 'off'], 'off') === 'on';
+  private typewriterMode = stored('ztg-readout-typewriter', ['on', 'off'], 'off') === 'on';
+  /** Tells a scroll the app caused from the reader's, so editor and preview never chase each other (RD18). */
+  private readonly echo = new EchoGuard();
+  private previewScrollQueued = false;
   /** Off until the stored session has been read, so the empty first load cannot overwrite it. */
   private remembering = false;
 
@@ -131,6 +138,16 @@ export class App {
   private readonly modeButtons = new Map<ViewMode, HTMLButtonElement>();
   private readonly formatBar = el('div', { class: 'format-bar', role: 'toolbar', 'aria-label': 'Formatting' });
   private readonly themeButton = el('button', { class: 'icon-button', type: 'button' });
+  private readonly focusButton = el(
+    'button',
+    { class: 'icon-button', type: 'button', title: 'Focus mode: dim everything but the current paragraph (F8)', 'aria-label': 'Focus mode', 'aria-pressed': 'false' },
+    icon('focus'),
+  );
+  private readonly typewriterButton = el(
+    'button',
+    { class: 'icon-button', type: 'button', title: 'Typewriter mode: keep the cursor line in the middle (F9)', 'aria-label': 'Typewriter mode', 'aria-pressed': 'false' },
+    icon('typewriter'),
+  );
   private readonly copyRichButton = el(
     'button',
     {
@@ -204,6 +221,7 @@ export class App {
     window.addEventListener('keydown', (event) => this.globalShortcut(event));
     this.preview.addEventListener('click', (event) => void this.previewClick(event));
     this.preview.addEventListener('dblclick', (event) => this.previewDoubleClick(event));
+    this.previewPane.addEventListener('scroll', () => this.previewScrolled(), { passive: true });
     // toggle does not bubble, so it is caught on the way down.
     this.preview.addEventListener('toggle', (event) => this.rememberFold(event), true);
     try {
@@ -246,6 +264,9 @@ export class App {
       this.announce(this.themeButton.title);
     });
     this.backButton.addEventListener('click', () => void this.back());
+    this.focusButton.addEventListener('click', () => this.toggleFocusMode());
+    this.typewriterButton.addEventListener('click', () => this.toggleTypewriterMode());
+    this.showEditingModes();
     // A click on the button must not clear the selection in the preview that it is about to copy.
     this.copyRichButton.addEventListener('mousedown', (event) => event.preventDefault());
     this.copyRichButton.addEventListener('click', () => void this.copyRichText());
@@ -276,6 +297,8 @@ export class App {
         this.copyRichButton,
         button('Export', 'Export as HTML', () => void this.exportHtml(), 'export'),
         button('Print', 'Print or save as PDF (Ctrl+P)', () => void this.print(), 'print'),
+        this.focusButton,
+        this.typewriterButton,
         this.measureButton,
         this.themeButton,
       ),
@@ -399,6 +422,28 @@ export class App {
     if (this.view) this.schedulePreview(0);
   }
 
+  /** Focus and typewriter mode (RD17): remembered, announced politely, and applied to the open editor. */
+  private toggleFocusMode(): void {
+    this.focusMode = !this.focusMode;
+    store('ztg-readout-focus', this.focusMode ? 'on' : 'off');
+    setFocusMode(this.view, this.focusMode);
+    this.showEditingModes();
+    this.announce(`Focus mode ${this.focusMode ? 'on' : 'off'}`);
+  }
+
+  private toggleTypewriterMode(): void {
+    this.typewriterMode = !this.typewriterMode;
+    store('ztg-readout-typewriter', this.typewriterMode ? 'on' : 'off');
+    setTypewriterMode(this.view, this.typewriterMode);
+    this.showEditingModes();
+    this.announce(`Typewriter mode ${this.typewriterMode ? 'on' : 'off'}`);
+  }
+
+  private showEditingModes(): void {
+    this.focusButton.setAttribute('aria-pressed', String(this.focusMode));
+    this.typewriterButton.setAttribute('aria-pressed', String(this.typewriterMode));
+  }
+
   private get dark(): boolean {
     return document.documentElement.dataset.theme === 'dark';
   }
@@ -492,7 +537,9 @@ export class App {
         this.status.cursor.textContent = `Ln ${line}, Col ${column}`;
         this.outline.setCursorLine(line - 1);
       },
-      onScroll: (line) => this.syncPreview(line),
+      onScroll: (line) => this.editorScrolled(line),
+      focusMode: this.focusMode,
+      typewriterMode: this.typewriterMode,
       onPasteImage: (file) => void this.pasteImage(file),
     });
   }
@@ -1015,6 +1062,13 @@ export class App {
       void this.back();
       return;
     }
+    // F8 and F9 (as in Typora): no browser or WebView binds them, and no editor command does.
+    if ((event.key === 'F8' || event.key === 'F9') && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
+      event.preventDefault();
+      if (event.key === 'F8') this.toggleFocusMode();
+      else this.toggleTypewriterMode();
+      return;
+    }
     if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
     const key = event.key.toLowerCase();
     if (key === 'f' && event.shiftKey) {
@@ -1076,6 +1130,8 @@ export class App {
     this.objectUrls = urls;
     this.preview.replaceChildren(...container.childNodes);
     this.showRemoteImages();
+    // The new content can move the preview's scroll position (it may be shorter); that is not the reader scrolling.
+    this.echo.expect('preview', this.previewPane.scrollTop);
     const details = this.preview.querySelectorAll('details');
     for (const [index, open] of this.folds) if (details[index]) details[index].open = open;
     if (this.pendingLine !== null) {
@@ -1314,6 +1370,39 @@ export class App {
     }
     const top = target ? target.offsetTop - this.preview.offsetTop : 0;
     this.previewPane.scrollTo({ top: line === 0 ? 0 : top });
+    this.echo.expect('preview', this.previewPane.scrollTop);
+  }
+
+  /** The editor scrolled: the preview follows, unless the scroll was this app moving the editor for the preview. */
+  private editorScrolled(line: number): void {
+    if (this.echo.isEcho('editor', this.view.scrollDOM.scrollTop)) {
+      this.syncLine = line;
+      return;
+    }
+    this.syncPreview(line);
+  }
+
+  /** The preview scrolled (RD18): at most once a frame, and never for the app's own scrolls or outside split view. */
+  private previewScrolled(): void {
+    if (this.mode !== 'split' || this.previewScrollQueued) return;
+    if (this.echo.isEcho('preview', this.previewPane.scrollTop)) return;
+    this.previewScrollQueued = true;
+    requestAnimationFrame(() => {
+      this.previewScrollQueued = false;
+      this.syncEditor();
+    });
+  }
+
+  /** Moves the editor to the source line at the top of the preview, or to its end when the preview is at its end. */
+  private syncEditor(): void {
+    if (this.mode !== 'split') return;
+    const pane = this.previewPane;
+    const doc = this.view.state.doc;
+    const atEnd = pane.scrollHeight - pane.clientHeight > 1 && pane.scrollTop >= pane.scrollHeight - pane.clientHeight - 1;
+    const line = lineAtOffset(previewBlocks(this.preview, pane), pane.scrollTop, { line: doc.lines, top: pane.scrollHeight });
+    this.echo.expect('editor', atEnd ? scrollToEnd(this.view) : scrollToTopLine(this.view, line));
+    // A re-render restores the preview to the editor's top line, so keep that line current.
+    this.syncLine = topLine(this.view);
   }
 
   private async previewClick(event: MouseEvent): Promise<void> {
