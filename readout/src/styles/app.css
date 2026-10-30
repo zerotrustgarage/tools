@@ -20,6 +20,7 @@
   --cm-mark: #526377;
   --titlebar-bg: #e8edf2;
   --dim2: #607084;
+  --focus-dim: #607084;
   --active-line: rgba(36, 92, 154, 0.06);
   --selection: rgba(36, 92, 154, 0.22);
   --selection-match: rgba(36, 92, 154, 0.12);
@@ -44,6 +45,7 @@
   --cm-mark: #94a3b8;
   --titlebar-bg: #020c1b;
   --dim2: #64748b;
+  --focus-dim: #64748b;
   --active-line: rgba(255, 255, 255, 0.04);
   --selection: rgba(0, 255, 65, 0.18);
   --selection-match: rgba(0, 255, 65, 0.09);
@@ -160,6 +162,7 @@ button:focus-visible { outline-offset: 1px; }
 
 .segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; padding: 2px; gap: 2px; }
 .segmented button { height: 26px; padding: 0 10px; }
+.icon-button[aria-pressed='true'],
 .segmented button[aria-pressed='true'] { background: var(--acc); color: var(--acc-ink); border-color: transparent; }
 
 .format-bar {
@@ -248,6 +251,8 @@ body.resizing .pane, body.resizing .sidebar { pointer-events: none; }
   border-top: 1px solid var(--line);
 }
 .status-bar .spacer { flex: 1; }
+/* Remote images are counted from the preview, which is not rendered in edit view. */
+.app[data-mode='edit'] .status-remote { display: none; }
 
 /* Folder sidebar */
 .sidebar {

@@ -18,6 +18,7 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { contrastFailures, focusIndicator } from './measure.mjs';
+import { over, parseColor, ratio } from './contrast.mjs';
 
 // createRequire honors NODE_PATH, so a global playwright install works.
 const { chromium } = createRequire(import.meta.url)('playwright');
@@ -1182,6 +1183,277 @@ const scenarios = [
     await page.waitForTimeout(300);
     assert.equal(await page.evaluate(() => window.__pwned), undefined);
     assert.equal(await page.locator('.markdown-body img[src^="http"], .markdown-body script').count(), 0, 'no remote content, no script');
+  }],
+
+  ['remote images are counted in the status bar and never requested (RD14)', async (page, scheme, problems) => {
+    await boot(page);
+    await openFile(
+      page,
+      'x/remote.md',
+      '# Remote\n\n![one](https://tracker.example/pixel.png)\n\n![two](https://tracker.example/b.png)\n\n![three](http://old.example/c.gif)\n\n<img src="//proto.example/d.png" srcset="https://srcset.example/e.png 2x">\n\n![inline](data:image/gif;base64,R0lGODlhAQABAAAAACw=)\n',
+    );
+    await page.waitForSelector('.markdown-body h1');
+    const note = page.locator('.status-remote');
+    await note.waitFor({ state: 'visible' });
+    assert.equal(await note.textContent(), '4 remote images not loaded');
+    const title = await note.getAttribute('title');
+    assert.ok(title.includes('tracker.example, old.example, proto.example'), title);
+    assert.ok(title.includes('1 use plain http.'), title);
+    assert.equal(await page.locator('.markdown-body .remote-image-placeholder').count(), 4, 'one placeholder per image');
+    assert.equal(await page.locator('.markdown-body img[src^="http"], .markdown-body img[srcset]').count(), 0, 'no image carries a remote address');
+    // The suite's request guard refuses and reports any non-local request, so a fetch would fail
+    // the run. Give the page time to make one, then check nothing was attempted.
+    await page.waitForTimeout(400);
+    assert.deepEqual(problems.filter((p) => /request to/.test(p)), [], 'nothing remote was requested');
+    // The note belongs to the preview: it goes away in edit view and when the document has none.
+    await button(page, 'Edit view').click();
+    assert.equal(await note.isVisible(), false, 'hidden in edit view');
+    await button(page, 'Split view').click();
+    await note.waitFor({ state: 'visible' });
+    await openFile(page, 'x/plain.md', '# Plain\n\nNo images here.\n');
+    await page.waitForSelector('.markdown-body h1:has-text("Plain")');
+    await note.waitFor({ state: 'hidden' });
+  }],
+
+  // ---- RD18: two-way scroll sync, RD17: focus and typewriter modes ---------------------------
+
+  ['scroll sync: the preview moves the editor, and neither pane chases the other (RD18)', async (page) => {
+    await boot(page);
+    await openFile(page, 's/sync.md', OUTLINE_DOC);
+    await page.waitForSelector('.markdown-body h3');
+    await page.waitForTimeout(400); // the render's own scroll settles first (a scroll within 150 ms of the app's own is not the reader's)
+    const sync = {
+      editorTop: () => page.evaluate(() => document.querySelector('.cm-scroller').scrollTop),
+      previewTop: () => page.evaluate(() => document.querySelector('.preview-pane').scrollTop),
+      // The distance from the top of the editor to the line with this text, or null while it is not drawn.
+      lineOffset: (text) => page.evaluate((t) => {
+        const scroller = document.querySelector('.cm-scroller').getBoundingClientRect();
+        const line = [...document.querySelectorAll('.cm-line')].find((l) => l.textContent === t);
+        return line ? line.getBoundingClientRect().top - scroller.top : null;
+      }, text),
+    };
+    assert.equal(await sync.editorTop(), 0);
+
+    // Scroll the preview to the second section: the editor follows to its heading.
+    await page.evaluate(() => {
+      const pane = document.querySelector('.preview-pane');
+      const h = [...document.querySelectorAll('.markdown-body h2')].find((n) => n.textContent === 'Section 2');
+      pane.scrollTop = h.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
+    });
+    await page.waitForFunction((t) => {
+      const scroller = document.querySelector('.cm-scroller').getBoundingClientRect();
+      const line = [...document.querySelectorAll('.cm-line')].find((l) => l.textContent === t);
+      return line && Math.abs(line.getBoundingClientRect().top - scroller.top) < 60;
+    }, heading(2));
+    // Cursor and text are untouched by a scroll.
+    assert.ok((await cursor(page)).startsWith('Ln 1,'), await cursor(page));
+
+    // No feedback: the pair settles where the reader left it, whichever frame the echoes arrive in.
+    const preview = await sync.previewTop();
+    const editor = await sync.editorTop();
+    await page.waitForTimeout(600);
+    assert.ok(Math.abs((await sync.previewTop()) - preview) <= 2, `the preview stayed at ${preview}, is ${await sync.previewTop()}`);
+    assert.ok(Math.abs((await sync.editorTop()) - editor) <= 2, `the editor stayed at ${editor}, is ${await sync.editorTop()}`);
+
+    // Scrolling the editor still moves the preview (the existing direction): back to the top, then to Section 1.
+    await page.evaluate(() => (document.querySelector('.cm-scroller').scrollTop = 0));
+    await page.waitForFunction(() => document.querySelector('.preview-pane').scrollTop < 5);
+    await page.evaluate(() => {
+      const s = document.querySelector('.cm-scroller');
+      const line = [...document.querySelectorAll('.cm-line')].find((l) => l.textContent === '## Section 1');
+      s.scrollTop = line.getBoundingClientRect().top - s.getBoundingClientRect().top + s.scrollTop;
+    });
+    await page.waitForFunction(() => {
+      const pane = document.querySelector('.preview-pane').getBoundingClientRect();
+      const h = [...document.querySelectorAll('.markdown-body h2')].find((n) => n.textContent === 'Section 1');
+      return Math.abs(h.getBoundingClientRect().top - pane.top) < 60;
+    });
+
+    // The end of the preview is the end of the editor, not the line that happens to be on top.
+    await page.waitForTimeout(300);
+    await page.evaluate(() => {
+      const pane = document.querySelector('.preview-pane');
+      pane.scrollTop = pane.scrollHeight;
+    });
+    await page.waitForFunction(() => {
+      const s = document.querySelector('.cm-scroller');
+      return s.scrollTop >= s.scrollHeight - s.clientHeight - 2;
+    });
+    await page.waitForTimeout(400);
+    const end = await page.evaluate(() => {
+      const pane = document.querySelector('.preview-pane');
+      return pane.scrollTop >= pane.scrollHeight - pane.clientHeight - 2;
+    });
+    assert.equal(end, true, 'the preview stayed at its end');
+
+    // Preview only: the editor is hidden, so nothing is synced; the preview stays where the reader put it.
+    await button(page, 'Preview view').click();
+    await page.evaluate(() => {
+      window.__editorScrolls = 0;
+      document.querySelector('.cm-scroller').addEventListener('scroll', () => window.__editorScrolls++);
+      document.querySelector('.preview-pane').scrollTop = 900;
+    });
+    await page.waitForTimeout(500);
+    assert.equal(await page.evaluate(() => window.__editorScrolls), 0, 'the editor was not scrolled in preview view');
+    assert.ok(Math.abs((await sync.previewTop()) - 900) <= 2, `the preview stayed at 900, is ${await sync.previewTop()}`);
+
+    // Edit only: the editor scrolls alone and the preview is not driven.
+    await button(page, 'Edit view').click();
+    await page.evaluate(() => (document.querySelector('.cm-scroller').scrollTop = 500));
+    await page.waitForTimeout(500);
+    assert.ok(Math.abs((await sync.editorTop()) - 500) <= 40, `the editor (which re-measures its lines when it reappears) stayed near 500, is ${await sync.editorTop()}`);
+
+    // Back in split view the sync is on again.
+    await button(page, 'Split view').click();
+    await page.waitForTimeout(500);
+    await page.evaluate(() => (document.querySelector('.preview-pane').scrollTop = 1500));
+    await page.waitForFunction(() => document.querySelector('.cm-scroller').scrollTop > 800);
+    await page.waitForTimeout(300);
+    await page.evaluate(() => (document.querySelector('.preview-pane').scrollTop = 0));
+    await page.waitForFunction(() => document.querySelector('.cm-scroller').scrollTop < 5);
+  }],
+
+  ['focus mode dims all but the current paragraph (RD17)', async (page) => {
+    await boot(page);
+    const doc = ['# Heading', '', 'First paragraph line one', 'First paragraph line two', '', 'Second paragraph with `code` and a [link](https://example.com).', '', '- third', '- list', ''].join('\n');
+    await openFile(page, 'f/focus.md', doc);
+    await page.waitForSelector('.markdown-body h1');
+    const toggle = button(page, 'Focus mode');
+    // Off by default.
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
+    assert.equal(await page.locator('.cm-focus-dim').count(), 0);
+    const status = page.locator('.app > [role="status"]');
+
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+Home');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown'); // line 3, the first paragraph
+    await page.keyboard.press('F8');
+    await page.waitForSelector('.cm-focus-dim');
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
+    await page.waitForFunction(() => document.querySelector('.app > [role="status"]').textContent === 'Focus mode on');
+    assert.equal(await status.getAttribute('aria-live'), 'polite');
+
+    const lines = () => page.evaluate(() => [...document.querySelectorAll('.cm-line')].map((l) => [l.textContent, l.classList.contains('cm-focus-dim')]));
+    assert.deepEqual(await lines(), [
+      ['# Heading', true],
+      ['', true],
+      ['First paragraph line one', false],
+      ['First paragraph line two', false],
+      ['', true],
+      ['Second paragraph with `code` and a [link](https://example.com).', true],
+      ['', true],
+      ['- third', true],
+      ['- list', true],
+      ['', true],
+    ]);
+
+    // Contrast, measured on screen: every piece of dimmed text is 3:1 or better against the editor
+    // background; the current paragraph keeps the ordinary colours (4.5:1 or better).
+    const measured = await page.evaluate(() => {
+      const bg = getComputedStyle(document.querySelector('.cm-editor')).backgroundColor;
+      const colours = (line) => [...line.querySelectorAll('*')].concat(line).filter((n) => [...n.childNodes].some((c) => c.nodeType === 3 && c.nodeValue.trim())).map((n) => getComputedStyle(n).color);
+      const dim = [...document.querySelectorAll('.cm-line.cm-focus-dim')].flatMap(colours);
+      const lit = [...document.querySelectorAll('.cm-line:not(.cm-focus-dim)')].flatMap(colours);
+      return { bg, dim, lit, dimOpacity: getComputedStyle(document.querySelector('.cm-line.cm-focus-dim')).opacity };
+    });
+    assert.ok(measured.dim.length >= 5 && measured.lit.length >= 2, JSON.stringify(measured));
+    const bg = parseColor(measured.bg);
+    const worst = (list) => Math.min(...list.map((c) => ratio(over(parseColor(c), bg), bg)));
+    assert.ok(worst(measured.dim) >= 3, `dimmed text ${worst(measured.dim).toFixed(2)}:1`);
+    assert.ok(worst(measured.lit) >= 4.5, `current paragraph ${worst(measured.lit).toFixed(2)}:1`);
+    assert.ok(worst(measured.dim) < worst(measured.lit), 'dimmed text is quieter than the current paragraph');
+    assert.equal(measured.dimOpacity, '1', 'dimming changes the colour, not the opacity');
+
+    // The lit paragraph follows the cursor; the text is untouched.
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    await page.waitForFunction(() => document.querySelector('.cm-line:not(.cm-focus-dim)')?.textContent.startsWith('Second paragraph'));
+    assert.equal((await lines()).filter(([, dim]) => !dim).length, 1);
+    assert.equal((await lines()).map(([text]) => text).join('\n'), doc, 'the text is untouched');
+
+    // Remembered per viewer: still on after a reload, and turned off with the same key.
+    await page.reload();
+    await boot(page);
+    assert.equal(await button(page, 'Focus mode').getAttribute('aria-pressed'), 'true');
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('F8');
+    await page.waitForFunction(() => document.querySelector('.app > [role="status"]').textContent === 'Focus mode off');
+    assert.equal(await button(page, 'Focus mode').getAttribute('aria-pressed'), 'false');
+    assert.equal(await page.locator('.cm-focus-dim').count(), 0);
+    // The toolbar button does the same.
+    await button(page, 'Focus mode').click();
+    assert.equal(await button(page, 'Focus mode').getAttribute('aria-pressed'), 'true');
+  }],
+
+  ['typewriter mode keeps the cursor line centred (RD17)', async (page) => {
+    await boot(page);
+    const doc = Array.from({ length: 140 }, (_, i) => `Line ${i + 1}`).join('\n') + '\n';
+    await openFile(page, 't/type.md', doc);
+    await page.waitForSelector('.markdown-body');
+    const toggle = button(page, 'Typewriter mode');
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
+    assert.equal(await page.locator('.cm-typewriter').count(), 0);
+    // The distance of the cursor's middle from the middle of the editor, null while the cursor layer is not drawn.
+    const offCentre = () => page.evaluate(() => {
+      const cursor = document.querySelector('.cm-cursor');
+      if (!cursor) return null;
+      const c = cursor.getBoundingClientRect();
+      const s = document.querySelector('.cm-scroller').getBoundingClientRect();
+      return (c.top + c.bottom) / 2 - (s.top + s.height / 2);
+    });
+    const centred = async (what) => {
+      await page.waitForFunction(() => {
+        const cursor = document.querySelector('.cm-cursor');
+        if (!cursor) return false;
+        const c = cursor.getBoundingClientRect();
+        const s = document.querySelector('.cm-scroller').getBoundingClientRect();
+        return Math.abs((c.top + c.bottom) / 2 - (s.top + s.height / 2)) <= 14;
+      }, undefined, { timeout: 5000 }).catch(() => undefined);
+      const delta = await offCentre();
+      assert.ok(delta !== null && Math.abs(delta) <= 14, `${what}: the cursor is ${delta}px from the middle`);
+    };
+
+    await button(page, 'Edit view').click();
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+Home');
+    await page.keyboard.press('F8');
+    await page.keyboard.press('F9');
+    await page.waitForSelector('.cm-typewriter');
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
+    await page.waitForFunction(() => document.querySelector('.app > [role="status"]').textContent === 'Typewriter mode on');
+    await centred('first line');
+
+    // Moving down by keyboard, typing and moving back up keep the line in the middle.
+    for (let i = 0; i < 60; i++) await page.keyboard.press('ArrowDown');
+    await centred('after 60 lines down');
+    await page.keyboard.type('typed text');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('and a new line');
+    await centred('after typing');
+    for (let i = 0; i < 25; i++) await page.keyboard.press('ArrowUp');
+    await centred('after 25 lines up');
+    await page.keyboard.press('Control+End');
+    await centred('last line');
+
+    // A click puts the cursor where it was clicked and does not move the page under the pointer.
+    const target = await page.evaluate(() => {
+      const s = document.querySelector('.cm-scroller').getBoundingClientRect();
+      return { x: s.left + 200, y: s.top + 90 };
+    });
+    await page.mouse.click(target.x, target.y);
+    await page.waitForTimeout(300);
+    const clicked = await offCentre();
+    assert.ok(clicked !== null && clicked < -60, `a click is not re-centred (${clicked}px from the middle)`);
+
+    // Off again: no padding class, announced, and plain scrolling rules apply.
+    await page.keyboard.press('F9');
+    await page.waitForFunction(() => document.querySelector('.app > [role="status"]').textContent === 'Typewriter mode off');
+    assert.equal(await page.locator('.cm-typewriter').count(), 0);
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
+    await button(page, 'Typewriter mode').click();
+    await page.waitForSelector('.cm-typewriter');
   }],
 ];
 

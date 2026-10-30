@@ -168,7 +168,7 @@ diagnostic output in the app. Programs use fixed system paths and numeric result
 as commands. A public address loaded from a file requires authorization before these connection actions.
 Wake-on-LAN asks before sending one UDP magic packet and is limited to directly connected internal IPv4 networks;
 it can use the last known MAC of an offline favorite. Nothing is installed on the scanned device, and no credentials
-are collected by Scanner for these actions. Scheduled scans remain planned.
+are collected by Scanner for these actions. Scheduled rescans are described below.
 
 ## Scheduled rescans
 

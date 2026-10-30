@@ -16,6 +16,13 @@ These properties are requirements, each held by tests:
    Copy as rich text (RD11) obeys the same rule: `src/core/richtext.ts` sanitizes the copy before and
    after rebuilding it, parses only in an inert document, fetches nothing, and takes its colours from
    `design-tokens.json`. `test/richtext.test.ts`.
+   Remote images stay unfetched and the CSP `img-src` stays `'self' data: blob:` (RD14). The status bar
+   only counts the placeholders (`src/core/remote-images.ts`, `test/remote-images.test.ts`). A "Load
+   remote images" choice is not built: a page's CSP cannot change per document, and the desktop
+   shell has no HTTPS client (`Cargo.toml` has none; `reqwest` in `Cargo.lock` has no TLS and is only
+   Tauri's). If it is built, it must be a Rust command (https only, no redirects to non-https, no
+   private, loopback or link-local targets, size and time caps, image magic bytes, no cookies, blob:
+   result), never a widened `img-src`, and this wording changes with it.
 3. The WebView holds no file system, dialog or shell permission. Every file operation is a Rust
    command in `src-tauri/src/lib.rs` limited to paths the user chose, and paths written in
    documents never name a drive, root or UNC host. A new command must be added to `build.rs`

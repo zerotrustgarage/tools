@@ -82,6 +82,16 @@ const pairs: Pair[] = [
   { fg: 'md-text', bg: 'md-subtle', min: TEXT, what: 'preview table stripes and quotes' },
   { fg: 'focus', bg: 'md-bg', min: UI, what: 'focus ring on the preview' },
   ...['md-note', 'md-tip', 'md-important', 'md-warning', 'md-caution'].map((fg) => ({ fg, bg: 'md-bg', min: TEXT, what: `callout title ${fg}` })),
+  // RD17, focus mode: lines outside the current paragraph are one colour (--focus-dim), and must stay
+  // at 3:1 or better wherever the editor can put a background under them. The current paragraph keeps
+  // the ordinary colours (text, headings and marks above), with the same backgrounds checked here.
+  { fg: 'focus-dim', bg: 'panel', min: UI, what: 'dimmed text outside the current paragraph (focus mode)' },
+  { fg: 'focus-dim', bg: 'active-line', min: UI, what: 'dimmed text over an active-line background' },
+  { fg: 'focus-dim', bg: 'selection-match', min: UI, what: 'dimmed text in a selection match' },
+  // A find match inside a dimmed line is drawn in --bright (app.css/editor.ts), not in the dim colour.
+  { fg: 'bright', bg: 'search-match', min: UI, what: 'a find match in a dimmed line' },
+  { fg: 'bright', bg: 'search-match-current', min: UI, what: 'the current find match in a dimmed line' },
+  { fg: 'text', bg: 'selection', min: TEXT, what: 'current paragraph text inside a selection' },
   ...['hl-keyword', 'hl-string', 'hl-number', 'hl-comment', 'hl-function', 'hl-type', 'hl-attr'].flatMap((fg) => [
     { fg, bg: 'md-code-bg', min: TEXT, what: `${fg} in a preview code block` },
     { fg, bg: 'panel', min: TEXT, what: `${fg} in the editor` },
@@ -102,6 +112,14 @@ function surface(theme: keyof typeof themes, name: string): Rgba {
       return over([...parseColor(themes[theme].get('warn')!).slice(0, 3), 0.16] as Rgba, panel);
     case 'acc-panel':
       return panel;
+    case 'selection':
+    case 'selection-match':
+      return over(parseColor(themes[theme].get(name)!), panel);
+    // EditorView.theme: color-mix(in srgb, var(--warn) 30% and 55%, transparent)
+    case 'search-match':
+      return over([...parseColor(themes[theme].get('warn')!).slice(0, 3), 0.3] as Rgba, panel);
+    case 'search-match-current':
+      return over([...parseColor(themes[theme].get('warn')!).slice(0, 3), 0.55] as Rgba, panel);
     default:
       return themes[theme].has(name) ? color(theme, name, page) : (() => { throw new Error(`unknown surface ${name}`); })();
   }
@@ -134,6 +152,8 @@ describe('stylesheet contrast (WCAG 2.1 AA)', () => {
     expect(palette.has(themes.dark.get('cm-mark')!.toLowerCase())).toBe(true);
     expect(palette.has(themes.light.get('hl-comment')!.toLowerCase())).toBe(true);
     expect(palette.has(themes.dark.get('hl-comment')!.toLowerCase())).toBe(true);
+    expect(palette.has(themes.light.get('focus-dim')!.toLowerCase())).toBe(true);
+    expect(palette.has(themes.dark.get('focus-dim')!.toLowerCase())).toBe(true);
   });
 });
 
