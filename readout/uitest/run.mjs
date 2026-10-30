@@ -13,12 +13,13 @@
 // a small harness page that renders the real component (uitest/harness/).
 import { createRequire } from 'node:module';
 import { createServer } from 'node:http';
-import { readFile, mkdir } from 'node:fs/promises';
+import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { contrastFailures, focusIndicator } from './measure.mjs';
 import { over, parseColor, ratio } from './contrast.mjs';
+import { pdfPages } from './pdftext.mjs';
 
 // createRequire honors NODE_PATH, so a global playwright install works.
 const { chromium } = createRequire(import.meta.url)('playwright');
@@ -1114,6 +1115,196 @@ const scenarios = [
     await dialog.getByRole('button', { name: 'Cancel' }).click();
     await dialog.waitFor({ state: 'detached' });
     assert.equal(await active(page, 'button.banner-action'), true, 'Cancel returns focus too');
+  }],
+
+  ['print: options dialog, client name remembered per document, clear', async (page) => {
+    await boot(page);
+    await page.evaluate(() => {
+      window.__printed = 0;
+      window.print = () => {
+        window.__printed++;
+      };
+    });
+    await openFile(page, 'clients/report.md', '# Findings\n\nText.\n');
+    await page.waitForSelector('.markdown-body h1');
+    const vars = () => page.evaluate(() => ['--print-title', '--print-client', '--print-date'].map((n) => document.documentElement.style.getPropertyValue(n)));
+    const stored = () => page.evaluate(() => localStorage.getItem('ztg-readout-print-client'));
+    const dialog = page.locator('dialog.print-options');
+    const field = page.getByRole('textbox', { name: 'Client name (optional)' });
+    const openDialog = async () => {
+      await page.keyboard.press('Control+p');
+      await dialog.waitFor({ state: 'visible' });
+    };
+
+    // Opened from the editor: named, focused on the field, Tab wraps, Escape cancels and returns focus.
+    await page.locator('.cm-content').click();
+    await openDialog();
+    const nodes = await axNodes(page);
+    assert.equal(nodes.filter((n) => n.role === 'dialog' && n.name === 'Print options').length, 1, 'the dialog is named by its heading');
+    assert.equal(await field.count(), 1, 'the field is labelled');
+    assert.equal(await dialog.getAttribute('aria-describedby'), 'print-options-body');
+    assert.equal(await active(page, '#print-options-client'), true, 'focus starts in the field');
+    for (const key of ['Tab', 'Tab', 'Tab', 'Tab', 'Tab', 'Shift+Tab', 'Shift+Tab', 'Shift+Tab', 'Shift+Tab', 'Shift+Tab']) {
+      await page.keyboard.press(key);
+      assert.equal(await page.evaluate(() => document.activeElement.closest('dialog') !== null), true, `${key} stays in the dialog`);
+    }
+    assert.deepEqual(await contrastFailures(page), [], 'the dialog is legible');
+    await field.focus();
+    await page.keyboard.type('Never saved');
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached' });
+    assert.equal(await active(page, '.cm-content'), true, 'Escape returns focus to where it was');
+    assert.equal(await page.evaluate(() => window.__printed), 0, 'Escape prints nothing');
+    assert.deepEqual(await vars(), ['', '', ''], 'and sets no template');
+    assert.equal(await stored(), null, 'and remembers nothing');
+
+    // Enter prints. The name reaches the page only as a quoted CSS string.
+    await openDialog();
+    assert.equal(await field.inputValue(), '', 'a cancelled name was not kept');
+    await page.keyboard.type('Acme "East" \\ Co');
+    await page.keyboard.press('Enter');
+    await dialog.waitFor({ state: 'detached' });
+    assert.equal(await page.evaluate(() => window.__printed), 1, 'window.print ran once');
+    const [title, client, date] = await vars();
+    assert.equal(title, '"Findings"');
+    assert.equal(client, '"Client: Acme \\"East\\" \\\\ Co"');
+    assert.match(date, /^"Printed \d{4}-\d{2}-\d{2}"$/);
+    await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+    assert.deepEqual(await vars(), ['', '', ''], 'the template is removed after printing');
+    assert.ok((await stored()).includes('Acme'), 'the name is remembered');
+
+    // It is remembered for this document only, and the dialog offers it again.
+    await openFile(page, 'clients/other.md', '# Other\n');
+    await page.waitForSelector('.markdown-body h1:has-text("Other")');
+    await openDialog();
+    assert.equal(await field.inputValue(), '', 'another document has its own name');
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached' });
+    await openFile(page, 'clients/report.md');
+    await page.waitForSelector('.markdown-body h1:has-text("Findings")');
+    await openDialog();
+    assert.equal(await field.inputValue(), 'Acme "East" \\ Co', 'the name comes back for the same document');
+
+    // Clear forgets it at once, even if the dialog is then cancelled.
+    await dialog.getByRole('button', { name: 'Clear' }).click();
+    assert.equal(await field.inputValue(), '');
+    assert.equal(await active(page, '#print-options-client'), true, 'focus goes back to the field');
+    assert.ok((await dialog.locator('[role="status"]').textContent()).includes('cleared'), 'the clear is announced');
+    assert.equal(await stored(), '[]');
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await openDialog();
+    assert.equal(await field.inputValue(), '');
+    // A document the app has no name for (a new one) cannot remember, and says so.
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached' });
+    await button(page, 'New document (Ctrl+N)').click();
+    await openDialog();
+    assert.ok((await dialog.locator('#print-options-body').textContent()).includes('not saved yet'));
+    await page.keyboard.press('Escape');
+    await dialog.waitFor({ state: 'detached' });
+  }],
+
+  ['print: template on every page (header, footer, page numbers) and print styles', async (page, scheme) => {
+    await boot(page);
+    await page.evaluate(() => {
+      window.print = () => {};
+    });
+    const rows = Array.from({ length: 140 }, (_, i) => `| Row ${i + 1} | Detail for row ${i + 1} |`);
+    const doc = [
+      '# Print Test Report',
+      '',
+      CALLOUTS.replace('# Callouts', '## Callouts'),
+      A11Y_DOC.replace('# Heading one', '## Heading one'),
+      '| Item | Detail |',
+      '|:--|:--|',
+      ...rows,
+      '',
+      OUTLINE_DOC.replace('# Outline test', '## Outline'),
+    ].join('\n');
+    await openFile(page, 'clients/print-test.md', doc);
+    await page.waitForSelector('.markdown-body h1');
+    await page.waitForSelector('.markdown-body tr:nth-child(140)');
+    const field = page.getByRole('textbox', { name: 'Client name (optional)' });
+    const dialog = page.locator('dialog.print-options');
+    const prepare = async (name) => {
+      await page.locator('.cm-content').click();
+      await page.keyboard.press('Control+p');
+      await dialog.waitFor({ state: 'visible' });
+      await field.fill(name);
+      await page.keyboard.press('Enter');
+      await dialog.waitFor({ state: 'detached' });
+    };
+    await prepare('Acme Co');
+
+    // Print styles, whatever the theme on screen: black on white, light colours, open folds, kept blocks.
+    await page.emulateMedia({ media: 'print' });
+    const style = await page.evaluate(() => {
+      const of = (selector, property) => getComputedStyle(document.querySelector(selector)).getPropertyValue(property).trim();
+      const body = '.markdown-body';
+      return {
+        color: of(body, 'color'),
+        background: of(body, 'background-color'),
+        heading: of(`${body} h1`, 'color'),
+        codeBackground: of(`${body} pre`, 'background-color'),
+        preBreak: of(`${body} pre`, 'break-inside'),
+        preAdjust: of(`${body} pre`, 'print-color-adjust'),
+        thAdjust: of(`${body} th`, 'print-color-adjust'),
+        preWrap: of(`${body} pre code`, 'white-space'),
+        rowBreak: of(`${body} tr`, 'break-inside'),
+        alertBreak: of(`${body} .markdown-alert`, 'break-inside'),
+        headingAfter: of(`${body} h2`, 'break-after'),
+        tableDisplay: of(`${body} table`, 'display'),
+        headDisplay: of(`${body} thead`, 'display'),
+        chrome: ['.top-bar', '.format-bar', '.status-bar', '.editor-pane'].map((s) => of(s, 'display')),
+        folds: [...document.querySelectorAll(`${body} details`)].map((d) => d.open),
+      };
+    });
+    assert.equal(style.color, 'rgb(0, 0, 0)');
+    assert.equal(style.background, 'rgb(255, 255, 255)');
+    assert.equal(style.heading, 'rgb(16, 32, 51)', `the light colours print in the ${scheme} theme`);
+    assert.equal(style.codeBackground, 'rgb(238, 242, 246)');
+    assert.equal(style.preBreak, 'avoid');
+    assert.equal(style.rowBreak, 'avoid');
+    assert.equal(style.alertBreak, 'avoid');
+    assert.equal(style.headingAfter, 'avoid');
+    assert.equal(style.preAdjust, 'exact');
+    assert.equal(style.thAdjust, 'exact');
+    assert.equal(style.preWrap, 'pre-wrap');
+    assert.equal(style.tableDisplay, 'table');
+    assert.equal(style.headDisplay, 'table-header-group');
+    assert.deepEqual(style.chrome, ['none', 'none', 'none', 'none'], 'only the document prints');
+    assert.ok(style.folds.length >= 1 && style.folds.every(Boolean), 'folded callouts print open');
+
+    // The PDF: a header and footer on every page.
+    const printed = await page.pdf({ preferCSSPageSize: true, printBackground: true });
+    if (shots) {
+      await mkdir(shots, { recursive: true });
+      await writeFile(join(shots, `print-${scheme}.pdf`), printed);
+    }
+    const pages = pdfPages(printed);
+    assert.ok(pages.length >= 4, `a long document runs over several pages (${pages.length})`);
+    pages.forEach((text, i) => {
+      assert.ok(text.includes('ZTG Readout'), `page ${i + 1} has the ZTG mark`);
+      assert.ok(text.includes('Print Test Report'), `page ${i + 1} has the document title`);
+      assert.ok(text.includes('Client: Acme Co'), `page ${i + 1} has the client name`);
+      assert.ok(text.includes(`Page ${i + 1} of ${pages.length}`), `page ${i + 1} is numbered "Page ${i + 1} of ${pages.length}"`);
+      // Chromium's PDF text map has no real character for the hyphen glyph (poppler drops it too), so any one character may stand for it.
+      assert.match(text, /Printed \d{4}\S?\d{2}\S?\d{2}\b/, `page ${i + 1} has the print date`);
+    });
+    assert.ok(pages.filter((text) => text.includes('Item Detail')).length >= 2, 'the long table repeats its header on the next page');
+    assert.ok(pages.join(' ').includes('A folded warning.'), 'a folded callout prints open');
+    assert.ok(pages.join(' ').includes('MkDocs style.'), 'an admonition prints');
+
+    // After printing the template goes, and a print with no client name has none in the header.
+    await page.emulateMedia({ media: null });
+    await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+    assert.equal(await page.locator('.markdown-body details:has-text("A folded warning.")').evaluate((d) => d.open), false, 'the reader\'s fold returns');
+    await prepare('');
+    await page.emulateMedia({ media: 'print' });
+    const bare = pdfPages(await page.pdf({ preferCSSPageSize: true, printBackground: true }));
+    assert.ok(bare.every((text) => !text.includes('Client:') && text.includes('Print Test Report')), 'no client name, no client text');
+    await page.emulateMedia({ media: null });
   }],
 
   ['accessibility: the editor can be left by keyboard (Escape, then Tab)', async (page) => {
