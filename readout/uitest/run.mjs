@@ -1183,6 +1183,36 @@ const scenarios = [
     assert.equal(await page.evaluate(() => window.__pwned), undefined);
     assert.equal(await page.locator('.markdown-body img[src^="http"], .markdown-body script').count(), 0, 'no remote content, no script');
   }],
+
+  ['remote images are counted in the status bar and never requested (RD14)', async (page, scheme, problems) => {
+    await boot(page);
+    await openFile(
+      page,
+      'x/remote.md',
+      '# Remote\n\n![one](https://tracker.example/pixel.png)\n\n![two](https://tracker.example/b.png)\n\n![three](http://old.example/c.gif)\n\n<img src="//proto.example/d.png" srcset="https://srcset.example/e.png 2x">\n\n![inline](data:image/gif;base64,R0lGODlhAQABAAAAACw=)\n',
+    );
+    await page.waitForSelector('.markdown-body h1');
+    const note = page.locator('.status-remote');
+    await note.waitFor({ state: 'visible' });
+    assert.equal(await note.textContent(), '4 remote images not loaded');
+    const title = await note.getAttribute('title');
+    assert.ok(title.includes('tracker.example, old.example, proto.example'), title);
+    assert.ok(title.includes('1 use plain http.'), title);
+    assert.equal(await page.locator('.markdown-body .remote-image-placeholder').count(), 4, 'one placeholder per image');
+    assert.equal(await page.locator('.markdown-body img[src^="http"], .markdown-body img[srcset]').count(), 0, 'no image carries a remote address');
+    // The suite's request guard refuses and reports any non-local request, so a fetch would fail
+    // the run. Give the page time to make one, then check nothing was attempted.
+    await page.waitForTimeout(400);
+    assert.deepEqual(problems.filter((p) => /request to/.test(p)), [], 'nothing remote was requested');
+    // The note belongs to the preview: it goes away in edit view and when the document has none.
+    await button(page, 'Edit view').click();
+    assert.equal(await note.isVisible(), false, 'hidden in edit view');
+    await button(page, 'Split view').click();
+    await note.waitFor({ state: 'visible' });
+    await openFile(page, 'x/plain.md', '# Plain\n\nNo images here.\n');
+    await page.waitForSelector('.markdown-body h1:has-text("Plain")');
+    await note.waitFor({ state: 'hidden' });
+  }],
 ];
 
 // ---- title bar harness (desktop shell component) -------------------------------------------

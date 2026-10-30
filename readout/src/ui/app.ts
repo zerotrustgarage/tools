@@ -15,6 +15,7 @@ import { extractOutline } from '../core/outline';
 import { ExternalChangeWatcher, type WatchHost } from '../core/reload';
 import { defaultDocument, documentFor, LISTED_EXTENSIONS, opensInReadout, resolveInFolder, resolveWikiLink, splitHref } from '../core/paths';
 import { postprocess } from '../core/postprocess';
+import { describeRemoteImages, summarizeRemoteImages } from '../core/remote-images';
 import { renderMarkdown } from '../core/render';
 import { blobUrlToDataUrl, buildRichText, fragmentForRange, isEmptyFragment } from '../core/richtext';
 import { DEFAULT_BOUNDS, type SearchMatch } from '../core/search';
@@ -126,7 +127,7 @@ export class App {
   private readonly workspace = el('main', { class: 'workspace' });
   private readonly dropOverlay = el('div', { class: 'drop-overlay', hidden: '', 'aria-hidden': 'true' }, el('div', { class: 'drop-card' }, 'Drop a Markdown file or folder to open it, or an image to add it'));
   private readonly measureButton = el('button', { class: 'icon-button', type: 'button' });
-  private readonly status = { cursor: el('span'), words: el('span'), encoding: el('span'), eol: el('span') };
+  private readonly status = { cursor: el('span'), words: el('span'), encoding: el('span'), eol: el('span'), remote: el('span', { class: 'status-remote', hidden: '' }) };
   private readonly modeButtons = new Map<ViewMode, HTMLButtonElement>();
   private readonly formatBar = el('div', { class: 'format-bar', role: 'toolbar', 'aria-label': 'Formatting' });
   private readonly themeButton = el('button', { class: 'icon-button', type: 'button' });
@@ -304,7 +305,7 @@ export class App {
     }
 
     const s = this.status;
-    const statusBar = el('footer', { class: 'status-bar', 'aria-label': 'Document status' }, s.cursor, s.words, el('span', { class: 'spacer' }),
+    const statusBar = el('footer', { class: 'status-bar', 'aria-label': 'Document status' }, s.cursor, s.words, s.remote, el('span', { class: 'spacer' }),
       button('Check for updates', 'Check for updates', () => showUpdateDialog({
         tool: 'readout', current: appVersion, openExternal: url => this.platform.openExternal(url),
       })), s.encoding, s.eol);
@@ -1074,6 +1075,7 @@ export class App {
     this.objectUrls.forEach((u) => URL.revokeObjectURL(u));
     this.objectUrls = urls;
     this.preview.replaceChildren(...container.childNodes);
+    this.showRemoteImages();
     const details = this.preview.querySelectorAll('details');
     for (const [index, open] of this.folds) if (details[index]) details[index].open = open;
     if (this.pendingLine !== null) {
@@ -1084,6 +1086,14 @@ export class App {
       this.scrollToFragment(this.pendingFragment);
       this.pendingFragment = null;
     } else this.syncPreview(this.syncLine);
+  }
+
+  /** One note in the status bar when the preview holds remote images; none is ever fetched (RD14). */
+  private showRemoteImages(): void {
+    const note = describeRemoteImages(summarizeRemoteImages(this.preview));
+    this.status.remote.hidden = note === null;
+    this.status.remote.textContent = note?.text ?? '';
+    this.status.remote.title = note?.title ?? '';
   }
 
   // ---- outline ----------------------------------------------------------------------------
