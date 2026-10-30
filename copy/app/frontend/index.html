@@ -116,6 +116,22 @@
           <div class="activity-status"><span id="activity-indicator" class="status-orb"></span><div><span class="field-label">STATUS</span><h2 id="phase" aria-live="polite">Ready</h2></div><div class="elapsed"><span class="field-label">ELAPSED</span><strong id="elapsed">00:00</strong></div></div>
           <div id="activity-progress" class="activity-progress" role="progressbar" aria-label="Operation in progress" hidden><span></span></div>
           <div class="stats-grid"><div><span class="field-label" id="files-stat-label">FILES TO COPY</span><strong id="files-total">—</strong></div><div><span class="field-label">BYTES</span><strong id="bytes-total">—</strong></div><div><span class="field-label">EXTRA FILES</span><strong id="extras-total">—</strong></div><div><span class="field-label">OUTCOME</span><strong id="outcome">—</strong></div></div>
+          <div id="live-metrics" class="live-metrics" hidden aria-label="Live readings">
+            <div class="live-head"><strong id="live-title">Live readings</strong><span id="live-status" class="badge">Starting</span></div>
+            <p id="live-status-note" class="field-note" role="status" hidden></p>
+            <div class="live-grid">
+              <div><span class="field-label" id="live-completed-label">COMPLETED</span><strong id="live-completed">n/a</strong><small id="live-completed-note"></small></div>
+              <div><span class="field-label" id="live-rate-label">COMPLETED RATE</span><strong id="live-rate">n/a</strong><small id="live-rate-note"></small></div>
+              <div><span class="field-label">TRANSFER ACTIVITY</span><strong id="live-activity">n/a</strong><small id="live-activity-note">Read by Robocopy, from process counters. Not completed bytes.</small></div>
+              <div><span class="field-label">FILES PER SECOND</span><strong id="live-files-rate">n/a</strong><small id="live-files-rate-note">Completed files, last 30 seconds.</small></div>
+            </div>
+            <div id="live-rows" class="live-rows">
+              <div><span class="field-label" id="live-current-label">CURRENT FILE</span><code id="live-current">n/a</code></div>
+              <div><span class="field-label">PROGRESS</span><div id="live-bar" class="live-bar" role="progressbar" aria-label="Share of the preview totals finished" aria-valuemin="0" aria-valuemax="100" hidden><span></span></div><strong id="live-progress">Not shown</strong><small id="live-progress-note"></small></div>
+              <div><span class="field-label">TIME REMAINING</span><strong id="live-eta">Not shown</strong><small id="live-eta-note"></small></div>
+            </div>
+            <ul id="live-limits" class="live-limits" hidden></ul>
+          </div>
           <div id="verification" class="verification" hidden><div><strong id="verification-title">Convergence check</strong><span id="verification-badge" class="badge"></span></div><p id="verification-detail"></p></div>
           <p class="field-note" id="progress-note">Completed totals appear when each phase finishes.</p>
           <div role="alert" id="operation-error" class="notice error" hidden></div>

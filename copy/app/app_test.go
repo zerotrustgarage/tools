@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/zerotrustgarage/tools/copy/internal/job"
+	"github.com/zerotrustgarage/tools/copy/internal/metrics"
 	"github.com/zerotrustgarage/tools/copy/internal/private"
 	copyrun "github.com/zerotrustgarage/tools/copy/internal/run"
 	"github.com/zerotrustgarage/tools/copy/internal/template"
@@ -226,5 +227,55 @@ func TestRobocopyCommandUsesLiteralPowerShellQuotes(t *testing.T) {
 	view := describe(j)
 	if !strings.Contains(view.Command, "'C:\\O''Brien ‘‘curly’’ ‚‚low‛‛ $(Get-Date)'") {
 		t.Fatal(view.Command)
+	}
+}
+
+func TestLiveMetricsReachTheStatusAndStaleRunsCannotOverwriteThem(t *testing.T) {
+	a := testApp(t)
+	published, release := make(chan struct{}), make(chan struct{})
+	var oldWriter io.Writer
+	a.execute = func(ctx context.Context, j job.Job, root, v string, copy bool, w io.Writer) (copyrun.Record, error) {
+		oldWriter = w
+		observer := w.(interface {
+			MetricsUpdated(string, metrics.Snapshot)
+			PhaseFinished(copyrun.Phase)
+		})
+		observer.MetricsUpdated("copy", metrics.Snapshot{Phase: "copy", Status: metrics.StatusStalled, StatusNote: "No progress signal for 61 seconds.", Activity: metrics.Activity{Available: true, ReadBytes: 4096}})
+		observer.PhaseFinished(copyrun.Phase{Name: "copy", Metrics: &metrics.Final{Phase: "copy", Timeline: make([]metrics.Point, 200)}})
+		close(published)
+		<-release
+		return copyrun.Record{State: "planned"}, nil
+	}
+	if _, err := a.Start(validJob(), false); err != nil {
+		t.Fatal(err)
+	}
+	<-published
+	s := a.Status()
+	if s.Metrics == nil || s.Metrics.Status != metrics.StatusStalled || s.Metrics.Activity.ReadBytes != 4096 {
+		t.Fatalf("live metrics missing from status: %+v", s.Metrics)
+	}
+	if len(s.Phases) != 1 || s.Phases[0].Metrics == nil || s.Phases[0].Metrics.Timeline != nil {
+		t.Fatalf("the live page should not receive the full timeline: %+v", s.Phases)
+	}
+	// Mutating the copy a caller received does not change the app's state.
+	s.Metrics.Status = "tampered"
+	if a.Status().Metrics.Status != metrics.StatusStalled {
+		t.Fatal("status exposed internal state")
+	}
+	close(release)
+	waitDone(t, a)
+	// A new run starts clean, and the previous run's writer can no longer publish.
+	a.execute = func(ctx context.Context, j job.Job, root, v string, copy bool, w io.Writer) (copyrun.Record, error) {
+		return copyrun.Record{State: "planned"}, nil
+	}
+	if _, err := a.Start(validJob(), false); err != nil {
+		t.Fatal(err)
+	}
+	waitDone(t, a)
+	oldWriter.(interface {
+		MetricsUpdated(string, metrics.Snapshot)
+	}).MetricsUpdated("copy", metrics.Snapshot{Phase: "copy", Status: metrics.StatusActive})
+	if got := a.Status().Metrics; got != nil {
+		t.Fatalf("a stale run published: %+v", got)
 	}
 }

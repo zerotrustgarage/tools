@@ -77,3 +77,18 @@ main{min-width:0;padding:34px 34px 0}.page-heading{display:flex;align-items:cent
 .rcj-help{font-size:11px;line-height:1.6;color:var(--muted);margin:6px 0 0}
 .rcj-flag{font-size:9px;border:1px solid var(--line-strong);border-radius:20px;padding:2px 7px;white-space:nowrap}
 .rcj-flag.warn{color:var(--medium);border-color:var(--medium)}.rcj-flag.bad{color:var(--high);border-color:var(--high)}
+
+.live-metrics{background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:16px 18px;margin:18px 0 0}
+.live-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.live-head strong{font-size:12px;color:var(--bright)}
+.live-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px;margin-top:14px}
+.live-grid>div,.live-rows>div{min-width:0}
+.live-grid strong,.live-rows strong{display:block;font:15px ui-monospace,monospace;color:var(--bright);overflow-wrap:anywhere}
+.live-grid small,.live-rows small{display:block;font-size:10px;color:var(--muted);line-height:1.5;margin-top:5px}
+.live-rows{display:grid;gap:14px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.live-rows .field-label,.live-grid .field-label{font-size:9px;margin-bottom:5px}
+.live-rows code{display:block;font:12px/1.5 ui-monospace,monospace;color:var(--text);overflow-wrap:anywhere}
+.live-bar{height:6px;background:var(--line);border-radius:4px;overflow:hidden;margin:2px 0 8px}
+.live-bar span{display:block;height:6px;background:var(--accent);width:0}
+.live-limits{margin:14px 0 0;padding-left:18px;font-size:11px;color:var(--muted);line-height:1.6}
+@media(max-width:1200px){.live-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}

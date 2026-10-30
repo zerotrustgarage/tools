@@ -52,7 +52,7 @@ export function titleBar(controls: WindowControls, appName: string): HTMLElement
     el('span', { class: 'titlebar-fill' }),
     el(
       'div',
-      { class: 'captions' },
+      { class: 'captions', role: 'group', 'aria-label': 'Window controls' },
       caption('minimize', 'Minimize', () => void controls.minimize()),
       maximize,
       caption('close', 'Close', () => void controls.close()),

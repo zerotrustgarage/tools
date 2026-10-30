@@ -72,7 +72,7 @@ These actions were completed by the repository owner. New release workflows stil
 | RD17 | Focus and typewriter modes | Low | Typora |
 | RD18 | Two-way scroll sync (preview to editor) | Low | MarkText |
 | RD19 | **Built**: explicit Check for updates through shared per-tool releases. Automatic installation through a verified signed feed remains future work | Medium | `docs/updates.md`; Typora, Obsidian |
-| RD20 | Accessibility pass: screen reader names, keyboard navigation of the file tree, light-theme contrast | Low | |
+| RD20 | **Built**: accessibility pass against WCAG 2.1 AA. Landmarks (banner, main, named complementary panels, footer) and names on every control; one polite live region for banners, open, save and setting changes (never keystrokes); dialogs labelled, with Tab wrapping and focus returned; the folder tree is a WAI-ARIA tree (roving tabindex, arrows, Home, End, Enter, type-ahead, `aria-expanded`, levels), the formatting bar a roving toolbar, the editor leavable with Escape then Tab; a 2px token-coloured focus ring on every focusable element; text and component contrast fixed in both themes by choosing existing palette tokens (editor marks, code comments, line numbers, field edges; `design-tokens.json` unchanged). Held by `readout/test/contrast.test.ts`, `sidebar-tree.test.ts`, `roving.test.ts` and the `accessibility:` scenarios in `readout/uitest/run.mjs` (accessibility tree, tab walk, computed-style contrast in both themes). **Still open**: a run with NVDA and Narrator on Windows; High Contrast mode; no text alternative for Mermaid diagrams | Low | WCAG 2.1; WAI-ARIA Authoring Practices |
 | RD21 | Windows 11 Snap Layouts on the custom maximize button; neither Tauri nor Wails supports it yet | Low | |
 | RD22 | Folder mode in Firefox and Safari is an upload and read-only (no File System Access API) | Low | |
 
@@ -150,8 +150,9 @@ The build plan is in [copy/docs/design.md](../copy/docs/design.md). Owner-select
 recorded there. RC0 has passing local, SMB and contained-logon experiments on English Server
 2022 and 2025. Other releases, locales and optimized-copy progress remain validation work.
 The CLI and initial Windows desktop now provide a designer, templates, preview, guarded local
-copies, convergence and history. Full destructive guards, network/credentials UX, metrics,
-reports and signed packaging remain in their slices. Desktop execution reuses the current runner. See [the evidence review](../copy/docs/rc0.md),
+copies, convergence and history, with live activity, rate and stall readings (percentage only for
+serial copies with preview totals; ETA built but hidden until measured). Full destructive guards,
+network/credentials UX, a validated ETA, reports and signed packaging remain in their slices. Desktop execution reuses the current runner. See [the evidence review](../copy/docs/rc0.md),
 [RC1 acceptance work](../copy/docs/rc1.md) and [PR #6](https://github.com/zerotrustgarage/tools/pull/6).
 
 ## Sources

@@ -17,7 +17,7 @@
   --crit: #b42332;
   --warn: #90540b;
   --focus: #245c9a;
-  --cm-mark: #8a99ab;
+  --cm-mark: #526377;
   --titlebar-bg: #e8edf2;
   --dim2: #607084;
   --active-line: rgba(36, 92, 154, 0.06);
@@ -41,7 +41,7 @@
   --crit: #f87171;
   --warn: #fbbf24;
   --focus: #00ff41;
-  --cm-mark: #64748b;
+  --cm-mark: #94a3b8;
   --titlebar-bg: #020c1b;
   --dim2: #64748b;
   --active-line: rgba(255, 255, 255, 0.04);
@@ -62,6 +62,11 @@ body {
 }
 #app { height: 100%; }
 [hidden] { display: none !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Every focusable element shows a 2px ring in --focus (3:1 or better on every surface in both
+   themes, tests in uitest/run.mjs). Components below only move it where it would be clipped. */
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 .app { display: flex; flex-direction: column; height: 100%; }
 
@@ -106,7 +111,9 @@ body {
 .caption:active { background: var(--caption-press); }
 .caption-close:hover { background: #c42b1c; color: #ffffff; }
 .caption-close:active { background: #b22a1b; color: #ffffff; }
-.caption:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.caption:focus-visible { outline-offset: -2px; }
+/* On the red hover fill the blue ring is 1.2:1; white is 5:1 there. */
+.caption-close:hover:focus-visible { outline-color: #ffffff; }
 .caption-glyph { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1; shape-rendering: crispEdges; }
 .caption-close .caption-glyph { shape-rendering: geometricPrecision; }
 /* With the title bar showing the product, the toolbar does not repeat it. */
@@ -146,7 +153,7 @@ button {
   cursor: pointer;
 }
 button:hover { background: var(--panel2); border-color: var(--line); }
-button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+button:focus-visible { outline-offset: 1px; }
 .icon-button { width: 32px; height: 32px; display: inline-grid; place-items: center; padding: 0; }
 .text-button { height: 30px; padding: 0 10px; }
 .icon { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
@@ -201,8 +208,8 @@ button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 }
 .splitter:hover, .splitter:focus-visible, body.resizing .splitter {
   background: linear-gradient(var(--acc), var(--acc)) center / 3px 100% no-repeat;
-  outline: none;
 }
+.splitter:focus-visible { outline-offset: -2px; }
 .app:not([data-mode='split']) .splitter-panes { display: none; }
 .sidebar[hidden] + .splitter-sidebar { display: none; }
 body.resizing { cursor: col-resize; user-select: none; }
@@ -260,41 +267,36 @@ body.resizing .pane, body.resizing .sidebar { pointer-events: none; }
   font: inherit;
   color: var(--text);
   background: var(--panel2);
-  border: 1px solid var(--line);
+  /* A field's edge is what identifies it, so it needs 3:1 (WCAG 1.4.11); --line is 1.3:1. */
+  border: 1px solid var(--dim2);
   border-radius: 6px;
 }
-.sidebar-filter:focus { outline: 2px solid var(--focus); outline-offset: -1px; }
+.sidebar-filter:focus-visible { outline-offset: -1px; }
 .tree { flex: 1; overflow: auto; padding: 0 6px 8px; font-size: 13px; }
-.tree details details, .tree details > .tree-file { margin-left: 14px; }
-.tree summary {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 6px;
-  border-radius: 5px;
-  cursor: pointer;
-  list-style: none;
-  color: var(--bright);
-  white-space: nowrap;
-}
-.tree summary::-webkit-details-marker { display: none; }
-.tree summary:hover { background: var(--panel2); }
-.tree summary .icon { width: 14px; height: 14px; flex: none; transition: transform 0.12s; color: var(--dim); }
-.tree details[open] > summary .icon { transform: rotate(90deg); }
-.tree-file {
+.tree-list, .tree-list ul { list-style: none; margin: 0; padding: 0; }
+.tree-list ul { margin-left: 14px; }
+/* The focus ring sits on the row, not on the whole item (an open folder holds its children). */
+.tree-list [role='treeitem']:focus { outline: none; }
+.tree-row {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
   padding: 3px 6px;
-  text-align: left;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--bright);
   white-space: nowrap;
   overflow: hidden;
 }
-.tree-file span { overflow: hidden; text-overflow: ellipsis; }
-.tree-file .icon { width: 14px; height: 14px; flex: none; color: var(--dim); }
-.tree-file.active { background: color-mix(in srgb, var(--acc) 16%, transparent); color: var(--bright); border-color: transparent; }
-.tree-file.active .icon { color: var(--acc); }
+.tree-row span { overflow: hidden; text-overflow: ellipsis; }
+.tree-row:hover { background: var(--panel2); }
+.tree-list [role='treeitem']:focus-visible > .tree-row { outline: 2px solid var(--focus); outline-offset: -2px; }
+.tree-row .icon { width: 14px; height: 14px; flex: none; color: var(--dim); }
+.tree-folder > .tree-row .icon { transition: transform 0.12s; }
+.tree-folder[aria-expanded='true'] > .tree-row .icon { transform: rotate(90deg); }
+.tree-file > .tree-row { color: var(--text); }
+.tree-file.active > .tree-row { background: color-mix(in srgb, var(--acc) 16%, transparent); color: var(--bright); }
+.tree-file.active > .tree-row .icon { color: var(--acc); }
 .sidebar-count { padding: 6px 12px; font-size: 11px; color: var(--dim); border-top: 1px solid var(--line); }
 .icon-button:disabled { opacity: 0.35; cursor: default; background: transparent; border-color: transparent; }
 

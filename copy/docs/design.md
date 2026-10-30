@@ -158,6 +158,48 @@ Metrics shown live and recorded:
 | Outcome counts | Copied, skipped, mismatched, failed, extra, deleted; directories and files |
 | Errors | Grouped by Win32 code with a plain-language cause and fix (5 access denied, 32 file in use, 53 and 67 path not found, 64 connection lost, 112 disk full, 1219 credential conflict, 1326 bad credentials), with the first paths of each |
 
+Implementation note (October 29, 2026, `internal/metrics`): the metrics engine is built and replay-tested under a
+fake clock; the decisions below refine the table and the three sources.
+
+- What counts as completed. A file line is an announcement (RC0 question 1), so completed-file accounting needs more
+  than the line. Serial copies: a file counts when Robocopy wrote its own `100%` marker (the marker follows the file
+  line after a carriage return; only copied files get one, which also keeps skipped "same" lines out), no error
+  header came in between, and something after it showed Robocopy moved on (the next file or directory line, the rule
+  before the summary, the summary rows, or the end of the run). Nothing here reads a localized word: lines are read by
+  tab structure, markers by `NN%`, errors by timestamp plus agreeing decimal and hex codes. With `/MT` Robocopy gives
+  no per-file completion and its markers cannot be tied to a file, and `/NP`, `/NFL`, `/NC`, `/NS` remove what the
+  rule reads; in those cases no completed total, rate or percentage is shown while the phase runs, and the summary
+  supplies the totals at the end. Zero-byte files are not counted until the summary arrives (their line shape is not
+  captured yet). A file that saw an error header is never counted live, even if a retry later succeeds.
+- Process I/O is a separate "transfer activity" reading: `ReadBytes` over a 5 second sliding window, sampled every
+  500 ms. Writes are not used because they include Robocopy's own log. It is never added to completed bytes, a
+  percentage or an ETA, because RC0 showed it can lead the copy and offload, cloning and optimized copies may not move
+  it. When the counters are unavailable the view says so.
+- Windows. Current speed: 5 seconds. Files per second: 30 seconds. ETA fit: 60 seconds. A rate needs a window of at
+  least 1 second, and a peak needs a full 5 second window, so a short burst is not reported as a peak. Rates are
+  step functions over finished files, so they fall to zero when nothing finishes.
+- Stall. 60 seconds without a progress signal: a file or directory line, a changed percentage, a finished file or a
+  growing read counter. Error headers, rules and unrecognized text are not progress. Sixty seconds is the design
+  value; it is longer than a default retry wait and than the quiet stretches of big directory enumeration, antivirus
+  scans and share reconnects, and short enough to notice a hung share within a minute. A retry wait is excluded: an
+  error header marks the job "retrying" for the job's `/W` (30 seconds when absent, none with `/R:0`) plus 10 seconds,
+  and the stall clock restarts at the end of that window. Stalled is shown as a status with its explanation and is
+  never a failure; the stall start is the moment the 60 seconds were reached, whenever it is noticed.
+- Progress. Bytes and files done over the preview totals, side by side, only for a serial copy phase that has a
+  preview with something to copy. A file in progress is not counted, and Robocopy's own per-file percentage is shown
+  as the current file's marker, not added in. More finished than the preview counted is clamped at 100% and flagged.
+- ETA. Computed as designed (remaining bytes over the byte rate plus remaining files times the per-file time, fitted
+  by least squares over the completions of the last 60 seconds, with the time already spent on the file in progress
+  subtracted, and a range from the fit, the byte-only rate and the run average when they disagree by more than 25%).
+  It may only appear after a minute of copy time, with at least 5 files finished in the window, a preview and a
+  serial copy. It is switched off (`Config.AllowETA`) until the roadmap criterion, within 15% after the first minute,
+  is measured on real jobs longer than a minute. The RC0 captures last under 4 seconds and cannot show it (rc1.md).
+- Run record. Each of preview, copy and convergence has a `metrics` object in `run.json` with the totals and their
+  source (`summary` or `log`), the log accounting kept beside the summary for comparison, average, peak and files per
+  second, the activity totals, error lines, stalls (start and end), the limits that applied in plain words, and a
+  timeline of at most 240 points (the interval doubles and every second point is dropped when it fills; the first and
+  final points are always kept). It holds no file names. Older records have no `metrics`.
+
 Exit codes. The native bitmap is decoded into words in every view (G6). The CLI returns a normalized code by default,
 so RMM tools and scheduled tasks read it correctly: 0 success (Robocopy 0 to 3), 1 success with warnings (bit 4,
 mismatches), 2 failure (8 or more, or verification failed), 3 the tool refused or could not start. `--native-exit`
@@ -400,6 +442,9 @@ are saved; omitted groups, malformed/oversized lines and unavailable diagnostics
 Activity and History show causes, suggestions, excerpts and per-phase exit bitmap meanings.
 Diagnostics remain supplemental to exit/summary correctness. Records without diagnostics still open.
 
+Implementation note (October 29, 2026): the same phases also carry a bounded `metrics` object (totals and their source,
+rates, activity, stalls, limits and a timeline of at most 240 points, no file names); see the section 6 note.
+
 ## 11. Verification
 
 Robocopy compares size, timestamps and attributes only (G7). Three levels, chosen per job:
@@ -443,7 +488,10 @@ turns the transport and media warnings in S13 into acknowledgments.
 - Parser: golden fixtures captured in RC0 from each supported Windows release, with and without `/MT`, `/UNICODE`
   and `/BYTES`, plus localized fixtures (German, French, Spanish, Japanese at least); fuzzing with arbitrary file
   names in the output.
-- Metrics: replayed fixtures under a fake clock; ETA error on recorded jobs; stall and retry detection.
+- Metrics: replayed fixtures under a fake clock; ETA error on recorded jobs; stall and retry detection. Built:
+  `internal/metrics` replays the RC0 timing captures (and the native-log capture through the tailer) with an
+  injected clock, plus synthetic transcripts in the captured line format; the ETA error on recorded jobs is
+  measured in rc1.md and cannot yet cover a minute.
 - Guards: each S1 to S13 case with a fake file system.
 - Templates: substitution of every placeholder kind; values containing quotes, spaces, `/` options and trailing
   backslashes stay one argument; a template run still triggers the preview and guards; an imported template with an

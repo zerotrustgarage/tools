@@ -12,6 +12,7 @@ import (
 	"golang.org/x/sys/windows"
 
 	"github.com/zerotrustgarage/tools/copy/internal/job"
+	"github.com/zerotrustgarage/tools/copy/internal/metrics"
 	"github.com/zerotrustgarage/tools/copy/internal/parse"
 )
 
@@ -66,6 +67,21 @@ func TestPreviewCopyConvergenceAndRecord(t *testing.T) {
 		}
 		if p.Name == "copy" && (p.Summary == nil || p.Summary.Bytes.Copied != uint64(len(payload)) || p.LogSHA256 == "") {
 			t.Fatalf("copy evidence: %+v", p)
+		}
+		switch p.Name {
+		case "preview", "copy", "convergence":
+			m := p.Metrics
+			if m == nil || m.Phase != p.Name || m.Source == "" || len(m.Timeline) == 0 || len(m.Timeline) > metrics.TimelineCap || m.Timeline[len(m.Timeline)-1].Status != metrics.StatusFinished {
+				t.Fatalf("%s metrics: %+v", p.Name, m)
+			}
+			if p.Name == "copy" && (m.Source != "summary" || m.Completed == nil || m.Completed.Bytes != uint64(len(payload)) || !m.Concurrent) {
+				t.Fatalf("copy metrics: %+v", m)
+			}
+			if p.Name != "copy" && m.Completed != nil {
+				t.Fatalf("%s is list-only and completes nothing: %+v", p.Name, m)
+			}
+			// What the live view saw of the engine is a reading, never a total: report it for the owner.
+			t.Logf("%s: source=%s elapsed=%dms seen=%+v activity available=%v read=%d limits=%v", p.Name, m.Source, m.ElapsedMS, m.Seen, m.ActivityAvailable, m.ActivityReadBytes, m.Limits)
 		}
 	}
 	j.Destination = src

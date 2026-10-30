@@ -328,6 +328,92 @@ function elapsed(start, finished) {
   return [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map(n => String(n).padStart(2,'0')).slice(seconds >= 3600 ? 0 : 1).join(':');
 }
 
+const statusLabels = {starting:'Starting', active:'Active', retrying:'Retrying', stalled:'Stalled', finished:'Finished'};
+const livePhaseLabels = {preview:'Preview', copy:'Copy', convergence:'Convergence check'};
+const rateText = value => {
+  if (value === undefined || value === null) return 'n/a';
+  const mbit = value * 8 / 1e6;
+  return bytes(value) + '/s · ' + mbit.toLocaleString(undefined, {maximumFractionDigits: mbit < 10 ? 1 : 0}) + ' Mbit/s';
+};
+const spanText = seconds => {
+  const s = Math.max(0, Math.round(seconds));
+  const parts = [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60].map(n => String(n).padStart(2,'0'));
+  return (s >= 3600 ? parts : parts.slice(1)).join(':');
+};
+const etaText = eta => eta.steady ? 'about ' + spanText(eta.seconds) : spanText(eta.low_seconds) + ' to ' + spanText(eta.high_seconds);
+function setLive(id, value, note) {
+  $('live-' + id).textContent = value;
+  if (note !== undefined && $('live-' + id + '-note')) $('live-' + id + '-note').textContent = note;
+}
+// Live readings never claim more than the signals support: completed totals, a
+// percentage and an ETA appear only when the backend says they are known, and the
+// I/O counters are always labelled as activity. File names are inserted as text only.
+function renderMetrics(next, phases) {
+  const live = next.running ? next.metrics : null;
+  const final = next.running ? null : phases.find(p => p.name === 'copy' && p.metrics)?.metrics;
+  const root = $('live-metrics');
+  root.hidden = !live && !final;
+  if (live) renderLive(live);
+  else if (final) renderFinal(final);
+  return live;
+}
+function renderLive(m) {
+  $('live-title').textContent = (livePhaseLabels[m.phase] || m.phase) + ' · live readings';
+  $('live-status').textContent = statusLabels[m.status] || m.status;
+  $('live-status').className = 'badge' + (m.status === 'active' ? ' ok' : ['stalled','retrying'].includes(m.status) ? ' warn' : '');
+  $('live-status-note').textContent = m.status_note || '';
+  $('live-status-note').hidden = !m.status_note;
+  $('live-rows').hidden = false;
+  $('live-limits').replaceChildren();
+  $('live-limits').hidden = true;
+  if (m.list_only) {
+    $('live-completed-label').textContent = 'FILES LISTED';
+    setLive('completed', number(m.seen.files), 'A list-only phase copies nothing, so nothing is completed.');
+  } else if (m.completed.known) {
+    $('live-completed-label').textContent = 'COMPLETED';
+    setLive('completed', number(m.completed.files) + ' files · ' + bytes(m.completed.bytes), m.seen.files > m.completed.files ? number(m.seen.files) + ' files announced. An announcement does not mean a file finished.' : '');
+  } else {
+    $('live-completed-label').textContent = 'COMPLETED';
+    setLive('completed', 'Not known yet', m.completed.note || '');
+  }
+  $('live-rate-label').textContent = 'COMPLETED RATE (' + (m.rate.window_seconds || 5) + ' S)';
+  const known = m.completed.known && !m.list_only;
+  setLive('rate', known ? rateText(m.rate.completed_bytes_per_sec) : 'n/a', known ? (m.rate.average_bytes_per_sec != null ? 'Average ' + rateText(m.rate.average_bytes_per_sec) : 'Measured from finished files.') : 'Needs finished-file counts.');
+  setLive('activity', m.activity.available ? rateText(m.activity.bytes_per_sec) : 'n/a', m.activity.available ? (m.activity.note || '') : 'Process counters are not available yet.');
+  setLive('files-rate', known && m.rate.files_per_sec != null ? m.rate.files_per_sec.toLocaleString(undefined, {maximumFractionDigits: 2}) + ' files/s' : 'n/a', 'Completed files, last 30 seconds.');
+  $('live-current-label').textContent = m.concurrent ? 'LAST ANNOUNCED FILE' : 'CURRENT FILE';
+  $('live-current').textContent = m.current ? m.current.path + (m.current.percent != null ? '  ·  ' + m.current.percent + "% of this file (Robocopy's own marker)" : '') : 'n/a';
+  const p = m.progress;
+  $('live-bar').hidden = !p;
+  if (p) {
+    const share = p.bytes_percent ?? p.files_percent ?? 0;
+    $('live-bar').firstElementChild.style.width = share + '%';
+    $('live-bar').setAttribute('aria-valuenow', String(Math.round(share)));
+    setLive('progress', [p.bytes_percent != null ? p.bytes_percent + '% of bytes' : '', p.files_percent != null ? p.files_percent + '% of files' : ''].filter(Boolean).join(' · '), (m.progress_note || '') + (p.exceeded_plan ? ' More finished than the preview counted: the source changed.' : ''));
+  } else {
+    setLive('progress', 'Not shown', m.progress_note || '');
+  }
+  setLive('eta', m.eta ? etaText(m.eta) : 'Not shown', m.eta ? m.eta.basis : (m.eta_note || ''));
+}
+function renderFinal(f) {
+  $('live-title').textContent = 'Copy · final readings';
+  $('live-status').textContent = 'Finished';
+  $('live-status').className = 'badge ok';
+  const stalled = f.stalls?.length || 0;
+  $('live-status-note').textContent = stalled ? 'Stalled ' + stalled + (stalled === 1 ? ' time' : ' times') + ', ' + spanText((f.stalled_ms || 0) / 1000) + ' in total. A stall is a status, not a failure.' : '';
+  $('live-status-note').hidden = !stalled;
+  $('live-rows').hidden = true;
+  $('live-completed-label').textContent = 'COMPLETED';
+  setLive('completed', f.completed ? number(f.completed.files) + ' files · ' + bytes(f.completed.bytes) : 'Not known', f.source === 'summary' ? "From Robocopy's summary." : f.source === 'log' ? 'From log accounting; no summary was read.' : '');
+  $('live-rate-label').textContent = 'AVERAGE RATE';
+  setLive('rate', rateText(f.average_bytes_per_sec), f.peak_bytes_per_sec != null ? 'Peak ' + rateText(f.peak_bytes_per_sec) + ' in a ' + f.window_seconds + ' second window.' : 'No peak: it needs a full ' + f.window_seconds + ' second window of finished files.');
+  setLive('activity', f.activity_available ? rateText(f.activity_average_bytes_per_sec) : 'n/a', f.activity_available ? 'Average. Read ' + bytes(f.activity_read_bytes) + ' in all. Not completed bytes.' : 'Process counters were not available.');
+  setLive('files-rate', f.files_per_sec_average != null ? f.files_per_sec_average.toLocaleString(undefined, {maximumFractionDigits: 2}) + ' files/s' : 'n/a', 'Completed files over the phase.');
+  const limits = $('live-limits');
+  limits.replaceChildren(...(f.limits || []).map(text => make('li', text)));
+  limits.hidden = !f.limits?.length;
+}
+
 const diagnosticViews = new WeakMap();
 function renderDiagnostics(phases, parent) {
   const signature = JSON.stringify(phases.map(phase=>[phase.name,phase.diagnostics]));
@@ -401,10 +487,11 @@ function renderState(next) {
   const labels = {planned:'Preview ready',copied:'Copy complete',review:'Review required',failed:'Copy failed',error:'Operation failed',canceled:'Operation stopped',invalid:'Options rejected','preview-failed':'Preview needs review'};
   $('phase').textContent = labels[next.phase] || next.phase || 'Ready';
   $('elapsed').textContent = next.id ? elapsed(next.started, next.running ? null : next.record?.finished) : '00:00';
-  $('activity-progress').hidden = !next.running;
   $('activity-indicator').className = 'status-orb' + (next.running ? ' running' : ['planned','copied'].includes(next.phase) ? ' complete' : '');
   $('activity-log').textContent = next.messages?.length ? next.messages.join('\n') : next.running ? 'Checking folders and preparing the run record…' : 'No activity yet.';
   const phases = next.record?.phases || next.phases || [];
+  const liveReading = renderMetrics(next, phases);
+  $('activity-progress').hidden = !next.running || Boolean(liveReading?.progress);
   $('error-details').hidden = !renderDiagnostics(phases,$('error-groups'));
   const copied = phases.find(p => p.name === 'copy' && p.summary);
   const preview = phases.find(p => p.name === 'preview' && p.summary);
@@ -414,7 +501,7 @@ function renderState(next) {
   $('bytes-total').textContent = summary ? bytes(summary.bytes.copied) : '—';
   $('extras-total').textContent = summary ? number(summary.files.extras) : '—';
   $('outcome').textContent = next.record ? (next.record.normalized_exit === 0 ? 'Passed' : next.record.normalized_exit === 1 ? 'Review' : next.phase === 'canceled' ? 'Stopped' : 'Failed') : '—';
-  $('progress-note').textContent = next.running ? 'Phase status is live. File and byte counts update after each phase; a file announcement does not establish completion.' : next.record?.mode === 'plan' ? 'These are preview totals. Extra destination files are listed and will be kept by an ordinary copy.' : 'The final record includes native logs and completed phase results.';
+  $('progress-note').textContent = next.running ? "Live readings come from Robocopy's log and process counters and can lag or understate. Final totals come from its summary, and the convergence check decides the outcome." : next.record?.mode === 'plan' ? 'These are preview totals. Extra destination files are listed and will be kept by an ordinary copy.' : 'The final record includes native logs and completed phase results.';
   const verification = phases.find(p => p.name === 'convergence' && p.summary);
   $('verification').hidden = next.mode !== 'run' || !next.id;
   if (verification) {

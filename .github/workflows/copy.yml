@@ -45,6 +45,8 @@ jobs:
           go test ./internal/parse -run '^$' -fuzz '^FuzzNativeSummary$' -fuzztime 350000x -parallel 2
           go test ./internal/parse -run '^$' -fuzz '^FuzzNativeDiagnostics$' -fuzztime 290000x -parallel 2
           go test ./internal/spike -run '^$' -fuzz '^FuzzDecodeUnicode$' -fuzztime 540000x -parallel 2
+          # No CI history yet for this target: a local run did 200000 execs in about 15 seconds on 2 workers, so start at 150000 and adjust to the median of 3 green runs.
+          go test ./internal/metrics -run '^$' -fuzz '^FuzzMetricsScanner$' -fuzztime 150000x -parallel 2
       - name: Cross build unsigned CLI and Windows test binaries
         run: |
           GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o dist/ztg-copy-spike.exe ./cmd/ztg-copy-spike

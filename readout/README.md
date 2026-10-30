@@ -188,6 +188,59 @@ opener already bundled for web links).
   which appears when hovering a native maximize button, is not available on it; Win+Z and
   Win+arrow keys still snap the window.
 
+## Accessibility
+
+RD20 is a pass against WCAG 2.1 level AA. What it covers, and what it does not:
+
+- Landmarks and names. The top bar is the banner, the workspace is the main region, the folder,
+  outline, search and recent panels are named complementary regions, and the status bar is the
+  footer. Every button, field, divider, tree item and region has an accessible name (icon buttons
+  have a label, the formatting bar and window controls are named groups). The dividers report
+  their size, minimum and maximum. The editor is a named multi-line text box; the preview is a
+  named region that takes focus, so it scrolls from the keyboard.
+- Announcements. One polite, always-present live region says banners (a changed file, a read-only
+  note, a failed save), "Opened name", "Saved name" and setting changes (theme, reading width). The
+  folder filter says its match count a moment after you stop typing. Typing in the editor and the
+  cursor position in the status bar are never announced. Folder search and the recent list keep
+  their own polite status lines.
+- Dialogs are native modal dialogs named by their heading and described by their text. Focus moves
+  into them, Tab and Shift+Tab wrap inside them, the page behind is inert, and closing one returns
+  focus to the control that opened it.
+- The folder tree follows the WAI-ARIA tree pattern: one tab stop, Up and Down, Right (open a
+  folder, then step into it), Left (close it, then go to its parent), Home and End, Enter or Space
+  to open a file or toggle a folder, and typing a few letters to jump to the next name that starts
+  with them. The open file is the selected item. The outline is a flat tree with the same
+  arrow, Home and End keys; search results and the recent list are lists of buttons with Up, Down,
+  Home and End (Delete removes a recent file). The formatting bar is a toolbar with one tab stop
+  and Left, Right, Home and End. The top bar is a row of buttons in tab order.
+- The editor takes Tab for indentation, so Escape then Tab (within two seconds) moves focus out,
+  and Ctrl+M switches Tab between indenting and moving focus.
+- Focus is visible everywhere: a 2px ring in the theme's `--focus` colour (3:1 or better against
+  every surface in both themes), on rows inside the tree and as an inset ring on the editor.
+- Contrast. Text is 4.5:1 or better and field edges, icons and focus rings 3:1 or better in the
+  light and dark themes. The lowest text pair is 4.82:1 in the light theme (code numbers on the
+  code block background) and 5.77:1 in the dark theme. Before the pass the Markdown marks and
+  comments in the editor were 2.66:1 to 4.39:1 (light) and 3.35:1 to 4.12:1 (dark), the line
+  numbers 3.70:1 (dark) and the filter field's edge 1.3:1. They now use the palette's `dim` colour.
+  No colour was added; `design-tokens.json` is unchanged.
+  `test/contrast.test.ts` checks the pairs in the stylesheets, and the browser suite measures
+  rendered text, icons, field edges and focus rings in both themes on every panel.
+
+Not covered or not done:
+
+- No screen reader has been run against it yet. The checks read Chromium's accessibility tree and
+  the DOM; how NVDA or Narrator in the Windows WebView speaks it still needs a manual pass.
+- Text in documents is the author's. Colours that a document sets itself (inline `style`) are kept
+  as written and are not corrected; diagrams (Mermaid) and math are images or generated markup with
+  the contrast their libraries give them, and a diagram has no text alternative.
+- The display-only checkbox of a task list item has no name of its own; it is read together with the
+  item's text.
+- Windows High Contrast (forced colors) mode has not been tested. Browsers keep the focus ring and
+  text colours, but the accent fills and the tree's selected row may lose their distinction.
+- The shared update dialog (`scripts/updates/client.js`) is labelled and announces its status, but
+  is outside this pass.
+- The top bar is not a roving toolbar: its buttons are separate tab stops.
+
 ## Fidelity
 
 The editor's text is the file. There is no document model in between, so opening and saving a

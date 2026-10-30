@@ -499,7 +499,7 @@ func executeResolved(ctx context.Context, j job.Job, command, report string, nat
 			return err
 		}
 	}
-	record, err := copyrun.Execute(ctx, j, report, version, command == "run", out)
+	record, err := copyrun.Execute(ctx, j, report, version, command == "run", newProgressPrinter(out))
 	if record.Directory != "" {
 		fmt.Fprintf(out, "Outcome: %s; normalized exit %d; record %s\n", record.State, record.NormalizedExit, record.Directory)
 	}

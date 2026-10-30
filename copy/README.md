@@ -24,8 +24,10 @@ be installed. The package also includes the CLI and checksums.
 - Persistent System/Light/Dark themes, native window controls and an explicit Check for updates.
 
 The GUI uses the same guarded local runner and restrictions as the CLI. It runs as the current
-user and does not enable network, destructive or privileged modes. It does not show an unverified
-percentage, speed or ETA.
+user and does not enable network, destructive or privileged modes. While a phase runs it shows
+live readings (completed files and bytes, a completed rate, a separate transfer-activity rate, the
+current file, and a stall or retry status) and a percentage only when finished files can be counted
+and a preview gave totals. It never shows an ETA yet.
 
 Build from source on Linux or Windows with Go 1.26.10 (the shell script requires bash):
 
@@ -150,8 +152,25 @@ excerpts per group. Oversized or malformed lines and omitted groups are disclose
 remain visible with a native-log review suggestion. Diagnostic text does not determine success.
 Older records remain readable without grouped details.
 
-Progress currently reports phases and final counts. It does not infer completed bytes or ETA
-from file announcements, allocation sizes or process I/O.
+Live metrics (design section 6, `internal/metrics`) read the native Unicode log while Robocopy writes
+it and sample the process I/O counters twice a second. They keep three signals apart:
+
+- Completed files and bytes. A file counts only when Robocopy has written 100% for it, no error
+  header came between, and the next file or directory line, the summary rule or the end of the run
+  shows Robocopy moved on. A file announcement is never completion. Serial copies only: with `/MT`,
+  or with `/NP`, `/NFL`, `/NC` or `/NS`, nothing says which file finished, so no completed total,
+  rate or percentage is shown until the phase ends and the summary supplies the totals.
+- Transfer activity. Bytes Robocopy read, from `GetProcessIoCounters`, as a rate over a 5 second
+  sliding window. It is labelled as activity and never added to completed bytes or to a percentage.
+- Status. Starting, active, retrying (an error header, for the job's `/W` plus 10 seconds) or
+  stalled (no progress signal for 60 seconds outside a retry wait). A stall is a status, not a failure.
+
+The completed rate is over the last 5 seconds, files per second over the last 30. Percentages
+compare finished files with the preview totals. An ETA is computed (fitted over the last minute)
+but stays hidden until it has been measured within 15% on real copies longer than a minute. Each
+phase's `run.json` entry has a `metrics` object with these readings and a timeline of at most 240
+points, and no file names. The CLI prints one reading line every 10 seconds, and at once when the
+status changes. Summary totals and exit codes still decide every outcome.
 
 Default CLI exits: 0 completed/planned, 1 review or non-convergence, 2 engine failure,
 3 tool error/cancellation. `--native-exit` returns the copy bitmap after a completed run
@@ -203,7 +222,7 @@ The Windows API dependency is the same pinned x/sys version used by Scanner; the
 checker is vendored from `scripts/updates/` and checked by the shared sync tool.
 
 Complete destructive guards, alternate credential UX, network copying,
-hash verification, reports, reliable ETA, installers and signing are still in the roadmap.
+hash verification, reports, a validated ETA, installers and signing are still in the roadmap.
 Other Windows releases, localized logs and optimized/offloaded copy behavior remain release
 validation gates. See [docs/rc0.md](docs/rc0.md) for the scoped feasibility review.
 
