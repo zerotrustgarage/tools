@@ -101,7 +101,21 @@ func (f *FakeClient) EffectiveGroups(ctx context.Context, dn string) ([]Group, e
 	if f.closed {
 		return nil, ErrClosed
 	}
-	return append([]Group(nil), f.Groups[strings.ToLower(dn)]...), nil
+	if gs, ok := f.Groups[strings.ToLower(dn)]; ok {
+		return append([]Group(nil), gs...), nil
+	}
+	// Without an explicit entry, derive direct groups from memberOf so writes
+	// are reflected (the fake does not model nesting).
+	for _, o := range f.Objects {
+		if strings.EqualFold(o.DN, dn) {
+			var out []Group
+			for _, m := range o.Values("memberof") {
+				out = append(out, Group{DN: m, Name: rdnValue(m), Resolved: true})
+			}
+			return out, nil
+		}
+	}
+	return nil, nil
 }
 
 func (f *FakeClient) LastLogon(ctx context.Context, dn string) (LastLogonResult, error) {
