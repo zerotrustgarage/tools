@@ -25,6 +25,22 @@ const TOOLS = [
     light: {"bg":"light-bg","panel":"light-panel","panel-2":"light-panel2","line":"light-line","line-strong":"light-line-strong","text":"light-text","bright":"light-bright","muted":"light-dim","dim2":"light-dim2","accent":"light-ok","accent-ink":"light-panel","up":"light-ok","high":"light-crit","medium":"light-warn","info":"light-info"},
   },
   {
+    name: 'ZTG Directory',
+    file: 'directory/app/frontend/app.css',
+    blocks: { dark: ':root {', light: ':root[data-theme="light"] {', lightAuto: ':root:not([data-theme="dark"]) {' },
+    // The Directory console names its variables after the tokens.
+    dark: {
+      bg: 'bg', panel: 'panel', panel2: 'panel2', line: 'line', 'line-strong': 'line-strong', text: 'text', bright: 'bright',
+      dim: 'dim', dim2: 'dim2', acc: 'acc', 'acc-ink': 'acc-ink', ok: 'ok', warn: 'warn', crit: 'crit', info: 'info',
+      special: 'special', sans: 'sans', mono: 'mono',
+    },
+    light: {
+      bg: 'light-bg', panel: 'light-panel', panel2: 'light-panel2', line: 'light-line', 'line-strong': 'light-line-strong',
+      text: 'light-text', bright: 'light-bright', dim: 'light-dim', dim2: 'light-dim2', acc: 'light-ok', 'acc-ink': 'light-panel',
+      ok: 'light-ok', warn: 'light-warn', crit: 'light-crit', info: 'light-info', special: 'light-special',
+    },
+  },
+  {
     name: 'ZTG Readout',
     file: 'readout/src/styles/app.css',
     blocks: {

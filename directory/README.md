@@ -68,6 +68,50 @@ that a build is up to date. The shared release checker source is vendored for D8
 and the signed installer contract are added. See [docs/validation.md](docs/validation.md) for the lab checks
 and open decisions before continuing to D2.
 
+## The desktop console (D2, in development)
+
+`app/` is the Windows desktop console: a Wails v2 window around the console service (`console/`), with a plain
+HTML, CSS and JavaScript frontend and no build step. It is search first: press `/` or Ctrl+K, type a name, sign-in
+name, email address, phone number or employee ID, move with the arrow keys and press Enter. Each object opens as
+one page with inline editing; staged edits collect in a pending changes tray, and every change, from one field to
+a bulk action on a selection, is shown as a plan with before and after values before anything is written. The rail
+holds quick views (locked out, disabled, never logged on and others), new objects from templates, the Recycle Bin,
+the change records with a chain check, and the OU tree.
+
+Build it from `directory/app` (unsigned; signing arrives with the D8 release workflow):
+
+```sh
+./build-windows.sh 0.0.0-dev amd64     # dist/ZTGDirectory.exe and dist/ztg-directory.exe
+```
+
+- `ZTGDirectory.exe --demo` opens a fictional directory (`lab.example`) held in memory. Sign in as `ztg.tech`
+  (operator) or `kofi.asante` (operator and approver) with `Demo-Password-1`. Changes are real within the window
+  and are recorded, but nothing reaches a domain controller.
+- `ZTGDirectory.exe` without `--demo` shows the first-run setup when no sign-in settings exist: the domain,
+  an optional pinned DC and search base, LDAPS, whether NTLM is allowed (off by default), the second factor (Duo
+  Authentication Proxy, other RADIUS, or none with an explicit password-only acknowledgement that each sign-in is
+  recorded as an open IA.L2-3.5.3 item), the Operators and Approvers group names, the idle lock and the system use
+  notice. After setup, every start asks for an AD sign-in checked by a DC.
+- `--settings <path>` reads the sign-in settings from another file.
+- Data lives in `%LOCALAPPDATA%\ZTG Directory`: `settings.json`, `radius-secret.bin` (the RADIUS shared secret,
+  DPAPI-protected), `records\` (the hash-chained change records) and `templates\` (JSON templates; the demo
+  templates are copied there as examples the first time the folder is empty). Demo mode keeps its records and
+  templates apart, in `%LOCALAPPDATA%\ZTG Directory\demo`.
+
+### UI test
+
+`app/uitest/run.mjs` drives the real console logic in headless Chromium: `app/uitest/server` (never shipped)
+serves the frontend on 127.0.0.1 with `console.API` over the demo directory behind a stand-in for the Wails
+binding. It signs in, searches, edits inline, applies plans, unlocks and resets a password, creates objects from
+templates, changes group members, checks the Tier 0 refusal, browses the OU tree, deletes and restores, verifies
+the record chain, locks and unlocks, switches themes and runs the first-run setup, and fails on any page error,
+console error or request to another origin. It needs Go, Node.js and the `playwright` package with Chromium:
+
+```sh
+cd directory/app
+NODE_PATH="$(npm root --global)" node uitest/run.mjs [screenshot-dir]   # default uitest/out (gitignored)
+```
+
 | Document | What it holds |
 | --- | --- |
 | [docs/design.md](docs/design.md) | Parts, principles, deployment, identities and permissions, the mirror pane, workflows, slices D1 to D8 and open questions |

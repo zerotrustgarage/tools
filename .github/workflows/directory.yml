@@ -1,11 +1,14 @@
 name: Directory
 
+# ZTG Directory checks: engine and CLI (directory/), desktop console (directory/app/) and its UI.
+# Every job runs on GitHub-hosted runners (the repository is public; the organization's
+# self-hosted pool must never serve it), actions are pinned by commit SHA, and no secret is used.
 on:
   pull_request:
-    paths: ['directory/**', '.github/workflows/directory.yml', 'scripts/ci/install-go.sh', 'scripts/updates/**']
+    paths: ['directory/**', '.github/workflows/directory.yml', 'scripts/ci/install-go.sh', 'scripts/updates/**', 'scripts/ci/check-pe.sh', 'scripts/ci/check-palette.mjs', 'scripts/ci/check-icons.mjs', 'design-tokens.json', 'assets/icons/directory/**', 'scripts/icons/**']
   push:
     branches: [main]
-    paths: ['directory/**', '.github/workflows/directory.yml', 'scripts/ci/install-go.sh', 'scripts/updates/**']
+    paths: ['directory/**', '.github/workflows/directory.yml', 'scripts/ci/install-go.sh', 'scripts/updates/**', 'scripts/ci/check-pe.sh', 'scripts/ci/check-palette.mjs', 'scripts/ci/check-icons.mjs', 'design-tokens.json', 'assets/icons/directory/**', 'scripts/icons/**']
 
 permissions:
   contents: read
@@ -62,3 +65,65 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go run ./cmd/ztg-directory check-updates --json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  app:
+    name: Directory desktop console (fmt, vet, Windows build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: directory/app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - run: ../../scripts/ci/install-go.sh
+      - name: Format
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: Vet Linux and Windows
+        run: |
+          go vet ./...
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go vet ./...
+          GOOS=windows GOARCH=arm64 CGO_ENABLED=0 go vet ./...
+      - name: Test (UI test server dispatch)
+        run: go test -race ./...
+      - name: Palette and icons
+        working-directory: .
+        run: |
+          node scripts/ci/check-palette.mjs
+          node scripts/ci/check-icons.mjs
+      # The release build path: manifest, version resource and icon embedded (winres/).
+      - name: Windows builds (cross-compiled, unsigned)
+        run: |
+          for arch in amd64 arm64; do
+            ./build-windows.sh 0.0.0-ci "$arch" "dist/$arch"
+            ../../scripts/ci/check-pe.sh "dist/$arch/ZTGDirectory.exe" gui "$arch"
+            ../../scripts/ci/check-pe.sh "dist/$arch/ztg-directory.exe" console "$arch"
+          done
+
+  ui:
+    name: Directory desktop UI (headless Chromium, real console logic in demo mode)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: directory/app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+      - run: ../../scripts/ci/install-go.sh
+      - name: Playwright and Chromium
+        run: |
+          npm install --global --ignore-scripts playwright@1.56.1
+          npx --yes playwright@1.56.1 install --with-deps chromium
+      # uitest/server serves the frontend with console.API over the demo directory on 127.0.0.1.
+      - run: NODE_PATH="$(npm root --global)" node uitest/run.mjs "$RUNNER_TEMP/directory-ui"
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: directory-ui-screenshots
+          path: ${{ runner.temp }}/directory-ui/
+          if-no-files-found: ignore
+          retention-days: 7

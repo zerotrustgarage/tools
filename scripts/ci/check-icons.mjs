@@ -84,7 +84,7 @@ function checkIco(data, sizes, name) {
 }
 
 const distinct = new Set();
-for (const tool of ['scanner', 'copy', 'tftp', 'readout']) {
+for (const tool of ['scanner', 'copy', 'tftp', 'readout', 'directory']) {
   const dir = `assets/icons/${tool}`;
   for (const source of ['icon.svg', 'small.svg']) {
     const svg = read(`${dir}/${source}`).toString();
@@ -115,12 +115,15 @@ for (const tool of ['scanner', 'copy', 'tftp', 'readout']) {
     'readout/src-tauri/icons/128x128.png': app.get(128),
     'readout/src-tauri/icons/128x128@2x.png': app.get(256),
     'readout/public/favicon.png': app.get(32),
+  } : tool === 'directory' ? {
+    'directory/app/frontend/favicon.png': app.get(32),
   } : {};
   for (const [path, expected] of Object.entries(copies)) assert.ok(read(path).equals(expected), `${path}: current icon export`);
 }
-assert.equal(distinct.size, 4, 'four distinct glyphs at the smallest Windows size');
+assert.equal(distinct.size, 5, 'five distinct glyphs at the smallest Windows size');
 const winres = JSON.parse(read('scanner/app/winres/winres.json'));
 assert.equal(winres.RT_GROUP_ICON.APP['0000'], '../../installer/icon.ico', 'Scanner embeds the same ICO used by its MSI');
-console.log('Icons: four distinct ZTG glyphs, canonical colors, transparent PNG/ICO frames and synchronized app/installer exports.');
+console.log('Icons: five distinct ZTG glyphs, canonical colors, transparent PNG/ICO frames and synchronized app/installer exports.');
 
 assert.equal(JSON.parse(read("tftp/app/winres/winres.json")).RT_GROUP_ICON.APP["0000"], "../../installer/icon.ico", "TFTP EXEs and MSI share the same ICO");
+assert.equal(JSON.parse(read("directory/app/winres/winres.json")).RT_GROUP_ICON.APP["0000"], "../../../assets/icons/directory/icon.ico", "Directory EXEs embed the committed ICO");

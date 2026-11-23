@@ -301,6 +301,10 @@ type ApplyResponse struct {
 	OK    bool       `json:"ok"`
 	Steps []StepView `json:"steps"`
 	Job   string     `json:"job"`
+	// Error is set when the run stopped after some steps had already run (for
+	// example the change record could not be written). The steps, and any
+	// temporary password they set, are still returned so nothing is lost.
+	Error string `json:"error,omitempty"`
 }
 
 // Apply runs a reviewed plan.
@@ -331,8 +335,11 @@ func (s *Service) Apply(req ApplyRequest) (ApplyResponse, error) {
 		// Checks that failed before anything was written leave the plan reusable.
 		if len(res.Steps) == 0 {
 			s.keep(p)
+			return out, err
 		}
-		return out, err
+		// Steps already ran: return them (a binding drops the value when an
+		// error is returned, which would lose a one-time password).
+		out.OK, out.Error = false, err.Error()
 	}
 	return out, nil
 }

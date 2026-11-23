@@ -2,6 +2,7 @@ package console
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -257,5 +258,25 @@ func TestSetupSwitchesToLive(t *testing.T) {
 	}
 	if _, err := auth.LoadSettings(path); err != nil {
 		t.Fatalf("saved settings do not load: %v", err)
+	}
+}
+
+func TestApplyKeepsStepsWhenRecordFailsMidRun(t *testing.T) {
+	s, b := newDemo(t)
+	s.SignIn(SignInRequest{User: "ztg.tech", Password: DemoPassword})
+	caleb := "CN=Caleb Nakamura,OU=Finance,OU=Staff,OU=Contoso Labs," + demo.Base
+	pv, _ := s.PlanEdits(EditRequest{Edits: []Edit{{Kind: "reset-password", DN: caleb, MustChange: true}, {Kind: "unlock", DN: caleb}}})
+	// Make the records folder unwritable after the plan starts: the first
+	// step's record fails once the step has run.
+	b.Directory().FailOn = func(op, dn string) error {
+		if op == "password" {
+			os.RemoveAll(s.RecordsFolder())
+			os.WriteFile(s.RecordsFolder(), []byte("not a folder"), 0o600)
+		}
+		return nil
+	}
+	out, err := s.Apply(ApplyRequest{PlanID: pv.ID, Hash: pv.Hash})
+	if err != nil || out.OK || out.Error == "" || len(out.Steps) != 2 || out.Steps[0].Password == "" {
+		t.Fatalf("steps or password lost: %+v %v", out, err)
 	}
 }

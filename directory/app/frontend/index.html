@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="wails-options" content="noautoinject">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>ZTG Directory</title>
+  <link rel="icon" href="favicon.png">
+  <link rel="stylesheet" href="app.css">
+  <script src="/wails/ipc.js"></script>
+  <script src="/wails/runtime.js"></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <!-- Icons: static symbols drawn on a 24 pixel grid, used through <use>. -->
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.8"/><path d="M4.5 20c.9-3.8 3.9-6 7.5-6s6.6 2.2 7.5 6"/></symbol>
+    <symbol id="i-group" viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3.3"/><path d="M2.8 19.5c.7-3.3 3.2-5.2 6.2-5.2s5.5 1.9 6.2 5.2"/><path d="M15.5 5.6a3.2 3.2 0 0 1 0 6.1M17.4 14.6c2 .6 3.4 2.3 3.8 4.9"/></symbol>
+    <symbol id="i-computer" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="11.5" rx="1.5"/><path d="M8.5 20h7M12 16v4"/></symbol>
+    <symbol id="i-contact" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="m4 6.5 8 6 8-6"/></symbol>
+    <symbol id="i-ou" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2.2h7a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"/></symbol>
+    <symbol id="i-container" viewBox="0 0 24 24"><path d="M4 7.5 12 4l8 3.5v9L12 20l-8-3.5Z"/><path d="m4 7.5 8 3.5 8-3.5M12 11v9"/></symbol>
+    <symbol id="i-other" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5"/><path d="M12 8v.01M12 11v5"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
+    <symbol id="i-unlock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 7.7-1.5"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="3.8"/><path d="m10.8 12.3 8.2-8.2M16 7l2.5 2.5M13.8 9.2l2 2"/></symbol>
+    <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3.5v8"/><path d="M7 6.6a7.5 7.5 0 1 0 10 0"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="4" y="5.5" width="16" height="14.5" rx="2"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/></symbol>
+    <symbol id="i-move" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2.2h7a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"/><path d="M9 13.5h6.5m-2.5-2.5 2.5 2.5-2.5 2.5"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M15.5 5.5 18.5 8.5 8.5 18.5H5.5v-3Z"/><path d="m13.5 7.5 3 3"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 12.5h9l1-12.5M10.5 11v5M13.5 11v5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4 21 19.5H3Z"/><path d="M12 10v4.5M12 17v.01"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 11v5.5M12 8v.01"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7.5 18.5a4 4 0 0 1-.6-8A5.5 5.5 0 0 1 17.6 9a4.8 4.8 0 0 1-.6 9.5Z"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9.5 6 6 6-6 6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9.5 6 6 6-6"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="m6 14.5 6-6 6 6"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/></symbol>
+    <symbol id="i-records" viewBox="0 0 24 24"><path d="M6.5 3.5h8l3.5 3.5v13.5h-11.5Z"/><path d="M9.5 11h6M9.5 14.5h6M9.5 18h4"/></symbol>
+    <symbol id="i-recycle" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 0 1 13-5.1M19.5 12a7.5 7.5 0 0 1-13 5.1"/><path d="M17.8 3.5v3.7h-3.7M6.2 20.5v-3.7h3.7"/></symbol>
+    <symbol id="i-template" viewBox="0 0 24 24"><path d="M6.5 3.5h8l3.5 3.5v13.5h-11.5Z"/><path d="M12 10.5v6M9 13.5h6"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.5 19 6v5.5c0 4.3-3 7.6-7 9-4-1.4-7-4.7-7-9V6Z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.8"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M19.5 14.5A7.5 7.5 0 0 1 9.5 4.5a7.5 7.5 0 1 0 10 10Z"/></symbol>
+    <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="11.5" rx="1.5"/><path d="M8.5 20h7M12 16v4M12 4.5v11.5"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M14 4.5H6.5v15H14M10.5 12H20m-3-3 3 3-3 3"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19 12a7 7 0 1 1-2.1-5M19 4.5V8h-3.5"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="1.5"/><path d="M15.5 8.5v-3a1 1 0 0 0-1-1h-9a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h3"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.8"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect x="4" y="4.5" width="16" height="6" rx="1.5"/><rect x="4" y="13.5" width="16" height="6" rx="1.5"/><path d="M7.5 7.5h.01M7.5 16.5h.01"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M14 4.5h5.5V10M10 19.5H4.5V14M19.5 4.5l-6 6M4.5 19.5l6-6"/></symbol>
+    <symbol id="i-collapse" viewBox="0 0 24 24"><path d="M19.5 9.5H14V4M4.5 14.5H10V20M14 9.5l6-6M10 14.5l-6 6"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5m6-6-6 6 6 6"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="m4 11 8-6.5 8 6.5M6.5 9v10.5h11V9"/></symbol>
+    <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="m6.5 6.5 11 11"/></symbol>
+    <symbol id="i-sleep" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M9 9.5h4l-4 5h4M15 7h2.5L15 10h2.5"/></symbol>
+    <symbol id="i-new" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8.5v7M8.5 12h7"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24"><path d="M4 4.5h7.5l8.5 8.5-7 7-8.5-8.5Z"/><circle cx="8.3" cy="8.8" r="1.2"/></symbol>
+    <symbol id="i-infinity" viewBox="0 0 24 24"><path d="M12 12c-2-2.7-3.5-4-5.5-4a4 4 0 0 0 0 8c2 0 3.5-1.3 5.5-4Zm0 0c2 2.7 3.5 4 5.5 4a4 4 0 0 0 0-8c-2 0-3.5 1.3-5.5 4Z"/></symbol>
+    <symbol id="i-tree" viewBox="0 0 24 24"><circle cx="12" cy="5.5" r="2"/><circle cx="6" cy="18.5" r="2"/><circle cx="18" cy="18.5" r="2"/><path d="M12 7.5v4M6 16.5v-2.5h12v2.5"/></symbol>
+    <symbol id="i-empty" viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3.3"/><path d="M2.8 19.5c.7-3.3 3.2-5.2 6.2-5.2 1.3 0 2.5.3 3.5 1M15.5 15.5l5 5M20.5 15.5l-5 5"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+    <symbol id="i-verify" viewBox="0 0 24 24"><path d="M12 3.5 19 6v5.5c0 4.3-3 7.6-7 9-4-1.4-7-4.7-7-9V6Z"/><path d="m8.8 12 2.2 2.2 4.2-4.4"/></symbol>
+    <symbol id="i-update" viewBox="0 0 24 24"><path d="M12 4v11m-4-4 4 4 4-4M5 19.5h14"/></symbol>
+  </svg>
+
+  <div id="boot" class="boot" role="status"><span class="spinner" aria-hidden="true"></span> Starting ZTG Directory</div>
+
+  <!-- First-run setup and sign-in. -->
+  <main id="auth" class="auth" hidden>
+    <div class="auth-card">
+      <div class="auth-brand">
+        <img src="favicon.png" width="32" height="32" alt="">
+        <div><div class="auth-name">ZTG Directory</div><div id="auth-domain" class="auth-sub"></div></div>
+        <span id="auth-demo" class="badge special" hidden>Demo</span>
+      </div>
+
+      <section id="setup" hidden aria-labelledby="setup-title">
+        <h1 id="setup-title">Connect this console to your domain</h1>
+        <p id="setup-hint" class="muted"></p>
+        <form id="setup-form" class="form" autocomplete="off">
+          <fieldset><legend>Domain</legend>
+            <label>Domain name<input id="s-domain" required placeholder="corp.example.com" spellcheck="false"></label>
+            <div class="row2">
+              <label><span>Domain controller <span class="opt">optional</span></span><input id="s-server" placeholder="Found by the DC locator" spellcheck="false"></label>
+              <label><span>Search base <span class="opt">optional</span></span><input id="s-basedn" placeholder="DC=corp,DC=example,DC=com" spellcheck="false"></label>
+            </div>
+            <label class="check"><input type="checkbox" id="s-ldaps"> Use LDAPS (TLS) instead of signed and sealed LDAP</label>
+            <label class="check"><input type="checkbox" id="s-ntlm"> Allow NTLM when Kerberos is not available</label>
+            <p id="s-ntlm-warn" class="note warn" hidden>NTLM is weaker than Kerberos (IA.L2-3.5.4). Every sign-in record will say that NTLM was allowed.</p>
+          </fieldset>
+          <fieldset><legend>Multifactor authentication</legend>
+            <div class="seg" role="radiogroup" aria-label="Second factor">
+              <label><input type="radio" name="mfa" value="duo" checked> Duo</label>
+              <label><input type="radio" name="mfa" value="radius"> Other RADIUS</label>
+              <label><input type="radio" name="mfa" value=""> None</label>
+            </div>
+            <div id="s-radius">
+              <p id="s-duo-help" class="muted small">The Duo Authentication Proxy (version 6.5.1 or later) in Duo-only RADIUS mode. The domain controller checks the password; only the user name and the chosen factor go to the proxy.</p>
+              <div class="row2">
+                <label>RADIUS server<input id="s-radius-server" placeholder="duoproxy.corp.example.com:1812" spellcheck="false"></label>
+                <label>User name format<select id="s-userfmt"><option value="sam">Account name (sAMAccountName)</option><option value="upn">Sign-in name (UPN)</option></select></label>
+              </div>
+              <label>Shared secret<input id="s-radius-secret" type="password" autocomplete="new-password"></label>
+              <p class="muted small">The shared secret is protected with DPAPI on this computer. It is the only secret the console stores.</p>
+            </div>
+            <div id="s-none" hidden>
+              <p class="note warn">CMMC IA.L2-3.5.3 expects multifactor authentication for network access to every account. Without it, each sign-in is recorded as an open IA.L2-3.5.3 item for the POA&amp;M.</p>
+              <label class="check"><input type="checkbox" id="s-pwonly"> Allow password-only sign-in, and record each one as an open item</label>
+            </div>
+          </fieldset>
+          <fieldset><legend>Access and session</legend>
+            <div class="row2">
+              <label>Operators group<input id="s-ops" value="ZTG Directory Operators" spellcheck="false"></label>
+              <label>Approvers group<input id="s-appr" value="ZTG Directory Approvers" spellcheck="false"></label>
+            </div>
+            <label class="narrow">Lock after idle (minutes)<input id="s-idle" type="number" min="1" max="480" value="15"></label>
+            <label><span>System use notice <span class="opt">optional, shown before every sign-in</span></span><textarea id="s-notice" rows="3"></textarea></label>
+          </fieldset>
+          <p id="setup-err" class="error" role="alert" hidden></p>
+          <div class="actions-row"><button type="submit" class="primary" id="setup-btn">Save and continue</button></div>
+        </form>
+      </section>
+
+      <section id="signin" hidden aria-labelledby="signin-title">
+        <h1 id="signin-title">Sign in</h1>
+        <p id="signin-demo" class="note info" hidden></p>
+        <div id="notice-box" class="notice" hidden>
+          <div class="notice-title">System use notice</div>
+          <p id="notice-text" class="notice-text"></p>
+          <label class="check"><input type="checkbox" id="notice-ack"> I have read this notice and accept it</label>
+        </div>
+        <form id="signin-form" class="form" autocomplete="off">
+          <label>Account<input id="user" placeholder="DOMAIN\user or user@domain" spellcheck="false" autocomplete="username"></label>
+          <label>Password<input id="password" type="password" autocomplete="current-password"></label>
+          <fieldset id="factor-box" hidden><legend>Second factor</legend>
+            <div class="seg" role="radiogroup" aria-label="Second factor">
+              <label><input type="radio" name="factor" value="push" checked> Duo Push</label>
+              <label><input type="radio" name="factor" value="phone"> Phone call</label>
+              <label><input type="radio" name="factor" value="passcode"> Passcode</label>
+            </div>
+            <input id="passcode" inputmode="numeric" placeholder="Passcode" hidden autocomplete="one-time-code">
+          </fieldset>
+          <p id="signin-hint" class="muted small"></p>
+          <p id="signin-wait" class="note info" hidden><span class="spinner" aria-hidden="true"></span> <span id="signin-wait-text"></span></p>
+          <p id="signin-err" class="error" role="alert" hidden></p>
+          <div class="actions-row"><button type="submit" class="primary" id="signin-btn">Sign in</button></div>
+        </form>
+      </section>
+    </div>
+    <p id="auth-foot" class="auth-foot"></p>
+  </main>
+
+  <!-- The console. -->
+  <div id="shell" class="shell" hidden>
+    <header class="topbar">
+      <div class="brand"><img src="favicon.png" width="22" height="22" alt=""><span>ZTG Directory</span></div>
+      <div class="search">
+        <svg class="ico" aria-hidden="true"><use href="#i-search"/></svg>
+        <input id="q" type="search" placeholder="Search people, groups, computers and contacts" spellcheck="false" autocomplete="off" aria-label="Search the directory">
+        <kbd>/</kbd>
+      </div>
+      <div class="top-right">
+        <span id="demo-badge" class="badge special" hidden title="Fictional directory held in memory">Demo</span>
+        <span id="mfa-chip" class="chip warn" hidden title="This session signed in without multifactor authentication. The sign-in is recorded as an open IA.L2-3.5.3 item."><svg class="ico" aria-hidden="true"><use href="#i-alert"/></svg>Signed in without MFA</span>
+        <span id="dc-chip" class="chip" title="Domain controller for this session"><svg class="ico" aria-hidden="true"><use href="#i-server"/></svg><span id="dc-name"></span></span>
+        <button type="button" id="theme-btn" class="icon-btn" title="Theme: system"><svg class="ico" aria-hidden="true"><use href="#i-monitor"/></svg></button>
+        <button type="button" id="lock-btn" class="icon-btn" title="Lock (enter your password to continue)"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg></button>
+        <div class="account">
+          <button type="button" id="account-btn" class="account-btn" aria-haspopup="true" aria-expanded="false">
+            <span id="avatar" class="avatar" aria-hidden="true"></span>
+            <span class="account-text"><span id="account-name"></span><span id="account-roles" class="dim small"></span></span>
+            <svg class="ico small" aria-hidden="true"><use href="#i-down"/></svg>
+          </button>
+          <div id="account-menu" class="menu" hidden>
+            <dl id="account-facts" class="facts"></dl>
+            <button type="button" id="updates-btn" class="menu-item"><svg class="ico" aria-hidden="true"><use href="#i-update"/></svg>Check for updates</button>
+            <p id="updates-out" class="updates-out" hidden></p>
+            <button type="button" id="signout-btn" class="menu-item"><svg class="ico" aria-hidden="true"><use href="#i-logout"/></svg>Sign out</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <nav class="rail" aria-label="Views and directory">
+      <button type="button" id="new-btn" class="new-btn"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>New object</button>
+      <ul class="nav" id="nav-main">
+        <li><button type="button" data-view="home"><svg class="ico" aria-hidden="true"><use href="#i-home"/></svg>Overview</button></li>
+        <li><button type="button" data-page="records"><svg class="ico" aria-hidden="true"><use href="#i-records"/></svg>Change records</button></li>
+        <li><button type="button" data-page="bin"><svg class="ico" aria-hidden="true"><use href="#i-recycle"/></svg>Recycle Bin</button></li>
+        <li><button type="button" data-page="new"><svg class="ico" aria-hidden="true"><use href="#i-template"/></svg>Templates</button></li>
+      </ul>
+      <div class="rail-label">Quick views</div>
+      <ul class="nav" id="nav-views"></ul>
+      <div class="rail-label">Directory <span id="tree-domain" class="dim"></span></div>
+      <ul class="tree" id="tree" role="tree" aria-label="Organizational units"></ul>
+    </nav>
+
+    <section class="main" id="main">
+      <!-- Search, quick views and OU browsing share one results grid. -->
+      <div id="page-results" class="page">
+        <div class="results-head">
+          <div class="results-title">
+            <h2 id="results-title">Overview</h2>
+            <div id="results-crumbs" class="crumbs"></div>
+          </div>
+          <div id="results-meta" class="meta" aria-live="polite"></div>
+        </div>
+        <div class="toolbar">
+          <div class="chips" id="class-chips" role="group" aria-label="Object class"></div>
+          <div id="scope-chips" class="chips"></div>
+        </div>
+        <div id="bulk" class="bulk" hidden>
+          <span id="bulk-count" class="bulk-count"></span>
+          <div class="bulk-actions" id="bulk-actions"></div>
+          <button type="button" id="bulk-clear" class="ghost small-btn">Clear selection</button>
+        </div>
+        <div id="home" class="home"></div>
+        <div id="grid-wrap" class="grid-wrap" hidden>
+          <table class="grid" id="grid">
+            <thead><tr>
+              <th class="c-sel"><input type="checkbox" id="sel-all" aria-label="Select all"></th>
+              <th class="c-name" data-sort="name">Name</th>
+              <th class="c-sub" data-sort="sub">Sign-in or info</th>
+              <th class="c-title" data-sort="title">Title</th>
+              <th class="c-dept" data-sort="department">Department</th>
+              <th class="c-loc" data-sort="location">Location</th>
+              <th class="c-logon" data-sort="lastLogon">Last logon</th>
+              <th class="c-status">Status</th>
+            </tr></thead>
+            <tbody id="rows" tabindex="0" aria-label="Results"></tbody>
+          </table>
+          <div id="grid-empty" class="empty" hidden></div>
+          <div id="truncated" class="note warn trunc" hidden></div>
+        </div>
+      </div>
+      <div id="page-new" class="page" hidden></div>
+      <div id="page-bin" class="page" hidden></div>
+      <div id="page-records" class="page" hidden></div>
+    </section>
+
+    <aside id="object" class="object" hidden aria-label="Object"></aside>
+
+    <div id="tray" class="tray" hidden>
+      <div id="tray-list" class="tray-list" hidden></div>
+      <div class="tray-bar">
+        <span class="tray-dot" aria-hidden="true"></span>
+        <button type="button" id="tray-toggle" class="tray-count" aria-expanded="false"></button>
+        <button type="button" id="tray-discard" class="ghost small-btn">Discard</button>
+        <button type="button" id="tray-review" class="primary small-btn">Review plan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Plan review: every change is shown before anything is written. -->
+  <dialog id="plan-dlg" class="dlg wide" aria-labelledby="plan-title">
+    <div class="dlg-head"><h2 id="plan-title">Review plan</h2><button type="button" class="icon-btn" data-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button></div>
+    <div class="dlg-body" id="plan-body"></div>
+    <div class="dlg-foot" id="plan-foot"></div>
+  </dialog>
+
+  <dialog id="ask-dlg" class="dlg" aria-labelledby="ask-title">
+    <form id="ask-form" method="dialog">
+      <div class="dlg-head"><h2 id="ask-title"></h2><button type="button" class="icon-btn" data-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button></div>
+      <div class="dlg-body" id="ask-body"></div>
+      <div class="dlg-foot"><button type="button" class="ghost" data-close>Cancel</button><button type="submit" class="primary" id="ask-ok">Continue</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="pick-dlg" class="dlg" aria-labelledby="pick-title">
+    <div class="dlg-head"><h2 id="pick-title"></h2><button type="button" class="icon-btn" data-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button></div>
+    <div class="dlg-body">
+      <div class="search small-search"><svg class="ico" aria-hidden="true"><use href="#i-search"/></svg><input id="pick-q" type="search" spellcheck="false" autocomplete="off" aria-label="Find"></div>
+      <ul id="pick-list" class="pick-list" role="listbox"></ul>
+    </div>
+    <div class="dlg-foot" id="pick-foot"><button type="button" class="ghost" data-close>Cancel</button></div>
+  </dialog>
+
+  <div id="lock" class="lock" hidden>
+    <form id="lock-form" class="lock-card" autocomplete="off">
+      <svg class="ico big" aria-hidden="true"><use href="#i-lock"/></svg>
+      <h2>Session locked</h2>
+      <p class="muted">Enter the password for <span id="lock-account"></span> to continue.</p>
+      <input id="lock-pw" type="password" aria-label="Password" autocomplete="current-password">
+      <p id="lock-err" class="error" role="alert" hidden></p>
+      <div class="actions-row"><button type="button" id="lock-signout" class="ghost">Sign out</button><button type="submit" class="primary" id="lock-btn-unlock">Unlock</button></div>
+    </form>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+</body>
+</html>
