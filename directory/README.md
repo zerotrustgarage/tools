@@ -2,7 +2,9 @@
 
 Active Directory and Microsoft 365 management for one customer, inside that customer's network: installed on a
 domain controller, the Entra Connect server or a management server, or run from a technician's workstation the
-way RSAT tools are, with that technician's own delegated permissions. It reads and writes AD.
+way RSAT tools are, with that technician's own delegated permissions. It reads and writes AD. The app requires a
+sign-in with an AD account checked by a domain controller (password with RADIUS, or smart card), and acts with
+that account's rights.
 
 - Open an AD user and see the Microsoft 365 user that mirrors it beside it: sign-in state, licenses, mailbox,
   last sync, sync errors and every synced attribute compared.

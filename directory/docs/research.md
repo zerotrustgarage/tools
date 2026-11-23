@@ -166,6 +166,27 @@ delegated only on the OUs it manages (design 6).
 - RADIUS (for example Windows NPS) answers one question, "may this user authenticate", against AD. It cannot
   read or change directory objects, so it is not a management channel (assessment, from the protocol's scope in
   RFC 2865). It could serve as an extra factor for technicians signing in to the console (design Q6).
+- Signing in with explicit credentials: `SEC_WINNT_AUTH_IDENTITY_EX` carries a user, domain and password to the
+  Negotiate package, and its `PackageList` can exclude NTLM with `!ntlm`
+  ([SSPI](https://learn.microsoft.com/windows/win32/api/sspi/ns-sspi-sec_winnt_auth_identity_exw)). Whether
+  `ldap_bind_sW` honours the extended structure, or only `SEC_WINNT_AUTH_IDENTITY`, is to confirm in D2; the
+  fallback is to acquire the SSPI credential with the package list first (assessment).
+- The Windows credential prompt returns a packed buffer; for a smart card the unpacked user name is a marshaled
+  certificate credential and the password field holds the PIN, and from Windows 10 version 1809 Windows Hello
+  credentials are packed as smart card credentials
+  ([CredUIPromptForWindowsCredentials](https://learn.microsoft.com/en-us/windows/win32/api/wincred/nf-wincred-creduipromptforwindowscredentialsa),
+  [CredPackAuthenticationBuffer](https://learn.microsoft.com/en-gb/windows/win32/api/wincred/nf-wincred-credpackauthenticationbuffera)).
+  Whether a marshaled certificate credential binds directly through `wldap32.dll` is to confirm in D2.
+- RADIUS hardening: CVE-2024-3596 (BlastRADIUS) forges responses through an MD5 collision. Microsoft's guidance
+  for NPS is to require the Message-Authenticator attribute on Access-Request packets and to drop responses
+  without it (`requireMsgAuth`); both are off by default
+  ([KB5040268](https://support.microsoft.com/help/5040268)). The app sends Message-Authenticator and rejects
+  responses without it.
+- NIST SP 800-171 Rev 2 3.5.3: "Use multifactor authentication for local and network access to privileged
+  accounts and for network access to non-privileged accounts"
+  ([SP 800-171r2](https://nvlpubs.nist.gov/nistpubs/specialpublications/nist.sp.800-171r2.pdf)). Signing in to
+  the app authenticates the account to a DC over the network, so the design treats it as network access
+  (assessment).
 
 ## 6. Security facts worth surfacing
 

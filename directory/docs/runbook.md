@@ -12,7 +12,9 @@ and on gaps in the workflows. Their slices are proposals until the owner answers
 Owner decisions of November 23, 2026: the tool writes to AD, and AD changes made as the technician are the next
 slice after D1 (D2), ahead of Microsoft 365 (now D3); later slices moved up by one (D1 to D8, design 12). It runs
 installed on a domain controller or other server, or from a technician's workstation the way RSAT tools do, with
-the technician's own delegated rights (design 4). R118 and R119 were added for that.
+the technician's own delegated rights (design 4). R118 and R119 were added for that. The app requires a sign-in
+with an AD account checked by a DC, and that account's rights and groups decide what it may do (design 6.5; R120 to
+R128).
 
 Priority: **High** is part of the first useful release; **Medium** is clearly worth doing; **Low** waits for
 demand. Controls are CMMC 2.0 Level 2 with NIST SP 800-171 Rev 2 numbering unless marked L1.
@@ -268,13 +270,30 @@ Every report uses the R51 grid: it opens the object, exports, and turns selected
 | R41 | App registration review on the settings page: permissions granted versus features switched on, certificate expiry, last use | AC.L2-3.1.5 |
 | R42 | Change records append-only and hash-chained; the tool never edits a past record | AU.L2-3.3.8 |
 
+### 8.1 Signing in
+
+Owner decision of November 23, 2026 (design 6.5): the app requires an AD sign-in, by whatever method the customer
+uses on its network, and the account that signs in is the account whose rights apply.
+
+| # | Idea | How | Control | Priority | Slice |
+| --- | --- | --- | --- | --- | --- |
+| R120 | Sign-in at every start of the console and the CLI with an AD account checked by a DC, even when Windows is already signed in; the app then acts only as that account, so a technician can keep a daily Windows account and sign in to the app with a separate administrative account | Windows credential prompt; Negotiate bind with the explicit identity, signed and sealed | AC.L2-3.1.1, AC.L2-3.1.6 | High | D2 |
+| R121 | Kerberos only by default: a sign-in that would fall back to NTLM is refused; NTLM only where the customer allows it, shown on every record | Negotiate package list with `!ntlm` | IA.L2-3.5.4 (assessment) | High | D2 |
+| R122 | Smart card or PIV sign-in, a second factor in one step | Credential prompt with certificate credentials; Kerberos PKINIT at the DC | IA.L2-3.5.3 | High | D2 |
+| R123 | RADIUS second factor after the AD password, for customers whose MFA is behind RADIUS (for example NPS with an MFA extension, or an MFA vendor's proxy); Message-Authenticator required both ways | RADIUS client in the app; shared secret protected with DPAPI (design Q21) | IA.L2-3.5.3 | High | D2 |
+| R124 | System use notice shown and acknowledged before the credential prompt, with the customer's text | Settings | AC.L2-3.1.9 | Medium | D2 |
+| R125 | Idle lock (default 15 minutes) that needs the credential again, and a maximum session (default 8 hours) after which the credential is erased | Credential held encrypted in memory only (`CryptProtectMemory`) | AC.L2-3.1.10, AC.L2-3.1.11 | High | D2 |
+| R126 | App roles from AD groups: Operators and Approvers read from the signed-in account's groups (nesting included); refused when the groups cannot be read; no approving one's own request | `tokenGroups` | AC.L2-3.1.4, AC.L2-3.1.5 | High | D2 (roles), D6 (approvals) |
+| R127 | Sign-in events in the record: sign-in, failure (never the password), lock, unlock, sign-out, with account, method, DC and device | Change record | AU.L2-3.3.1 | High | D2 |
+| R128 | The service recognizes the person signed in to the console through a Kerberos handshake on the named pipe, not the pipe's Windows session, and checks a requester's own rights on each target before running a workflow (design Q20) | `AcceptSecurityContext`; `AuthzAccessCheck` | AC.L2-3.1.5, AU.L2-3.3.2 | High | D6 |
+
 ## 9. Later
 
 | # | Idea | Note |
 | --- | --- | --- |
 | R43 | HR request form or CSV drop that creates starter and leaver requests waiting for a technician | Never applied without a person |
 | R44 | Email the manager the starter sheet or the leaver summary | Needs `Mail.Send` limited to one mailbox through Exchange RBAC for Applications |
-| R45 | RADIUS (for example NPS with MFA) as an extra factor for console sign-in | Question Q6 |
+| R45 | RADIUS (for example NPS with MFA) as an extra factor for console sign-in | Moved into D2 as R123 (owner decision on Q6, November 23, 2026) |
 | R46 | Network console on technicians' workstations | Question Q5 |
 | R116 | Entra Lifecycle Workflows: where the customer licenses Entra ID Governance, set `employeeHireDate` and `employeeLeaveDateTime` so the customer's cloud workflows fire on the same dates as ZTG Directory's, and the two never both run a leaver | Which of these can flow from AD is to confirm |
 | R117 | Direct PSA integration, for example writing R75's note to the ticket | Sends data outside Microsoft 365 (design 3, principle 7); question Q15 |

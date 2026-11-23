@@ -4,6 +4,7 @@ Status (October 23, 2026; updated November 23, 2026): D1 in development followin
 building. The initial read-only engine and CLI use the recommended Go/no-cgo stack; live D1 lab validation remains
 open. Owner decisions of November 23, 2026: AD writes are the next slice (D2, section 12), and the tool runs either
 installed on a domain controller or other server, or from a technician's workstation like RSAT tools (section 4).
+The app requires a sign-in with an AD account checked by a DC, and acts with that account's rights (section 6.5).
 Unresolved decisions in section 14 remain open for their relevant slices; each slice is reviewed before the next
 begins, as for ZTG TFTP. See [validation.md](validation.md) for current limits. The ideas behind each feature
 are in [runbook.md](runbook.md) and the facts in [research.md](research.md).
@@ -24,7 +25,7 @@ multi-tenant console and not a cloud service.
 
 | Part | What it does |
 | --- | --- |
-| Console (desktop app) | Browse and search AD; object pages with the Microsoft 365 mirror pane (section 7); create, edit, move, rename and delete users, groups and contacts, and change group membership, through plans; start workflows; approve pending ones; read change records. Runs on a server installation or on a technician's workstation (section 4) |
+| Console (desktop app) | Requires a sign-in with an AD account (section 6.5) and acts as that account. Browse and search AD; object pages with the Microsoft 365 mirror pane (section 7); create, edit, move, rename and delete users, groups and contacts, and change group membership, through plans; start workflows; approve pending ones; read change records. Runs on a server installation or on a technician's workstation (section 4) |
 | Service (Windows service) | Server installation only. Runs workflows after they are approved, now or at a scheduled time; runs later stages (for example license removal 30 days after a leaver); holds the Microsoft 365 connection; writes change records |
 | CLI `ztg-directory` | The same operations for scripts and for troubleshooting: lookups, `plan`, `apply`, `sync`, `check-updates`; on a server or a workstation |
 | Setup | Server installation only. Installs the service, creates the group managed service account, delegates its AD rights on the chosen OUs, creates the app registration in the customer's tenant and its certificate (section 6). Workstation mode needs no setup |
@@ -34,11 +35,14 @@ multi-tenant console and not a cloud service.
 1. Plan before apply. Every change, interactive or from a workflow, is computed and shown as a plan (object,
    attribute, old value, new value, target system) and applied only after a person confirms or approves it.
    Hygiene findings are never remediated automatically.
-2. Narrow identities, none shared with people. Interactive edits run as the signed-in technician (Kerberos).
-   Workflow steps run as the service's group managed service account (gMSA), which has rights delegated only on
+2. Narrow identities, none shared with people. Every person signs in to the app with their own AD account, checked
+   by a domain controller (section 6.5), and interactive edits run as that account (Kerberos), so AD's own
+   delegation decides what each person may change. A password typed at sign-in stays in memory for the session
+   only. Workflow steps run as the service's group managed service account (gMSA), which has rights delegated only on
    the OUs and groups the customer chose, never Domain Admin. Cloud steps run as the customer's app
    registration with only the application permissions of the features that are switched on, never Global
-   Administrator. There are no client secrets and no stored passwords.
+   Administrator. There are no client secrets and no stored passwords. The one stored secret is the optional
+   RADIUS shared secret, protected with DPAPI on the machine that uses it (section 6.5).
 3. Protected on the wire. LDAP is signed and sealed (Negotiate through the Windows LDAP client) or carried over
    LDAPS, also when the tool runs on a domain controller. A simple bind is never offered.
 4. Tier 0 is fenced. Privileged accounts and groups, domain controllers, `krbtgt`, gMSAs and dMSAs are outside
@@ -78,16 +82,17 @@ PowerShell 5.1 with the Exchange Online PowerShell module (V3) for mailbox steps
 later management tools where the customer has hybrid Exchange; outbound HTTPS to the Microsoft 365 endpoints of
 the customer's cloud (commercial, GCC High or DoD).
 
-In a server installation the console on the host talks to the service over a local named pipe whose ACL admits
-two AD groups the setup creates: **ZTG Directory Operators** (run lookups, edit, start workflows) and **ZTG
-Directory Approvers** (approve workflows that require it).
+In a server installation the console on the host talks to the service over a local named pipe. The service
+identifies the person by the Kerberos handshake from the app sign-in (section 6.5), not by the Windows session the
+pipe comes from, and admits members of two AD groups the setup creates: **ZTG Directory Operators** (run lookups,
+edit, start workflows) and **ZTG Directory Approvers** (approve workflows that require it).
 
 ### 4.2 Workstation mode (remote, like RSAT)
 
 The console and the CLI run on any domain-joined Windows 11 or Windows Server 2019 (or later) machine, the way
 ADUC and the other RSAT tools do: no service, no setup in AD and nothing installed on a domain controller. Every
-read and write runs as the signed-in technician over signed and sealed LDAP (or LDAPS) to a domain controller,
-and AD's own delegation decides what that person may change.
+read and write runs as the AD account that signed in to the app (section 6.5) over signed and sealed LDAP (or
+LDAPS) to a domain controller, and AD's own delegation decides what that person may change.
 
 - RSAT is not required. The tool uses the Windows LDAP client (`wldap32.dll`) that is part of every Windows
   edition; RSAT can be installed beside it and nothing depends on it.
@@ -98,8 +103,9 @@ and AD's own delegation decides what that person may change.
   change outside their delegation at plan time, naming the attribute (runbook R118).
 - Passwords: a reset writes `unicodePwd`, which a DC accepts only over TLS or an encrypted SASL layer of at least
   128 bits; the sealed Negotiate bind meets that, so a reset never falls back to a weaker connection (research 5).
-- A device that is not domain joined: start the tool under `runas /netonly`, so Windows holds the credential and
-  the tool never sees it (principle 2); the DC must then be pinned (assessment, to confirm in D2).
+- A device that is not domain joined: the technician signs in to the app with their AD account as on any other
+  device; the DC must be pinned or found through the customer's DNS, and Kerberos needs the device's clock
+  within the domain's tolerance (assessment, to confirm in D2).
 - Without a server installation, a workflow runs in the technician's session, as the technician, from start to
   finish. Approval by another person, scheduled and staged workflows and steps run as the gMSA are refused with
   the reason.
@@ -148,7 +154,7 @@ and service APIs, no cgo (question Q2). `go-ldap` is not used because its Window
 
 | Identity | Used for | Rights |
 | --- | --- | --- |
-| Technician (signed in to the console, on a server or a workstation) | Interactive edits and lookups; every step of a workflow run in workstation mode | Whatever AD already delegates to that person; the rights preview (R118) shows a missing right before anything is written |
+| Technician (the AD account signed in to the app, section 6.5, on a server or a workstation) | Interactive edits and lookups; every step of a workflow run in workstation mode | Whatever AD already delegates to that person; the rights preview (R118) shows a missing right before anything is written |
 | Service gMSA `ztg-directory$` | Workflow steps | Delegated by setup on the managed user OUs and groups only: create and delete user objects, reset password, write the attributes the templates use, write `member` on the managed groups, move between managed OUs. Setup shows the delegation as a plan before writing it |
 
 A gMSA has no password anyone knows; AD rotates it. The service never asks for, stores or accepts a password.
@@ -191,6 +197,58 @@ Forcing a Connect Sync cycle runs `Start-ADSyncSyncCycle -PolicyType Delta`: loc
 the sync server, otherwise through PowerShell remoting with the service gMSA, which needs membership of the sync
 server's ADSync operators group (to confirm which local group allows starting a cycle). Cloud Sync needs no server
 access.
+
+### 6.5 Signing in to the app
+
+Owner decision (November 23, 2026): the console and the CLI require a sign-in with an AD account, checked by a
+domain controller, every time they start, even when Windows is already signed in. The account that signs in is
+the account that acts: AD applies that account's delegated rights to every read and write, and the app takes its
+own roles from that account's groups. A technician can keep a daily Windows account and sign in to the app with a
+separate administrative account (AC.L2-3.1.6). The sign-in method is the customer's choice, from those below.
+
+1. Notice. The customer's system use notice, if configured, is shown and acknowledged first (AC.L2-3.1.9).
+2. Prompt. The Windows credential prompt (`CredUIPromptForWindowsCredentialsW`; in the CLI the console prompt,
+   echo off) collects the credential, so Windows offers every method the device supports: password, smart card
+   or PIV, and other credential providers. Credentials are never accepted from flags, environment variables or
+   files.
+3. Check at the DC. The app binds to a DC with Negotiate, signed and sealed, using that credential
+   (`ldap_bind_sW` with an explicit identity). The DC checks the password or certificate and the account state
+   (disabled, expired, locked, logon hours); a wrong password counts toward AD's lockout policy (AC.L2-3.1.8). A
+   simple bind is never used.
+4. Kerberos only by default. The Negotiate package list excludes NTLM (`!ntlm`), so a sign-in that cannot obtain
+   a Kerberos ticket fails instead of falling back to NTLM (IA.L2-3.5.4, assessment). A customer can allow NTLM
+   explicitly, and records then say so.
+5. Second factor, by the customer's method:
+   - Smart card or PIV (Kerberos PKINIT): multifactor in one step; nothing else to run.
+   - RADIUS after the AD password: an Access-Request to the customer's RADIUS server (for example NPS with an MFA
+     extension, or an MFA vendor's RADIUS proxy), answered by Accept or Challenge. Message-Authenticator is
+     required in both directions (CVE-2024-3596, research 5). The shared secret is protected with DPAPI on each
+     machine that sends requests (question Q21).
+   - Password only: allowed only where the customer switches it on and records why. Under CMMC Level 2,
+     IA.L2-3.5.3 requires multifactor authentication for network access to privileged and non-privileged
+     accounts, and signing in to the app is network access to the account, so password only does not meet it
+     (assessment).
+6. Roles. After sign-in the app reads the account's groups (`tokenGroups`, nesting included) and admits it only
+   if it belongs to ZTG Directory Operators or Approvers (names configurable). If the groups cannot be read, the
+   app refuses; it fails closed. An approver never approves their own request (AC.L2-3.1.4).
+7. Session. The credential stays in process memory, encrypted with `CryptProtectMemory`, only while the session
+   lasts, because new connections (another DC, the PDC emulator, the sync server) need it; it never reaches disk,
+   a log, a record or a command line. The app locks after the customer's idle time (default 15 minutes) and needs
+   the credential again to unlock (AC.L2-3.1.10); signing out, closing the app or reaching the maximum session
+   length (default 8 hours) erases it (AC.L2-3.1.11).
+8. Record. Every sign-in, failure (never the password), lock, unlock and sign-out is recorded with the account,
+   the method, the DC and the device (AU.L2-3.3.1).
+
+Where the boundary is: in workstation mode the app's role check is a convenience, because the account's AD rights
+are the real boundary and the same person could use ADUC with them. In a server installation the role check is a
+boundary for everything the service runs as the gMSA. The console proves the signed-in account to the service
+with a Kerberos handshake over the named pipe (`AcceptSecurityContext` in the service), a network logon, so a
+delegated technician does not need the right to log on locally that DCs restrict to administrators (assessment,
+to confirm in D6). For workflow requests the service also evaluates the requester's own rights on each target
+with `AuthzAccessCheck` against its security descriptor (question Q20).
+
+The D1 CLI still uses the current Windows identity; the sign-in arrives with the console in D2 and replaces it in
+the CLI too.
 
 ## 7. The mirror pane
 
@@ -285,6 +343,9 @@ and belong in the customer's SSP.
 | IA.L2-3.5.6, IA.L2-3.5.9 | Stale accounts (D7); temporary passwords on every reset (D2) |
 | AU.L2-3.3.1, AU.L2-3.3.2, AU.L2-3.3.8 | Change records naming people (D2) |
 | CM.L2-3.4.3 | Plans and records (D2) |
+| AC.L2-3.1.4, AC.L2-3.1.6 | No self-approval; sign in to the app with a separate administrative account (section 6.5, D2) |
+| AC.L2-3.1.9, AC.L2-3.1.10, AC.L2-3.1.11 | System use notice, idle lock and maximum session at app sign-in (D2) |
+| IA.L2-3.5.3, IA.L2-3.5.4 | Smart card or password plus RADIUS at app sign-in; Kerberos only by default (D2, assessment) |
 | SC.L2-3.13.3 | Workstation mode warns on Tier 0 changes from a device that is not a privileged access workstation or DC (D2, assessment) |
 | PS.L2-3.9.2 | Offboarding workflow and evidence export (D5) |
 | SC.L2-3.13.8 | Signed and sealed LDAP or LDAPS (D1) |
@@ -307,11 +368,11 @@ D1, ahead of Microsoft 365, and the later slices each moved up by one.
 | --- | --- | --- |
 | D0 | This plan | Approved by the owner |
 | D1 | Engine and CLI, read-only AD: signed and sealed bind on a DC, a member server or a workstation, search, object view, effective groups, last logon, `check-updates` | Works against Samba and a Server 2025 DC that requires signing, run on the DC and from a domain-joined workstation; nothing can write |
-| D2 | AD changes as the technician: the desktop console for AD (search, object page, OU tree), plans and change records, rights preview (R118), DC selection (R119); create, edit, rename, move, group membership, enable and disable, unlock, password reset, delete and Recycle Bin restore; on a DC and in workstation mode (section 4.2) | Each change type applied in the lab by a delegated technician who is not a domain admin, both on the DC and from a workstation; a change outside the technician's rights is refused at plan time; the Tier 0 fence and bulk cap hold; every change has a complete record |
+| D2 | AD changes as the technician: sign-in to the console and CLI with an AD account (section 6.5: notice, credential prompt, Kerberos-only bind, smart card, RADIUS option, roles, idle lock); the desktop console for AD (search, object page, OU tree), plans and change records, rights preview (R118), DC selection (R119); create, edit, rename, move, group membership, enable and disable, unlock, password reset, delete and Recycle Bin restore; on a DC and in workstation mode (section 4.2) | Sign-in works by smart card and by password plus RADIUS; a sign-in that only NTLM could satisfy is refused; a wrong password counts toward lockout; an account outside the Operators group is refused. Each change type applied in the lab by a delegated technician who is not a domain admin, both on the DC and from a workstation; a change outside that account's rights is refused at plan time; the Tier 0 fence and bulk cap hold; every change and sign-in has a complete record |
 | D3 | Microsoft 365 connection and mirror: setup of the app registration and certificate, delegated sign-in in workstation mode (Q17), mirror pane, sync status, **Sync now** (Connect and Cloud Sync), sync server health | The pane matches the Entra admin center for synced and cloud-only users on the test tenant |
 | D4 | Onboarding: role templates, naming and hybrid checks, onboarding workflow (8.2) | A starter created from a template appears licensed with a mailbox in the test tenant, with a complete record |
 | D5 | Offboarding workflow (8.3) with all three mailbox models, mailbox access, license removal and transfer; evidence export | A leaver run on the test estate leaves the expected state in AD, Entra and Exchange for each mailbox model |
-| D6 | Service: approvals, scheduled leavers, staged steps, device retirement, role change workflow (8.4) | A scheduled leaver runs unattended at its time, approved beforehand, and stage 2 runs on its due date |
+| D6 | Service: Kerberos-authenticated console to service connection (section 6.5), approvals, scheduled leavers, staged steps, device retirement, role change workflow (8.4) | A scheduled leaver runs unattended at its time, approved beforehand, and stage 2 runs on its due date |
 | D7 | Lookups and hygiene: lockout investigation, password expiry, stale accounts, privileged group review, LAPS lookup | Agrees with PingCastle on a test domain for the overlapping checks |
 | D8 | Packaging and release: MSI with the service, a workstation package without it, signing, `release-directory.yml`, `directory-v` tag in the shared update checker | First signed release |
 
@@ -332,7 +393,7 @@ D1, ahead of Microsoft 365, and the later slices each moved up by one.
 | Q3 | Exchange Online steps through the Exchange Online PowerShell module (a supported, documented path) rather than undocumented REST calls? | Yes; the installer checks for the module and its version |
 | Q4 | Approvals: which workflows need an approver by default? | Offboarding scheduled in advance and any privileged change; onboarding and immediate offboarding without |
 | Q5 | Console only on the host (remote desktop) for v1, network console later? | Answered in part by the owner (November 23, 2026): the console and CLI also run on a technician's workstation, acting directly as the technician (section 4.2). Still recommended for later: a workstation console that talks to a server's service over the network, a new attack surface |
-| Q6 | RADIUS: was it meant as the way to reach AD (it cannot manage objects), or as an extra sign-in factor for technicians (for example NPS with MFA)? | Treat as a possible extra factor for console sign-in, after D6 |
+| Q6 | RADIUS: was it meant as the way to reach AD (it cannot manage objects), or as an extra sign-in factor for technicians (for example NPS with MFA)? | Answered by the owner (November 23, 2026): the app requires an AD sign-in by whatever method the customer uses on its network; RADIUS is one second-factor option at that sign-in (section 6.5, R123), in D2 |
 | Q7 | Certificate storage: accept a CSP certificate in the service account's store (required by Exchange Online), with yearly rotation from the console? | Yes; revisit if Exchange Online accepts CNG or TPM keys later |
 | Q8 | Test estate: who provides the test domain, tenants and hybrid Exchange lab? | A test domain with a delegated, non-admin technician and a domain-joined Windows 11 workstation before D2; the tenants and hybrid Exchange lab before D3 |
 | Q9 | Release workflow timing: repository rule 1 asks for `release-<tool>.yml`; there is nothing to release before D2 | Add `release-directory.yml` in D8 with the first package |
@@ -345,3 +406,6 @@ D1, ahead of Microsoft 365, and the later slices each moved up by one.
 | Q16 | Changes made outside the tool (R98) need the DC Security logs, directory service change auditing and SACLs on the managed OUs | Yes, with the same Event Log Readers access as R30; setup shows missing audit policy and SACLs as findings and never changes them unasked |
 | Q17 | Microsoft 365 in workstation mode (section 4.2): the server's app certificate must stay on the server, so a workstation needs the technician's own sign-in | A public client app registration with no secret: authorization code with PKCE in the system browser, so the customer's Conditional Access and MFA apply; tokens kept in memory only; delegated Graph permissions consented once by an administrator, and the technician's own Entra and Exchange roles limit what it can do |
 | Q18 | Workstation change records (section 9): a technician who can append to their own chain on the share could also delete it | Accept, with mitigations: an NTFS ACL on the share that allows creating and appending but not deleting or overwriting (assessment, to confirm in D2), and the comparison of directory changes with the records (R98) |
+| Q19 | The CLI also requires a sign-in, so it cannot run unattended from a scheduled task | No unattended CLI writes: scheduled work belongs to the service (D6), which runs as the gMSA after approval; scheduled reports also run through the service |
+| Q20 | Workflows run by the service as the gMSA: may a template do more than the requester could do with their own rights (the reason for delegating to a gMSA), or is every request limited to the requester's rights (`AuthzAccessCheck`)? | Templates may exceed the requester only for their own defined steps on the managed OUs, with approval where Q4 requires it; any free-form change sent through the service is limited to the requester's own rights |
+| Q21 | Default sign-in method and RADIUS placement. RADIUS from workstations makes each workstation a RADIUS client holding the shared secret | Multifactor by default: smart card or PIV where the customer has it, otherwise password plus RADIUS; password only must be switched on and is shown on every record. Offer RADIUS on server installations, and on workstations only where the customer registers each one as a RADIUS client |
