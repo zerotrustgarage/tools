@@ -22,6 +22,8 @@ type Row struct {
 	Privileged bool   `json:"privileged,omitempty"`
 	LastLogon  string `json:"lastLogon,omitempty"` // RFC 3339 or empty
 	Created    string `json:"created,omitempty"`
+	// RestoreTo is the DN a deleted object is restored to (Recycle Bin rows).
+	RestoreTo string `json:"restoreTo,omitempty"`
 }
 
 // Field is one attribute on the review page.

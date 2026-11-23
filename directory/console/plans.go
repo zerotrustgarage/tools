@@ -260,7 +260,7 @@ func (s *Service) PlanTemplate(name string, form map[string]string, ticket strin
 
 // SaveTemplate validates and saves a template as a new version, and records it.
 func (s *Service) SaveTemplate(t template.Template) (TemplateInfo, error) {
-	st := s.b.Status()
+	st := s.backend().Status()
 	if !st.SignedIn || st.Locked {
 		return TemplateInfo{}, errors.New("sign in to edit templates")
 	}
@@ -320,7 +320,7 @@ func (s *Service) Apply(req ApplyRequest) (ApplyResponse, error) {
 	}
 	ctx, cancel := s.ctx()
 	defer cancel()
-	st := s.b.Status()
+	st := s.backend().Status()
 	res, err := apply.Run(ctx, w, p, apply.Options{Log: s.log, ReviewedHash: req.Hash, TypedCount: req.TypedCount, ConfirmTier0: req.ConfirmTier0,
 		Requester: st.Account, Method: st.Method, Device: s.cfg.Device})
 	out := ApplyResponse{OK: res.OK, Job: p.ID}

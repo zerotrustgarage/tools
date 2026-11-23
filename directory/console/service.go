@@ -117,13 +117,19 @@ func (s *Service) SeedTemplates(ts []template.Template) error {
 	return nil
 }
 
+func (s *Service) backend() Backend {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b
+}
+
 func (s *Service) ctx() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), 60*time.Second)
 }
 
 // Status reports the session.
 func (s *Service) Status() Status {
-	st := s.b.Status()
+	st := s.backend().Status()
 	st.Device, st.Version = s.cfg.Device, s.cfg.Version
 	return st
 }
@@ -145,7 +151,7 @@ func (s *Service) SignIn(req SignInRequest) (Status, error) {
 		return s.Status(), errors.New("enter your account and password")
 	}
 	pw, factor := []byte(req.Password), []byte(req.Factor)
-	err := s.b.SignIn(ctx, user, strings.TrimSpace(req.Domain), pw, factor)
+	err := s.backend().SignIn(ctx, user, strings.TrimSpace(req.Domain), pw, factor)
 	for i := range pw {
 		pw[i] = 0
 	}
@@ -171,11 +177,11 @@ func (s *Service) SignIn(req SignInRequest) (Status, error) {
 
 // SignOut ends the session and erases the credential.
 func (s *Service) SignOut() Status {
-	st := s.b.Status()
+	st := s.backend().Status()
 	if st.SignedIn {
 		s.log.Append(record.Entry{Kind: record.KindSignOut, Technician: st.Account, DC: st.DC, Device: s.cfg.Device})
 	}
-	s.b.SignOut()
+	s.backend().SignOut()
 	s.mu.Lock()
 	s.plans, s.planOrder = map[string]plan.Plan{}, nil
 	s.mu.Unlock()
@@ -184,9 +190,9 @@ func (s *Service) SignOut() Status {
 
 // Lock locks the session (the window also locks after the idle time).
 func (s *Service) Lock() Status {
-	st := s.b.Status()
+	st := s.backend().Status()
 	if st.SignedIn && !st.Locked {
-		s.b.Lock()
+		s.backend().Lock()
 		s.log.Append(record.Entry{Kind: record.KindLock, Technician: st.Account, Device: s.cfg.Device})
 	}
 	return s.Status()
@@ -197,7 +203,7 @@ func (s *Service) Unlock(password string) (Status, error) {
 	ctx, cancel := s.ctx()
 	defer cancel()
 	pw := []byte(password)
-	err := s.b.Unlock(ctx, pw)
+	err := s.backend().Unlock(ctx, pw)
 	for i := range pw {
 		pw[i] = 0
 	}
@@ -211,11 +217,11 @@ func (s *Service) Unlock(password string) (Status, error) {
 }
 
 func (s *Service) writer() (ad.Writer, error) {
-	w, err := s.b.Writer()
+	w, err := s.backend().Writer()
 	if err != nil {
 		return nil, err
 	}
-	s.b.Touch()
+	s.backend().Touch()
 	return w, nil
 }
 
@@ -274,7 +280,7 @@ func (s *Service) Search(q SearchQuery) (SearchResponse, error) {
 		if !q.IncludeHidden && q.Text == "" && !q.OneLevel && KindOf(o) == "other" {
 			continue
 		}
-		out.Rows = append(out.Rows, ToRow(o, s.b.BaseDN()))
+		out.Rows = append(out.Rows, ToRow(o, s.backend().BaseDN()))
 	}
 	sort.SliceStable(out.Rows, func(i, j int) bool {
 		ri, rj := kindRank(out.Rows[i].Kind), kindRank(out.Rows[j].Kind)
@@ -317,7 +323,7 @@ func (s *Service) Tree(dn string) ([]TreeNode, error) {
 		return nil, err
 	}
 	if dn == "" {
-		dn = s.b.BaseDN()
+		dn = s.backend().BaseDN()
 	}
 	ctx, cancel := s.ctx()
 	defer cancel()
@@ -363,7 +369,7 @@ func (s *Service) Object(dn string) (ObjectView, error) {
 		return ObjectView{}, err
 	}
 	rights, rerr := w.Rights(ctx, o.DN)
-	v := buildView(o, rights, s.b.BaseDN())
+	v := buildView(o, rights, s.backend().BaseDN())
 	if rerr != nil {
 		v.RightsWarning = "Your effective rights could not be read, so editing is off for this object: " + rerr.Error()
 	}
@@ -433,10 +439,13 @@ func (s *Service) Deleted(text string) ([]Row, error) {
 	}
 	rows := make([]Row, 0, len(res.Objects))
 	for _, o := range res.Objects {
-		r := ToRow(o, s.b.BaseDN())
+		r := ToRow(o, s.backend().BaseDN())
 		r.Name = strings.SplitN(r.Name, "\n", 2)[0]
 		if p := o.First("lastknownparent"); p != "" {
-			r.Location = Location("CN=x,"+p, s.b.BaseDN())
+			r.Location = Location("CN=x,"+p, s.backend().BaseDN())
+			rdn := firstNonEmpty(o.First("msds-lastknownrdn"), r.Name)
+			r.RestoreTo = "CN=" + ad.EscapeRDNValue(rdn) + "," + p
+			r.Name = rdn
 		}
 		rows = append(rows, r)
 	}

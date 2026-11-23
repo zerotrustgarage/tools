@@ -1,9 +1,12 @@
 package console
 
 import (
+	"context"
 	"strings"
 	"testing"
 
+	"github.com/zerotrustgarage/tools/directory/engine/ad"
+	"github.com/zerotrustgarage/tools/directory/engine/auth"
 	"github.com/zerotrustgarage/tools/directory/engine/demo"
 )
 
@@ -181,5 +184,78 @@ func TestRefusedOutsideRightsAndDeletedSearch(t *testing.T) {
 	del, err := s.Deleted("Nia")
 	if err != nil || len(del) != 1 || del[0].Location != "Contoso Labs / Leavers" {
 		t.Fatalf("deleted: %+v %v", del, err)
+	}
+}
+
+func TestLiveBackendWithFakeOpener(t *testing.T) {
+	dir := demo.NewDirectory()
+	s := auth.DefaultSettings()
+	s.Domain, s.AllowPasswordOnly = "lab.example", true
+	open := func(ctx context.Context, c ad.Config) (ad.Writer, error) {
+		if c.Credential == nil || string(c.Credential.Password) != "Right-Pass-1" {
+			return nil, ad.ErrInvalidCredentials
+		}
+		if !c.KerberosOnly {
+			t.Error("live sign-in must request Kerberos only by default")
+		}
+		dir.Account = c.Credential.Account()
+		return dir, nil
+	}
+	b, err := NewLiveBackend(s, open)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc, err := New(b, Config{DataDir: t.TempDir(), Device: "ws"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.SignIn(SignInRequest{User: `LAB\ztg.tech`, Password: "wrong"}); err == nil || !strings.Contains(err.Error(), "incorrect") {
+		t.Fatalf("wrong password: %v", err)
+	}
+	st, err := svc.SignIn(SignInRequest{User: `LAB\ztg.tech`, Password: "Right-Pass-1"})
+	if err != nil || !st.SignedIn || st.BaseDN != demo.Base || !st.PasswordOnly {
+		t.Fatalf("live sign-in: %+v %v", st, err)
+	}
+	if res, err := svc.Search(SearchQuery{Text: "okafor"}); err != nil || len(res.Rows) != 1 {
+		t.Fatalf("live search: %v", err)
+	}
+	svc.SignOut()
+	if _, err := svc.Search(SearchQuery{Text: "okafor"}); err == nil {
+		t.Fatal("search after sign-out")
+	}
+}
+
+func TestAPICheckUpdatesAndSetupDisabledInDemo(t *testing.T) {
+	s, _ := newDemo(t)
+	a := NewAPI(s, nil)
+	msg, err := a.CheckUpdates()
+	if err != nil || !strings.Contains(msg, "unreleased") {
+		t.Fatalf("check updates: %q %v", msg, err)
+	}
+	if _, err := a.Setup(SetupRequest{Domain: "x"}); err == nil {
+		t.Fatal("setup available in demo")
+	}
+}
+
+func TestSetupSwitchesToLive(t *testing.T) {
+	svc, err := New(SetupBackend{}, Config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if svc.Status().Mode != "setup" {
+		t.Fatal("expected setup mode")
+	}
+	path := t.TempDir() + "/settings.json"
+	open := func(ctx context.Context, c ad.Config) (ad.Writer, error) { return nil, ad.ErrInvalidCredentials }
+	a := NewAPI(svc, &LiveWiring{SettingsPath: path, Open: open})
+	if _, err := a.Setup(SetupRequest{Domain: "lab.example"}); err == nil {
+		t.Fatal("setup without MFA or explicit password-only accepted")
+	}
+	st, err := a.Setup(SetupRequest{Domain: "lab.example", AllowPasswordOnly: true})
+	if err != nil || st.Mode != "live" || !st.PasswordOnly {
+		t.Fatalf("setup: %+v %v", st, err)
+	}
+	if _, err := auth.LoadSettings(path); err != nil {
+		t.Fatalf("saved settings do not load: %v", err)
 	}
 }
