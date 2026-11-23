@@ -178,6 +178,28 @@ and service APIs, no cgo (question Q2). `go-ldap` is not used because its Window
 
 A gMSA has no password anyone knows; AD rotates it. The service never asks for, stores or accepts a password.
 
+### 6.2a Microsoft 365 for interactive work: delegated sign-in (D3)
+
+Decision for D3 (November 23, 2026, following the owner's rule that every action is gated by the signed-in
+person's own rights, Q20 and Q22): the console and the CLI call Microsoft Graph as the signed-in technician,
+through a public client app registration in the customer's tenant (no secret, no certificate): authorization code
+with PKCE in the system browser and a loopback redirect on 127.0.0.1 (RFC 8252), so the tenant's Conditional
+Access and MFA apply. Tokens are held in memory only and end with the session. Delegated permissions are consented
+once by an administrator; what a technician can see or change is the intersection of those permissions and their
+own Entra roles, so Entra enforces Q22 itself. The app-only registration with a certificate (6.2, 6.3) is needed
+only for the unattended service and arrives with it in D6.
+
+Initial delegated permissions (least privileged, to confirm on the test tenant): `User.Read.All` and
+`Organization.Read.All` (mirror pane, sync state, licenses), `GroupMember.Read.All` (cloud groups),
+`Device.Read.All` (registered devices), `UserAuthenticationMethod.Read.All` (sign-in method count),
+`AuditLog.Read.All` (last cloud sign-in; Entra ID P1), and `Synchronization.ReadWrite.All` only when Cloud Sync
+**Sync now** is switched on (the technician also needs the Hybrid Identity Administrator role). Endpoints follow
+the customer's cloud: commercial, GCC High or DoD.
+
+Connect Sync **Sync now** runs `Start-ADSyncSyncCycle -PolicyType Delta` through PowerShell remoting to the sync
+server as the signed-in AD account (a fixed script; the credential passes to it over standard input, never on a
+command line), so the account needs the sync server's ADSync operators right, as in 6.4.
+
 ### 6.2 Microsoft 365 app registration
 
 Setup creates one single-tenant app registration in the customer's tenant, named "ZTG Directory
@@ -404,7 +426,7 @@ D1, ahead of Microsoft 365, and the later slices each moved up by one.
 | D0 | This plan | Approved by the owner |
 | D1 | Engine and CLI, read-only AD: signed and sealed bind on a DC, a member server or a workstation, search, object view, effective groups, last logon, `check-updates` | Works against Samba and a Server 2025 DC that requires signing, run on the DC and from a domain-joined workstation; nothing can write |
 | D2 | AD changes as the technician: sign-in to the console and CLI with an AD account (section 6.5: notice, credential prompt, Kerberos-only bind, smart card, RADIUS option, roles, idle lock); the desktop console for AD (search, object page, OU tree), plans and change records, rights preview (R118), DC selection (R119); create, edit, rename, move, group membership, enable and disable, unlock, password reset, delete and Recycle Bin restore; on a DC and in workstation mode (section 4.2) | Sign-in works by password plus Duo (Authentication Proxy, Duo-only mode), by password alone with the open item recorded, and by smart card where the lab has one; a sign-in that only NTLM could satisfy is refused; a wrong password counts toward lockout; an account outside the Operators group is refused. Each change type applied in the lab by a delegated technician who is not a domain admin, both on the DC and from a workstation; a change outside that account's rights is refused at plan time; the Tier 0 fence and bulk cap hold; every change and sign-in has a complete record |
-| D3 | Microsoft 365 connection and mirror: setup of the app registration and certificate, delegated sign-in in workstation mode (Q17), mirror pane, sync status, **Sync now** (Connect and Cloud Sync), sync server health | The pane matches the Entra admin center for synced and cloud-only users on the test tenant |
+| D3 | Microsoft 365 connection and mirror: delegated sign-in to Microsoft 365 as the technician (6.2a, Q17), mirror pane, sync status, **Sync now** (Connect and Cloud Sync), sync server health | The pane matches the Entra admin center for synced and cloud-only users on the test tenant |
 | D4 | Onboarding: role templates, naming and hybrid checks, onboarding workflow (8.2) | A starter created from a template appears licensed with a mailbox in the test tenant, with a complete record |
 | D5 | Offboarding workflow (8.3) with all three mailbox models, mailbox access, license removal and transfer; evidence export | A leaver run on the test estate leaves the expected state in AD, Entra and Exchange for each mailbox model |
 | D6 | Service: Kerberos-authenticated console to service connection and requester-rights gating at plan and run time (section 6.5), approvals, scheduled leavers, staged steps, device retirement, role change workflow (8.4) | A scheduled leaver runs unattended at its time, approved beforehand, and stage 2 runs on its due date |
