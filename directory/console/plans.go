@@ -178,6 +178,22 @@ type TemplateInfo struct {
 	Enable      bool              `json:"enable"`
 }
 
+// TemplateList is the template folder's content.
+type TemplateList struct {
+	Templates []TemplateInfo `json:"templates"`
+	Problems  []string       `json:"problems"`
+	Folder    string         `json:"folder"`
+}
+
+// TemplateList returns Templates as one value (for the window binding).
+func (s *Service) TemplateList() TemplateList {
+	ts, errs := s.Templates()
+	if errs == nil {
+		errs = []string{}
+	}
+	return TemplateList{Templates: ts, Problems: errs, Folder: s.cfg.TemplatesDir}
+}
+
 // Templates lists the templates and any files that failed to load.
 func (s *Service) Templates() ([]TemplateInfo, []string) {
 	ts, errs := template.LoadDir(s.cfg.TemplatesDir)

@@ -18,6 +18,12 @@ var ErrAlreadyExists = errors.New("an object with this name already exists")
 // not meet policy (LDAP constraintViolation 19 or unwillingToPerform 53).
 var ErrConstraint = errors.New("Active Directory rejected the value")
 
+// ErrInvalidCredentials reports that the domain controller refused the
+// sign-in (LDAP invalidCredentials, result 49): a wrong password, or an account
+// that is disabled, expired, locked or outside its logon hours. AD's own
+// diagnostic text is included where available; the password never is.
+var ErrInvalidCredentials = errors.New("the domain controller refused the sign-in")
+
 // Credential is an explicit AD sign-in (design 6.5). User is a
 // sAMAccountName (with Domain set) or a user principal name (Domain empty).
 // Password is UTF-8 and is erased by Wipe; callers must Wipe when the session

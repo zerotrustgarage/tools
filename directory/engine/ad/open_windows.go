@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,11 +19,12 @@ import (
 
 var (
 	wldap                                                              *syscall.LazyDLL
-	ldapInit, ldapSetOption, ldapBind                                  *syscall.LazyProc
+	ldapInit, ldapSetOption, ldapGetOption, ldapBind                   *syscall.LazyProc
 	ldapConnect, ldapSearch, ldapFirstEntry, ldapNextEntry, ldapGetDN  *syscall.LazyProc
 	ldapGetValues, ldapGetValuesLen, ldapValuesFree, ldapValuesFreeLen *syscall.LazyProc
 	ldapMemFree, ldapMsgFree, ldapUnbind                               *syscall.LazyProc
 	ldapFirstAttribute, ldapNextAttribute, berFree                     *syscall.LazyProc
+	ldapAdd, ldapModify, ldapDelete, ldapRename                        *syscall.LazyProc
 	dllOnce                                                            sync.Once
 	dllErr                                                             error
 )
@@ -33,25 +35,21 @@ const (
 	ldapOptProtocolVersion = 0x11
 	ldapOptSSL             = 0x0a
 	ldapOptReferrals       = 0x08
+	ldapOptHostName        = 0x30
+	ldapOptServerError     = 0x33
+	ldapOptAutoReconnect   = 0x91
 	ldapOptSign            = 0x95
 	ldapOptEncrypt         = 0x96
+	ldapOptSecurityContext = 0x99
 	ldapOptSendTimeout     = 0x42
 	ldapAuthNegotiate      = 0x486
 	ldapSuccess            = 0
 	ldapSizeLimitExceeded  = 4
 	ldapNoSuchObject       = 32
-	ldapScopeBase          = 0
-	ldapScopeSubtree       = 2
+	ldapScopeBase          = scopeBaseObject
+	ldapScopeOneLevel      = scopeSingleLevel
+	ldapScopeSubtree       = scopeWholeSubtree
 )
-
-// Attributes returned by normal searches are deliberately allowlisted. In
-// particular, password, LAPS, key and recovery attributes are never requested.
-var safeAttrs = []string{
-	"objectClass", "cn", "displayName", "givenName", "sn", "sAMAccountName",
-	"userPrincipalName", "mail", "proxyAddresses", "telephoneNumber", "title",
-	"department", "company", "employeeID", "manager", "memberOf", "primaryGroupID",
-	"userAccountControl", "whenCreated", "whenChanged", "lastLogon", "lastLogonTimestamp",
-}
 
 type ldapTimeval struct {
 	Seconds      int32
@@ -69,14 +67,49 @@ type windowsClient struct {
 	base    string
 	closed  bool
 	timeout time.Duration
+	// ldaps and sealed record how the connection is protected; SetPassword
+	// requires one of them (research 5).
+	ldaps  bool
+	sealed bool
+	// dc is the bound domain controller, identity the bound account, and
+	// namingContext the domain's defaultNamingContext once read.
+	dc            string
+	identity      string
+	namingContext string
 }
 
+// Open binds to a domain controller for read-only use. With an empty
+// Config.Server the DC locator picks a writable DC (runbook R119); with an
+// empty Config.BaseDN the domain's defaultNamingContext is used.
 func Open(ctx context.Context, cfg Config) (Client, error) {
-	if cfg.Server == "" || cfg.BaseDN == "" {
-		return nil, errors.New("server and base DN are required")
+	c, err := open(ctx, cfg)
+	if err != nil {
+		return nil, err
 	}
+	return c, nil
+}
+
+// OpenWriter binds like Open and returns the same client with write support.
+// Every write runs as the bound account over the same connection.
+func OpenWriter(ctx context.Context, cfg Config) (Writer, error) {
+	c, err := open(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+func open(ctx context.Context, cfg Config) (*windowsClient, error) {
 	if cfg.Timeout < 0 || cfg.Timeout > 10*time.Minute {
 		return nil, errors.New("timeout must be between zero and ten minutes")
+	}
+	if cfg.Credential != nil {
+		if strings.TrimSpace(cfg.Credential.User) == "" {
+			return nil, errors.New("the sign-in has no user name")
+		}
+		if len(cfg.Credential.Password) == 0 {
+			return nil, errors.New("the sign-in has no password")
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -84,9 +117,20 @@ func Open(ctx context.Context, cfg Config) (Client, error) {
 	if err := loadSystemLDAP(); err != nil {
 		return nil, fmt.Errorf("load Windows LDAP client from system directory: %w", err)
 	}
-	host, portText, err := net.SplitHostPort(cfg.Server)
+	server := strings.TrimSpace(cfg.Server)
+	if server == "" {
+		located, err := locateDC(cfg.Domain)
+		if err != nil {
+			return nil, err
+		}
+		server = located
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
+	host, portText, err := net.SplitHostPort(server)
 	if err != nil {
-		host, portText = cfg.Server, ""
+		host, portText = server, ""
 	}
 	port := 389
 	if cfg.LDAPS {
@@ -106,13 +150,21 @@ func Open(ctx context.Context, cfg Config) (Client, error) {
 	if r == 0 {
 		return nil, fmt.Errorf("ldap_init failed: %v", callErr)
 	}
-	c := &windowsClient{conn: r, base: cfg.BaseDN, timeout: cfg.Timeout}
-	cleanup := func(e error) (Client, error) { ldapUnbind.Call(c.conn); return nil, e }
+	c := &windowsClient{conn: r, base: cfg.BaseDN, timeout: cfg.Timeout, ldaps: cfg.LDAPS, dc: host}
+	cleanup := func(e error) (*windowsClient, error) { ldapUnbind.Call(c.conn); return nil, e }
 	if err = c.setInt(ldapOptProtocolVersion, 3); err != nil {
 		return cleanup(err)
 	}
 	if err = c.setFlag(ldapOptReferrals, false); err != nil {
 		return cleanup(err)
+	}
+	if cfg.Credential != nil {
+		// A silent reconnect would have to bind again with the sign-in, which
+		// this client erases after the bind. A dropped connection fails
+		// instead, and the caller signs in again.
+		if err = c.setFlag(ldapOptAutoReconnect, false); err != nil {
+			return cleanup(err)
+		}
 	}
 	if cfg.LDAPS {
 		// Windows LDAP validates the TLS certificate against the system trust
@@ -181,32 +233,63 @@ func Open(ctx context.Context, cfg Config) (Client, error) {
 			}
 		}
 	}
-	code, _, bindErr := ldapBind.Call(c.conn, 0, 0, ldapAuthNegotiate)
-	if code != ldapSuccess {
-		return cleanup(fmt.Errorf("Negotiate LDAP bind failed: %d (%v)", code, bindErr))
+	if err := c.bind(cfg.Credential, cfg.KerberosOnly); err != nil {
+		return cleanup(err)
+	}
+	if cfg.KerberosOnly {
+		if err := c.requireKerberos(); err != nil {
+			return cleanup(err)
+		}
+	}
+	if !cfg.LDAPS {
+		c.sealed = c.flagOn(ldapOptSign) && c.flagOn(ldapOptEncrypt)
+	}
+	if name := c.hostName(); name != "" {
+		c.dc = name
+	}
+	if cfg.Credential != nil {
+		c.identity = cfg.Credential.Account()
+	} else {
+		c.identity = currentUserName()
 	}
 	if err := ctx.Err(); err != nil {
 		return cleanup(err)
 	}
+	if c.base == "" {
+		nc, err := c.defaultNamingContext(ctx)
+		if err != nil {
+			return cleanup(fmt.Errorf("read defaultNamingContext from the rootDSE: %w", err))
+		}
+		c.base = nc
+	}
 	return c, nil
+}
+
+// systemDirectory returns the Windows system directory. kernel32 is a
+// Windows KnownDLL, so this lookup cannot be redirected by the current
+// directory; other DLLs are then loaded from this path by absolute name.
+func systemDirectory() (string, error) {
+	kernel32 := syscall.NewLazyDLL("kernel32.dll")
+	getSystemDirectory := kernel32.NewProc("GetSystemDirectoryW")
+	buf := make([]uint16, 32768)
+	n, _, callErr := getSystemDirectory.Call(uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	if n == 0 || n >= uintptr(len(buf)) {
+		return "", fmt.Errorf("GetSystemDirectoryW failed: %v", callErr)
+	}
+	return syscall.UTF16ToString(buf[:n]), nil
 }
 
 func loadSystemLDAP() error {
 	dllOnce.Do(func() {
-		// kernel32 is a Windows KnownDLL. Query its trusted system directory,
-		// then load WinLDAP by absolute path to avoid the current directory.
-		kernel32 := syscall.NewLazyDLL("kernel32.dll")
-		getSystemDirectory := kernel32.NewProc("GetSystemDirectoryW")
-		buf := make([]uint16, 32768)
-		n, _, callErr := getSystemDirectory.Call(uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
-		if n == 0 || n >= uintptr(len(buf)) {
-			dllErr = fmt.Errorf("GetSystemDirectoryW failed: %v", callErr)
+		dir, err := systemDirectory()
+		if err != nil {
+			dllErr = err
 			return
 		}
-		path := syscall.UTF16ToString(buf[:n]) + `\wldap32.dll`
-		wldap = syscall.NewLazyDLL(path)
+		wldap = syscall.NewLazyDLL(dir + `\wldap32.dll`)
 		ldapInit = wldap.NewProc("ldap_initW")
 		ldapSetOption = wldap.NewProc("ldap_set_optionW")
+		ldapGetOption = wldap.NewProc("ldap_get_optionW")
 		ldapBind = wldap.NewProc("ldap_bind_sW")
 		ldapConnect = wldap.NewProc("ldap_connect")
 		ldapSearch = wldap.NewProc("ldap_search_ext_sW")
@@ -223,6 +306,10 @@ func loadSystemLDAP() error {
 		ldapFirstAttribute = wldap.NewProc("ldap_first_attributeW")
 		ldapNextAttribute = wldap.NewProc("ldap_next_attributeW")
 		berFree = wldap.NewProc("ber_free")
+		ldapAdd = wldap.NewProc("ldap_add_ext_sW")
+		ldapModify = wldap.NewProc("ldap_modify_ext_sW")
+		ldapDelete = wldap.NewProc("ldap_delete_ext_sW")
+		ldapRename = wldap.NewProc("ldap_rename_ext_sW")
 		dllErr = wldap.Load()
 	})
 	return dllErr
@@ -260,17 +347,49 @@ func (c *windowsClient) Search(ctx context.Context, req SearchRequest) (SearchRe
 	if err := ctx.Err(); err != nil {
 		return SearchResult{}, err
 	}
-	query := strings.TrimSpace(req.Query)
-	filter := "(objectClass=*)"
-	if query != "" {
-		q := EscapeFilterValue(query)
-		filter = "(|(anr=*" + q + "*)(sAMAccountName=*" + q + "*)(userPrincipalName=*" + q + "*)(mail=*" + q + "*)(telephoneNumber=*" + q + "*)(employeeID=*" + q + "*))"
+	filter, err := BuildFilter(req)
+	if err != nil {
+		return SearchResult{}, err
 	}
-	limit := searchLimit(req.Limit)
-	return c.search(ctx, c.base, ldapScopeSubtree, filter, limit)
+	base, scope, err := searchTarget(req, c.base)
+	if err != nil {
+		return SearchResult{}, err
+	}
+	return c.search(ctx, base, uintptr(scope), filter, searchLimit(req.Limit))
+}
+
+// binaryAttr is a binary attribute read with ldap_get_values_len and returned
+// in text form under key.
+type binaryAttr struct {
+	name, key string
+	text      func([]byte) (string, bool)
+}
+
+// searchSpec describes one search. attrs are read as strings; binary
+// attributes are validated and converted to text.
+type searchSpec struct {
+	base     string
+	scope    uintptr
+	filter   string
+	limit    int
+	attrs    []string
+	binary   []binaryAttr
+	controls []*ldapControl
+	// rootDSE accepts an entry without a distinguished name.
+	rootDSE bool
+}
+
+// getBinaryAttrs are the identifiers the object review page shows as text.
+var getBinaryAttrs = []binaryAttr{
+	{name: "objectGUID", key: "objectguid", text: func(v []byte) (string, bool) { return guidText(v), len(v) == 16 }},
+	{name: "objectSid", key: "objectsid", text: func(v []byte) (string, bool) { return sidText(v), validSID(v) }},
 }
 
 func (c *windowsClient) search(ctx context.Context, base string, scope uintptr, filter string, limit int) (SearchResult, error) {
+	return c.searchWith(ctx, searchSpec{base: base, scope: scope, filter: filter, limit: limit, attrs: searchAttrs})
+}
+
+func (c *windowsClient) searchWith(ctx context.Context, spec searchSpec) (SearchResult, error) {
 	if err := ctx.Err(); err != nil {
 		return SearchResult{}, err
 	}
@@ -279,6 +398,7 @@ func (c *windowsClient) search(ctx context.Context, base string, scope uintptr, 
 	if c.closed {
 		return SearchResult{}, ErrClosed
 	}
+	limit := spec.limit
 	if limit < 1 {
 		limit = defaultSearchLimit
 	}
@@ -288,26 +408,47 @@ func (c *windowsClient) search(ctx context.Context, base string, scope uintptr, 
 	if err := c.setInt(ldapOptSizeLimit, int32(limit+1)); err != nil {
 		return SearchResult{}, err
 	}
-	basep, err := syscall.UTF16PtrFromString(base)
+	basep, err := syscall.UTF16PtrFromString(spec.base)
 	if err != nil {
 		return SearchResult{}, err
 	}
-	filterp, err := syscall.UTF16PtrFromString(filter)
+	filterp, err := syscall.UTF16PtrFromString(spec.filter)
 	if err != nil {
 		return SearchResult{}, err
 	}
-	attrPtrs := make([]*uint16, 0, len(safeAttrs)+1)
-	for _, a := range safeAttrs {
-		p, _ := syscall.UTF16PtrFromString(a)
+	attrPtrs := make([]*uint16, 0, len(spec.attrs)+len(spec.binary)+1)
+	for _, a := range spec.attrs {
+		if secretAttribute(a) {
+			return SearchResult{}, fmt.Errorf("refusing to request the secret attribute %s", a)
+		}
+		p, err := syscall.UTF16PtrFromString(a)
+		if err != nil {
+			return SearchResult{}, err
+		}
+		attrPtrs = append(attrPtrs, p)
+	}
+	for _, a := range spec.binary {
+		p, err := syscall.UTF16PtrFromString(a.name)
+		if err != nil {
+			return SearchResult{}, err
+		}
 		attrPtrs = append(attrPtrs, p)
 	}
 	attrPtrs = append(attrPtrs, nil)
+	var controls uintptr
+	var controlPtrs []*ldapControl
+	if len(spec.controls) > 0 {
+		controlPtrs = append(append(controlPtrs, spec.controls...), nil)
+		controls = uintptr(unsafe.Pointer(&controlPtrs[0]))
+	}
 	var msg uintptr
 	searchTimeout, err := c.searchTimeout(ctx)
 	if err != nil {
 		return SearchResult{}, err
 	}
-	code, _, callErr := ldapSearch.Call(c.conn, uintptr(unsafe.Pointer(basep)), scope, uintptr(unsafe.Pointer(filterp)), uintptr(unsafe.Pointer(&attrPtrs[0])), 0, 0, 0, uintptr(unsafe.Pointer(&searchTimeout)), uintptr(limit+1), uintptr(unsafe.Pointer(&msg)))
+	code, _, callErr := ldapSearch.Call(c.conn, uintptr(unsafe.Pointer(basep)), spec.scope, uintptr(unsafe.Pointer(filterp)), uintptr(unsafe.Pointer(&attrPtrs[0])), 0, controls, 0, uintptr(unsafe.Pointer(&searchTimeout)), uintptr(limit+1), uintptr(unsafe.Pointer(&msg)))
+	runtime.KeepAlive(controlPtrs)
+	runtime.KeepAlive(spec.controls)
 	if msg != 0 {
 		defer ldapMsgFree.Call(msg)
 	}
@@ -326,7 +467,7 @@ func (c *windowsClient) search(ctx context.Context, base string, scope uintptr, 
 		if err := ctx.Err(); err != nil {
 			return SearchResult{}, err
 		}
-		obj, err := c.readEntry(ctx, entry)
+		obj, err := c.readEntry(ctx, entry, spec)
 		if err != nil {
 			return SearchResult{}, err
 		}
@@ -344,22 +485,27 @@ func (c *windowsClient) search(ctx context.Context, base string, scope uintptr, 
 	return result, nil
 }
 
-func (c *windowsClient) readEntry(ctx context.Context, entry uintptr) (Object, error) {
+func (c *windowsClient) readEntry(ctx context.Context, entry uintptr, spec searchSpec) (Object, error) {
+	var dn string
 	dnptr, _, _ := ldapGetDN.Call(c.conn, entry)
 	if dnptr == 0 {
-		return Object{}, errors.New("LDAP entry has no distinguished name")
-	}
-	dn, err := utf16FromPtr((*uint16)(nativePointer(dnptr)))
-	ldapMemFree.Call(dnptr)
-	if err != nil {
-		return Object{}, err
+		if !spec.rootDSE {
+			return Object{}, errors.New("LDAP entry has no distinguished name")
+		}
+	} else {
+		var err error
+		dn, err = utf16FromPtr((*uint16)(nativePointer(dnptr)))
+		ldapMemFree.Call(dnptr)
+		if err != nil {
+			return Object{}, err
+		}
 	}
 	attributes, err := c.responseAttributes(entry)
 	if err != nil {
 		return Object{}, err
 	}
 	obj := Object{DN: dn, Attributes: map[string][]string{}}
-	for _, name := range safeAttrs {
+	for _, name := range spec.attrs {
 		descriptor, exists := attributes[lowerASCII(name)]
 		if !exists {
 			continue
@@ -372,6 +518,30 @@ func (c *windowsClient) readEntry(ctx context.Context, entry uintptr) (Object, e
 			return Object{}, err
 		}
 		obj.Attributes[lowerASCII(name)] = values
+	}
+	for _, b := range spec.binary {
+		descriptor, exists := attributes[lowerASCII(b.name)]
+		if !exists {
+			continue
+		}
+		if descriptor.ranged || descriptor.placeholder != "" {
+			return Object{}, fmt.Errorf("%w: AD returned a ranged %s", ErrIncomplete, b.name)
+		}
+		values, err := c.readBerValues(entry, descriptor.descriptor, 1, 1024, b.name, func(v []byte) error {
+			if _, ok := b.text(v); !ok {
+				return fmt.Errorf("LDAP returned a malformed %s", b.name)
+			}
+			return nil
+		})
+		if err != nil {
+			return Object{}, err
+		}
+		texts := make([]string, 0, len(values))
+		for _, v := range values {
+			text, _ := b.text(v)
+			texts = append(texts, text)
+		}
+		obj.Attributes[b.key] = texts
 	}
 	return obj, nil
 }
@@ -635,8 +805,11 @@ func nativePointer(address uintptr) unsafe.Pointer {
 	return *(*unsafe.Pointer)(unsafe.Pointer(&address))
 }
 
+// Get reads one object with the review page's attributes, AD's computed
+// account state, and objectGUID and objectSid in text form.
 func (c *windowsClient) Get(ctx context.Context, dn string) (Object, error) {
-	res, err := c.search(ctx, dn, ldapScopeBase, "(objectClass=*)", 1)
+	attrs := append(append([]string(nil), safeAttrs...), computedAttrs...)
+	res, err := c.searchWith(ctx, searchSpec{base: dn, scope: ldapScopeBase, filter: "(objectClass=*)", limit: 1, attrs: attrs, binary: getBinaryAttrs})
 	if err != nil {
 		return Object{}, err
 	}
@@ -747,7 +920,19 @@ func (c *windowsClient) binaryAttribute(ctx context.Context, dn, attr string) ([
 	return all, nil
 }
 
+// readBinaryValues reads SID values (objectSid, tokenGroups).
 func (c *windowsClient) readBinaryValues(entry uintptr, descriptor string) ([][]byte, error) {
+	return c.readBerValues(entry, descriptor, 12, 68, "SID", func(v []byte) error {
+		if !validSID(v) {
+			return errors.New("LDAP returned a malformed SID")
+		}
+		return nil
+	})
+}
+
+// readBerValues copies at most 8192 binary values whose lengths lie within
+// [minLen, maxLen] and that pass validate. what names the value in errors.
+func (c *windowsClient) readBerValues(entry uintptr, descriptor string, minLen, maxLen uint32, what string, validate func([]byte) error) ([][]byte, error) {
 	valueName, err := syscall.UTF16PtrFromString(descriptor)
 	if err != nil {
 		return nil, err
@@ -767,12 +952,12 @@ func (c *windowsClient) readBinaryValues(entry uintptr, descriptor string) ([][]
 			break
 		}
 		bv := (*ldapBerval)(nativePointer(vp))
-		if bv.Length < 12 || bv.Length > 68 || bv.Value == nil {
-			return nil, errors.New("LDAP returned an invalid SID length or pointer")
+		if bv.Length < minLen || bv.Length > maxLen || bv.Value == nil {
+			return nil, fmt.Errorf("LDAP returned an invalid %s length or pointer", what)
 		}
 		value := unsafe.Slice(bv.Value, int(bv.Length))
-		if !validSID(value) {
-			return nil, errors.New("LDAP returned a malformed SID")
+		if err := validate(value); err != nil {
+			return nil, err
 		}
 		out = append(out, append([]byte(nil), value...))
 	}

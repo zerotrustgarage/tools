@@ -181,6 +181,22 @@ func startLDAPRangeFixture(t *testing.T, respond func(ldapSearchRequest) (entrie
 
 func startLDAPFixtureWithRequest(t *testing.T, respond func(ldapSearchRequest) (entries [][]byte, resultCode int)) *ldapFixture {
 	t.Helper()
+	return startLDAPFixtureWithWrites(t, respond, nil)
+}
+
+// ldapWriteRequest is one add, modify, delete or modify DN request as sent by
+// WinLDAP: the operation element and the whole LDAPMessage, which carries any
+// controls after the operation.
+type ldapWriteRequest struct {
+	tag       byte
+	operation []byte
+	message   []byte
+}
+
+// startLDAPFixtureWithWrites also answers write requests with the result code
+// that write returns. A nil write rejects write requests as unexpected.
+func startLDAPFixtureWithWrites(t *testing.T, respond func(ldapSearchRequest) (entries [][]byte, resultCode int), write func(ldapWriteRequest) int) *ldapFixture {
+	t.Helper()
 	if err := loadSystemLDAP(); err != nil {
 		t.Fatalf("loadSystemLDAP: %v", err)
 	}
@@ -190,7 +206,7 @@ func startLDAPFixtureWithRequest(t *testing.T, respond func(ldapSearchRequest) (
 	}
 	serverDone := make(chan error, 1)
 	accepted := make(chan net.Conn, 1)
-	go func() { serverDone <- serveLDAPFixture(listener, accepted, respond) }()
+	go func() { serverDone <- serveLDAPFixture(listener, accepted, respond, write) }()
 
 	var client *windowsClient
 	stopped := false
@@ -269,7 +285,7 @@ func startLDAPFixtureWithRequest(t *testing.T, respond func(ldapSearchRequest) (
 	return &ldapFixture{client: client}
 }
 
-func serveLDAPFixture(listener net.Listener, accepted chan<- net.Conn, respond func(ldapSearchRequest) (entries [][]byte, resultCode int)) error {
+func serveLDAPFixture(listener net.Listener, accepted chan<- net.Conn, respond func(ldapSearchRequest) (entries [][]byte, resultCode int), write func(ldapWriteRequest) int) error {
 	conn, err := listener.Accept()
 	if err != nil {
 		return nil // cleanup closes the listener if client setup fails
@@ -311,6 +327,15 @@ func serveLDAPFixture(listener net.Listener, accepted chan<- net.Conn, respond f
 				}
 			}
 			if err := writeLDAPMessage(conn, ldapMessage(id, ldapResult(0x65, result))); err != nil {
+				return err
+			}
+		case 0x66, 0x68, 0x4a, 0x6c: // Modify, Add, Del and ModifyDN requests.
+			if write == nil {
+				return fmt.Errorf("unexpected LDAP write operation tag %#x", operationTag)
+			}
+			result := write(ldapWriteRequest{tag: operationTag, operation: operation, message: message})
+			// Each response tag is its request tag plus one.
+			if err := writeLDAPMessage(conn, ldapMessage(id, ldapResult(operationTag+1, result))); err != nil {
 				return err
 			}
 		default:
