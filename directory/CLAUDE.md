@@ -15,10 +15,10 @@ Read `docs/design.md` before building anything here, `docs/runbook.md` for the w
    findings are never remediated automatically.
 2. Narrow identities: everyone signs in to the app with their own AD account, checked by a DC, by the customer's
    method (design 6.5), and interactive edits run as that account; workflow steps as the service's gMSA, never
-   beyond the requester's own rights, with rights delegated only on the managed OUs and groups; cloud steps as the customer's single-tenant app registration
-   with only the permissions of enabled features. Never Domain Admin or Global Administrator, no client secrets,
-   no stored passwords (the optional RADIUS shared secret is the one stored secret, DPAPI-protected), nothing
-   secret accepted as a command-line flag.
+   beyond the requester's own rights, with rights delegated only on the managed OUs and groups; cloud steps as
+   the customer's single-tenant app registration with only the permissions of enabled features. Never Domain
+   Admin or Global Administrator, no client secrets, no stored passwords (the optional RADIUS shared secret is
+   the one stored secret, DPAPI-protected), nothing secret accepted as a command-line flag.
 3. LDAP is signed and sealed (Negotiate through `wldap32.dll`) or carried over LDAPS, also on a DC.
 4. Tier 0 objects are outside every workflow; bulk plans are capped.
 5. Every change record names the requester, approver and technician, even when the gMSA or the app wrote.
