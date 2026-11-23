@@ -76,7 +76,11 @@ name, email address, phone number or employee ID, move with the arrow keys and p
 one page with inline editing; staged edits collect in a pending changes tray, and every change, from one field to
 a bulk action on a selection, is shown as a plan with before and after values before anything is written. The rail
 holds quick views (locked out, disabled, never logged on and others), new objects from templates, the Recycle Bin,
-the change records with a chain check, and the OU tree.
+the change records with a chain check, and the OU tree. With Microsoft 365 set up (D3), each user's page loads a Microsoft 365 pane after
+the AD side: how the cloud user is linked (or a possible match that is not linked), sign-in state, last sync, sync
+errors, licenses, sign-in methods, devices, cloud groups and an attribute comparison that shows only differences
+(waiting for sync or out of step) until asked for every row. **Sync now** starts a sync and watches the cloud user
+until it updates. The Sync page shows the sync server's health and the Microsoft 365 sign-in.
 
 Build it from `directory/app` (unsigned; signing arrives with the D8 release workflow):
 

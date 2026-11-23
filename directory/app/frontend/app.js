@@ -8,6 +8,8 @@ import {
 import { openObject, closeObject, currentObject, rerender, planNow } from './object.js';
 import { reviewPlan } from './plan.js';
 import { showNew, showBin, showRecords } from './pages.js';
+import { refreshCloud, connect, disconnect, cloudFacts, showSync, resetCloud } from './cloud.js';
+import { cloudChanged } from './object.js';
 
 // ---- Theme ------------------------------------------------------------------------
 
@@ -42,6 +44,7 @@ async function refreshStatus() {
   try {
     const st = await call('Status');
     applyStatus(st);
+    if (st.signedIn && !st.locked) { await refreshCloud(); fillTop(st); }
   } catch { /* keep the current screen; errors are shown where they happen */ }
 }
 
@@ -53,6 +56,7 @@ function applyStatus(st) {
   if (!st.signedIn) {
     shellReady = false;
     closeObject();
+    resetCloud();
     $('#lock').hidden = true;
     return showSignIn(st);
   }
@@ -91,8 +95,15 @@ function syncSetup() {
   $('#s-none').hidden = mfa !== '';
   $('#s-ntlm-warn').hidden = !$('#s-ntlm').checked;
   $('#setup-btn').disabled = mfa === '' && !$('#s-pwonly').checked;
+  const sk = $('#s-synckind').value;
+  $('#s-syncserver-box').hidden = sk !== 'connect';
+  $('#s-sync-help').textContent = sk === 'connect'
+    ? 'Sync now runs a delta cycle on this server through PowerShell remoting as the signed-in AD account, which needs the ADSync operators right there.'
+    : sk === 'cloud'
+      ? 'Sync now provisions the user on demand. This adds Application.Read.All, Synchronization.Read.All and Synchronization.ReadWrite.All, and the technician needs the Hybrid Identity Administrator role.'
+      : 'Without a sync method the Microsoft 365 pane still compares each user, but Sync now is off.';
 }
-for (const el of $$('#setup-form input')) el.addEventListener('change', () => { $('#setup-err').hidden = true; syncSetup(); });
+for (const el of $$('#setup-form input, #setup-form select')) el.addEventListener('change', () => { $('#setup-err').hidden = true; syncSetup(); });
 
 $('#setup-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -108,6 +119,8 @@ $('#setup-form').addEventListener('submit', async (e) => {
       radiusServer: mfa ? $('#s-radius-server').value.trim() : '', radiusSecret: mfa ? $('#s-radius-secret').value : '',
       usernameFormat: $('#s-userfmt').value, operatorsGroup: $('#s-ops').value.trim(), approversGroup: $('#s-appr').value.trim(),
       idleLockMinutes: Number($('#s-idle').value) || 15, notice: $('#s-notice').value,
+      tenantId: $('#s-tenant').value.trim(), clientId: $('#s-client').value.trim(), cloud: $('#s-cloud').value,
+      syncKind: $('#s-synckind').value, syncServer: $('#s-synckind').value === 'connect' ? $('#s-syncserver').value.trim() : '',
     });
     $('#s-radius-secret').value = '';
     applyStatus(st);
@@ -195,7 +208,7 @@ function fillTop(st) {
   $('#tree-domain').textContent = st.domain || '';
   const facts = clear($('#account-facts'));
   for (const [k, v] of [['Account', st.account], ['Roles', (st.roles || []).join(', ')], ['Sign-in method', st.method + (st.passwordOnly ? ' (no MFA)' : '')],
-    ['Domain controller', st.dc], ['Idle lock', plural(st.idleMinutes, 'minute')], ['Device', st.device], ['Version', st.version]]) {
+    ['Domain controller', st.dc], ['Idle lock', plural(st.idleMinutes, 'minute')], ...cloudFacts(), ['Device', st.device], ['Version', st.version]]) {
     facts.append(h('dt', { text: k }), h('dd', { text: v || '' }));
   }
 }
@@ -204,6 +217,7 @@ function enterShell(st) {
   shellReady = true;
   show('shell');
   fillTop(st);
+  refreshCloud().then(() => fillTop(state.status));
   state.pending.clear();
   pendingChanged();
   loadTree();
@@ -231,6 +245,8 @@ $('#updates-btn').addEventListener('click', async () => {
   try { out.textContent = await call('CheckUpdates'); } catch (e) { out.textContent = errText(e); }
 });
 $('#signout-btn').addEventListener('click', signOut);
+$('#cloud-chip').addEventListener('click', () => { if (!(state.cloud && state.cloud.signedIn)) connect(); else $('#account-btn').click(); });
+$('#cloud-signout').addEventListener('click', async () => { $('#account-menu').hidden = true; await disconnect(); });
 async function signOut() {
   if (state.pending.size && !(await ask({ title: 'Sign out?', text: `${plural(state.pending.size, 'staged change')} will be discarded. Nothing has been written.`, ok: 'Sign out', okClass: 'danger' }))) return;
   $('#account-menu').hidden = true;
@@ -276,11 +292,12 @@ $('#lock-signout').addEventListener('click', async () => {
 let page = 'results';
 function setPage(p) {
   page = p;
-  for (const id of ['results', 'new', 'bin', 'records']) $('#page-' + id).hidden = id !== p;
+  for (const id of ['results', 'new', 'bin', 'records', 'sync']) $('#page-' + id).hidden = id !== p;
   markNav();
   if (p === 'new') showNew();
   if (p === 'bin') showBin();
   if (p === 'records') showRecords();
+  if (p === 'sync') showSync();
 }
 // The other pages use the full width, so the object panel closes.
 for (const b of $$('#nav-main [data-page]')) b.addEventListener('click', () => { closeObject(); setPage(b.dataset.page); });
@@ -733,7 +750,8 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-Object.assign(nav, { openObject, browse, refreshAfterApply, setPage, pendingChanged, reload, markOpen, goHome });
+Object.assign(nav, { openObject, browse, refreshAfterApply, setPage, pendingChanged, reload, markOpen, goHome,
+  cloudChanged: () => { cloudChanged(); if (state.status) fillTop(state.status); if (page === 'sync') showSync(); } });
 
 // ---- Start ------------------------------------------------------------------------------------------
 

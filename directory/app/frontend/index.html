@@ -115,6 +115,19 @@
               <label class="check"><input type="checkbox" id="s-pwonly"> Allow password-only sign-in, and record each one as an open item</label>
             </div>
           </fieldset>
+          <fieldset><legend>Microsoft 365 <span class="opt">optional</span></legend>
+            <p class="muted small">The console signs in to Microsoft 365 as each technician, so Microsoft 365 applies that person's own roles. Register a public client app in your tenant (no secret, no certificate) with the "Mobile and desktop applications" platform and the redirect URI <code>http://localhost</code>, and have an administrator consent once to the delegated permissions User.Read.All, Organization.Read.All, GroupMember.Read.All, Device.Read.All, UserAuthenticationMethod.Read.All and AuditLog.Read.All (design 6.2a).</p>
+            <div class="row2">
+              <label>Tenant ID<input id="s-tenant" placeholder="GUID or verified domain" spellcheck="false"></label>
+              <label>Application (client) ID<input id="s-client" placeholder="00000000-0000-0000-0000-000000000000" spellcheck="false"></label>
+            </div>
+            <div class="row2">
+              <label>Cloud<select id="s-cloud"><option value="commercial">Commercial</option><option value="gcchigh">GCC High</option><option value="dod">DoD</option></select></label>
+              <label>Directory sync<select id="s-synckind"><option value="">None configured here</option><option value="connect">Entra Connect Sync</option><option value="cloud">Entra Cloud Sync</option></select></label>
+            </div>
+            <label id="s-syncserver-box">Connect Sync server<input id="s-syncserver" placeholder="srv-entra01.corp.example.com" spellcheck="false"></label>
+            <p id="s-sync-help" class="muted small"></p>
+          </fieldset>
           <fieldset><legend>Access and session</legend>
             <div class="row2">
               <label>Operators group<input id="s-ops" value="ZTG Directory Operators" spellcheck="false"></label>
@@ -169,6 +182,7 @@
       <div class="top-right">
         <span id="demo-badge" class="badge special" hidden title="Fictional directory held in memory">Demo</span>
         <span id="mfa-chip" class="chip warn" hidden title="This session signed in without multifactor authentication. The sign-in is recorded as an open IA.L2-3.5.3 item."><svg class="ico" aria-hidden="true"><use href="#i-alert"/></svg>Signed in without MFA</span>
+        <button type="button" id="cloud-chip" class="chip cloud-chip" hidden></button>
         <span id="dc-chip" class="chip" title="Domain controller for this session"><svg class="ico" aria-hidden="true"><use href="#i-server"/></svg><span id="dc-name"></span></span>
         <button type="button" id="theme-btn" class="icon-btn" title="Theme: system"><svg class="ico" aria-hidden="true"><use href="#i-monitor"/></svg></button>
         <button type="button" id="lock-btn" class="icon-btn" title="Lock (enter your password to continue)"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg></button>
@@ -182,6 +196,7 @@
             <dl id="account-facts" class="facts"></dl>
             <button type="button" id="updates-btn" class="menu-item"><svg class="ico" aria-hidden="true"><use href="#i-update"/></svg>Check for updates</button>
             <p id="updates-out" class="updates-out" hidden></p>
+            <button type="button" id="cloud-signout" class="menu-item" hidden><svg class="ico" aria-hidden="true"><use href="#i-cloud"/></svg>Sign out of Microsoft 365</button>
             <button type="button" id="signout-btn" class="menu-item"><svg class="ico" aria-hidden="true"><use href="#i-logout"/></svg>Sign out</button>
           </div>
         </div>
@@ -192,6 +207,7 @@
       <button type="button" id="new-btn" class="new-btn"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>New object</button>
       <ul class="nav" id="nav-main">
         <li><button type="button" data-view="home"><svg class="ico" aria-hidden="true"><use href="#i-home"/></svg>Overview</button></li>
+        <li><button type="button" data-page="sync"><svg class="ico" aria-hidden="true"><use href="#i-cloud"/></svg>Sync</button></li>
         <li><button type="button" data-page="records"><svg class="ico" aria-hidden="true"><use href="#i-records"/></svg>Change records</button></li>
         <li><button type="button" data-page="bin"><svg class="ico" aria-hidden="true"><use href="#i-recycle"/></svg>Recycle Bin</button></li>
         <li><button type="button" data-page="new"><svg class="ico" aria-hidden="true"><use href="#i-template"/></svg>Templates</button></li>
@@ -243,6 +259,7 @@
       <div id="page-new" class="page" hidden></div>
       <div id="page-bin" class="page" hidden></div>
       <div id="page-records" class="page" hidden></div>
+      <div id="page-sync" class="page" hidden></div>
     </section>
 
     <aside id="object" class="object" hidden aria-label="Object"></aside>

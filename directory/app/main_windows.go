@@ -73,6 +73,14 @@ func build(demoMode bool, settingsPath string) (*console.API, string, error) {
 		if err != nil {
 			return nil, "", err
 		}
+		// Microsoft 365 and sync settings (optional) sit beside settings.json.
+		cloud, err := console.LoadCloudSettings(console.CloudSettingsPath(settingsPath))
+		if err != nil {
+			return nil, "", err
+		}
+		if err := lb.UseCloud(cloud, console.CloudWiring{}); err != nil {
+			return nil, "", err
+		}
 		backend = lb
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, "", err

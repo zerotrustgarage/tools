@@ -217,6 +217,35 @@ func (s *Session) Connect(ctx context.Context, server string) (ad.Writer, error)
 	return open(ctx, cfg)
 }
 
+// WithCredential reveals the session's password into a temporary credential,
+// calls fn with it, and wipes the credential when fn returns (or panics). It is
+// for a connection that needs the account's password itself, such as
+// PowerShell remoting to the sync server (design 6.2a); fn must not keep the
+// credential or its password. It refuses with ErrLocked, ErrExpired or
+// ErrSessionClosed without calling fn, and does not count as activity.
+func (s *Session) WithCredential(fn func(*ad.Credential) error) error {
+	if fn == nil {
+		return errors.New("no credential consumer")
+	}
+	s.mu.Lock()
+	if err := s.usableLocked(); err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	pw, err := revealPassword(s.cred.Password, s.pwLen)
+	if err != nil {
+		s.mu.Unlock()
+		return err
+	}
+	cred := &ad.Credential{User: s.cred.User, Domain: s.cred.Domain, Password: pw}
+	s.mu.Unlock()
+	defer func() {
+		wipe(pw)
+		cred.Wipe()
+	}()
+	return fn(cred)
+}
+
 // usableLocked checks closed, expired and locked, in that order.
 func (s *Session) usableLocked() error {
 	if s.closed {

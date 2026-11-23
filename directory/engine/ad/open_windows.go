@@ -380,8 +380,12 @@ type searchSpec struct {
 }
 
 // getBinaryAttrs are the identifiers the object review page shows as text.
+// mS-DS-ConsistencyGuid is the usual source anchor (ImmutableID); it is an
+// octet string anyone with write access can set, so a value that is not 16
+// bytes reads as "invalid" instead of failing the whole object.
 var getBinaryAttrs = []binaryAttr{
 	{name: "objectGUID", key: "objectguid", text: func(v []byte) (string, bool) { return guidText(v), len(v) == 16 }},
+	{name: "mS-DS-ConsistencyGuid", key: "ms-ds-consistencyguid", text: func(v []byte) (string, bool) { return guidText(v), true }},
 	{name: "objectSid", key: "objectsid", text: func(v []byte) (string, bool) { return sidText(v), validSID(v) }},
 }
 
