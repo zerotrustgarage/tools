@@ -6,6 +6,7 @@ import {
   spinner, store, copyText, KIND_LABEL, plural,
 } from './core.js';
 import { reviewPlan } from './plan.js';
+import { mirrorCard, loadMirror, syncLine } from './cloud.js';
 
 const panel = () => $('#object');
 let cur = null; // { dn, view }
@@ -38,6 +39,7 @@ export async function openObject(dn, { push = false, keepScroll = false, closeIf
     remember(view);
     render();
     el.scrollTop = scroll;
+    loadMirror(view.dn, redrawCloud); // after the page: the cloud side never slows the AD side
   } catch (e) {
     if (mine !== loadSeq) return;
     if (closeIfMissing) { closeObject(); toast('The object is no longer at ' + rdnName(dn) + '; it was moved, renamed or deleted.'); return; }
@@ -59,6 +61,27 @@ export function closeObject() {
 }
 
 export function rerender() { if (cur) render(); }
+
+/** redrawCloud replaces the Microsoft 365 card (or only its sync line) when dn is on screen. */
+function redrawCloud(dn, tickOnly) {
+  if (!cur || cur.dn.toLowerCase() !== dn.toLowerCase()) return;
+  const card = document.getElementById('card-cloud');
+  if (!card) return;
+  if (tickOnly) {
+    const line = document.getElementById('sync-state');
+    const next = syncLine(dn);
+    if (line && next) line.replaceWith(next);
+    return;
+  }
+  card.replaceWith(mirrorCard(cur.view));
+}
+
+/** cloudChanged reloads the pane after a Microsoft 365 sign-in or sign-out. */
+export function cloudChanged() {
+  if (!cur) return;
+  render();
+  loadMirror(cur.dn, redrawCloud);
+}
 
 function remember(v) {
   const recent = store.get('recent', []).filter((r) => r.dn !== v.dn);
@@ -82,11 +105,17 @@ function render() {
 
   const colA = h('div', { class: 'obj-col' });
   const colB = h('div', { class: 'obj-col' });
-  for (const sec of v.sections || []) colA.append(sectionCard(v, sec));
+  const wide = document.body.classList.contains('object-wide');
+  (v.sections || []).forEach((sec, i) => {
+    colA.append(sectionCard(v, sec));
+    // In one column the Microsoft 365 pane follows the first section, so it is never far down the page.
+    if (i === 0 && !wide && v.kind === 'user') colA.append(mirrorCard(v));
+  });
+  if (wide && v.kind === 'user') colB.append(mirrorCard(v));
   if (v.kind === 'group') colB.append(membersCard(v));
   if (['user', 'group', 'computer', 'contact'].includes(v.kind)) colB.append(groupsCard(v));
   if (v.kind === 'user' && (v.manager || (v.reports || []).length)) colB.append(orgCard(v));
-  if (v.kind === 'user') colB.append(cloudCard(v));
+  if (v.kind !== 'user') colB.append(mirrorCard(v));
   colB.append(timelineCard(v));
   colB.append(advancedCard(v));
   body.append(h('div', { class: 'obj-cols' }, colA, colB));
@@ -461,17 +490,6 @@ function orgCard(v) {
   const card = h('section', { class: 'card', id: 'card-org' }, h('h3', { text: 'Reporting line' }));
   if (v.manager) card.append(h('div', { class: 'sub-head', text: 'Manager' }), h('ul', { class: 'refs' }, refRow(v.manager)));
   if ((v.reports || []).length) card.append(h('div', { class: 'sub-head', text: `Direct reports (${v.reports.length})` }), h('ul', { class: 'refs' }, v.reports.map((r) => refRow(r))));
-  return card;
-}
-
-function cloudCard(v) {
-  const card = h('section', { class: 'card', id: 'card-cloud' }, h('div', { class: 'card-head' }, h('h3', null, icon('cloud'), ' Microsoft 365')));
-  const list = h('ul', { class: 'checks' });
-  for (const c of v.readiness || []) {
-    list.append(h('li', { class: 'check-row ' + c.status }, icon(c.status === 'ok' ? 'check' : c.status === 'warn' ? 'alert' : 'info'),
-      h('div', null, h('div', { class: 'check-label', text: c.label }), h('div', { class: 'muted small', text: c.detail }))));
-  }
-  card.append(list, h('p', { class: 'muted small cloud-note', text: v.cloudNote }));
   return card;
 }
 

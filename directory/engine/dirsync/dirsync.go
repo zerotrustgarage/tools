@@ -73,6 +73,9 @@ type Fake struct {
 	Calls   []string
 	Now     func() time.Time
 	FailErr error
+	// Adjust edits the reported health on each call (demo mode rolls the
+	// next scheduled cycle forward so it reads as a real scheduler would).
+	Adjust func(*Health)
 }
 
 func (f *Fake) Kind() Kind { return f.K }
@@ -87,6 +90,9 @@ func (f *Fake) Health(ctx context.Context) (Health, error) {
 	h.Kind = f.K
 	if f.Now != nil {
 		h.CheckedAt = f.Now()
+	}
+	if f.Adjust != nil {
+		f.Adjust(&h)
 	}
 	return h, nil
 }

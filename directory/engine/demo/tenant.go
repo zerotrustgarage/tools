@@ -227,6 +227,18 @@ func NewSyncer(dir *ad.FakeClient, tenant *m365.FakeTenant) *dirsync.Fake {
 	f := &dirsync.Fake{K: dirsync.KindConnect, Now: clock, H: dirsync.Health{Server: "srv-entra01.lab.example", Version: "2.6.92.0",
 		VersionStatus: status, VersionNote: note, SchedulerEnabled: true, IntervalMinutes: 30, LastCycle: ptr(LastSync),
 		NextCycle: ptr(LastSync.Add(30 * time.Minute)), LastResult: "success", AppAuth: ptr(true)}}
+	// A real scheduler runs every interval: report the next cycle after the
+	// wall clock, so the demo never shows a next cycle in the past.
+	f.Adjust = func(h *dirsync.Health) {
+		if h.NextCycle == nil || h.IntervalMinutes <= 0 {
+			return
+		}
+		next, now := *h.NextCycle, time.Now().UTC()
+		for !next.After(now) {
+			next = next.Add(time.Duration(h.IntervalMinutes) * time.Minute)
+		}
+		h.NextCycle = &next
+	}
 	f.OnSync = func(ctx context.Context, obj ad.Object) error {
 		id, err := ad.ImmutableID(obj.First("objectguid"))
 		if err != nil {

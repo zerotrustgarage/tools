@@ -95,6 +95,15 @@ async function openFromSearch(page, q, name) {
   await page.waitForFunction((n) => document.querySelector("#obj-name")?.textContent === n, name);
 }
 
+// Scrolls the object panel so the Microsoft 365 card starts just below the sticky header.
+async function showCloudCard(page) {
+  await page.evaluate(() => {
+    const obj = document.querySelector("#object");
+    const card = document.querySelector("#card-cloud");
+    obj.scrollTop = card.offsetTop - obj.querySelector(".obj-top").offsetHeight - 12;
+  });
+}
+
 async function applyPlan(page, { ticket } = {}) {
   await page.waitForSelector("#plan-dlg[open] #plan-apply");
   if (ticket) {
@@ -245,11 +254,78 @@ async function demoScenario() {
   await page.waitForFunction(() => /Bea Okafor/.test(document.querySelector("#card-members").textContent) && !/Pending/.test(document.querySelector("#card-members").textContent));
   await shot(page, "09-group-page");
 
+  log("Microsoft 365: sign out from the account menu, connect from the top bar");
+  assert.equal(await text(page, "#cloud-chip"), "ztg.tech@contoso-labs.example", "demo signs in to Microsoft 365 with the AD session");
+  await page.click("#account-btn");
+  await page.click("#cloud-signout");
+  await page.waitForFunction(() => document.querySelector("#cloud-chip")?.textContent === "Connect Microsoft 365");
+  await openFromSearch(page, "elio", "Elio Brandt");
+  await page.waitForSelector("#card-cloud #mirror-connect");
+  await page.click("#cloud-chip");
+  await page.waitForFunction(() => document.querySelector("#cloud-chip")?.textContent === "ztg.tech@contoso-labs.example");
+
+  log("Microsoft 365: Elio Brandt is out of step");
+  await page.waitForSelector('#mirror-rows tr[data-status="out of step"]');
+  assert.match(await text(page, "#mirror-summary"), /1 out of step/);
+  assert.match(await text(page, '#mirror-rows tr[data-status="out of step"]'), /Design Engineer[\s\S]*Junior Design Engineer/);
+  assert.equal(await page.locator('#mirror-rows tr[data-status="match"]').count(), 0, "only differences by default");
+  assert.match(await text(page, "#mirror-facts"), /Last sync[\s\S]*ago/);
+  await showCloudCard(page);
+  await shot(page, "24-m365-out-of-step");
+  await page.click("#mirror-toggle");
+  await page.waitForFunction(() => document.querySelectorAll('#mirror-rows tr[data-status="match"]').length > 3);
+  await page.click("#mirror-toggle");
+
+  log("Microsoft 365: Ivan Petrov waits for sync, Sync now clears it");
+  await openFromSearch(page, "petrov", "Ivan Petrov");
+  await page.waitForSelector('#mirror-rows tr[data-status="waiting for sync"]');
+  assert.match(await text(page, "#mirror-summary"), /waiting for sync/);
+  assert.equal(await page.isDisabled("#sync-now"), false, "Sync now is available for a synced user");
+  await showCloudCard(page);
+  await shot(page, "25-m365-waiting-for-sync");
+  await page.click("#sync-now");
+  await page.waitForSelector("#sync-state.waiting");
+  assert.match(await text(page, "#sync-state"), /Waiting for the cloud to update/);
+  await showCloudCard(page);
+  await shot(page, "26-m365-sync-watching");
+  await page.waitForFunction(() => /Synced at/.test(document.querySelector("#sync-state")?.textContent || ""), null, { timeout: 20000 });
+  assert.match(await text(page, "#mirror-summary"), /compared attributes match/);
+  assert.equal(await page.locator('#mirror-rows tr[data-status="waiting for sync"]').count(), 0);
+  await showCloudCard(page);
+  await shot(page, "27-m365-synced");
+
+  log("Microsoft 365: Jade Mbeki has a duplicate proxy address sync error");
+  await openFromSearch(page, "mbeki", "Jade Mbeki");
+  await page.waitForSelector("#card-cloud .sync-error");
+  assert.match(await text(page, "#card-cloud .sync-error"), /PropertyConflict on ProxyAddresses[\s\S]*jade\.mbeki@contosolabs\.mail\.example/);
+  await showCloudCard(page);
+  await shot(page, "28-m365-sync-error");
+
+  log("Microsoft 365: Farah Haddad is a possible match, not linked");
+  await openFromSearch(page, "haddad", "Farah Haddad");
+  await page.waitForSelector("#mirror-candidate");
+  assert.match(await text(page, "#mirror-candidate"), /Not linked/);
+  assert.equal(await page.isDisabled("#sync-now"), true, "no Sync now without a linked cloud user");
+  assert.match(await page.getAttribute("#sync-now", "title"), /no linked cloud user/);
+  await showCloudCard(page);
+  await shot(page, "29-m365-possible-match");
+
+  log("Microsoft 365: the Sync page");
+  await page.click('#nav-main [data-page="sync"]');
+  await page.waitForSelector("#sync-health .cloud-facts");
+  assert.match(await text(page, "#sync-health"), /srv-entra01\.lab\.example[\s\S]*2\.6\.92\.0[\s\S]*current/);
+  assert.match(await text(page, "#sync-connection"), /ztg\.tech@contoso-labs\.example/);
+  await shot(page, "30-sync-page");
+  await page.click("#sync-refresh");
+  await page.waitForSelector("#sync-health .cloud-facts");
+
   log("Tier 0: read-only page and a refused plan");
   await openFromSearch(page, "riley", "Admin Riley Chen");
   await page.waitForSelector("#tier0-note");
   assert.equal(await page.locator("#object .f-value.editable").count(), 0, "Tier 0 fields are read-only");
   assert.equal(await page.locator("#object .obj-actions").count(), 0, "no actions on a Tier 0 page");
+  await page.waitForSelector("#card-cloud #sync-now");
+  assert.equal(await page.isDisabled("#sync-now"), true, "no Sync now for a Tier 0 object");
   await shot(page, "10-tier0-page");
   await page.check('#rows tr:has(.name:text-is("Admin Riley Chen")) input[type=checkbox]');
   await page.waitForSelector("#bulk:not([hidden])");
@@ -388,6 +464,16 @@ async function setupScenario() {
   assert.equal(await page.isVisible("#s-ntlm-warn"), true);
   await page.uncheck("#s-ntlm");
   await page.fill("#s-notice", "Authorized use only. Activity is monitored and recorded.");
+  assert.equal(await page.isVisible("#s-syncserver-box"), false, "the sync server field waits for Connect Sync");
+  await page.fill("#s-tenant", "contoso-labs.example");
+  await page.fill("#s-client", "11111111-2222-4333-8444-555555555555");
+  await page.selectOption("#s-cloud", "commercial");
+  await page.selectOption("#s-synckind", "connect");
+  await page.waitForSelector("#s-syncserver-box:not([hidden])");
+  await page.fill("#s-syncserver", "srv-entra01.lab.example");
+  assert.match(await text(page, "#s-sync-help"), /PowerShell remoting/);
+  await page.locator("#s-tenant").scrollIntoViewIfNeeded();
+  await shot(page, "21b-setup-microsoft-365");
   await shot(page, "21-setup-password-only");
   await page.click("#setup-btn");
   await page.waitForSelector("#signin:not([hidden])");
@@ -397,7 +483,10 @@ async function setupScenario() {
   await signIn(page, "LAB\\ztg.tech");
   assert.equal(await page.isVisible("#demo-badge"), false);
   assert.equal(await page.isVisible("#mfa-chip"), true);
+  await page.waitForFunction(() => document.querySelector("#cloud-chip")?.textContent === "Connect Microsoft 365");
   await openFromSearch(page, "okafor", "Bea Okafor");
+  await page.waitForSelector("#card-cloud #mirror-connect");
+  assert.match(await text(page, "#card-cloud"), /not signed in to it/);
   await shot(page, "23-live-light-object");
   assert.deepEqual(page.problems, [], "page problems");
   await page.close();

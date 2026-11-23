@@ -110,3 +110,12 @@ func TestDemoSyncerClearsDifferences(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestDemoSyncerNextCycleIsInTheFuture(t *testing.T) {
+	dir := NewDirectory()
+	s := NewSyncer(dir, NewTenant(dir))
+	h, err := s.Health(context.Background())
+	if err != nil || h.NextCycle == nil || !h.NextCycle.After(time.Now()) {
+		t.Fatalf("next cycle should be after the wall clock: %+v %v", h.NextCycle, err)
+	}
+}
