@@ -121,6 +121,12 @@ that sign-in is not kept. Permissions are added only for the features the custom
 | Cloud-only groups | `GroupMember.ReadWrite.All` | |
 | Devices (retire or wipe company data) | Intune managed device permissions (to confirm in D5) | |
 | Mailboxes | Office 365 Exchange Online `Exchange.ManageAsApp` | Exchange Recipient Administrator, or a custom role group with a write scope limited to the customer's user mailboxes (recommended) |
+| Proposed: cloud sign-in activity, sign-in failures for lockouts, MFA registration (runbook R63, R103, R104) | `AuditLog.Read.All` (licensing to confirm in D2) | |
+| Proposed: risk level (R103) | `IdentityRiskyUser.Read.All` (Entra ID P2) | |
+| Proposed: Entra role check for leavers (R86) | `RoleManagement.Read.Directory` | |
+| Proposed: app consents in the leaver snapshot (R87) | `DelegatedPermissionGrant.Read.All` and a read of app role assignments (least privileged permissions to confirm in D4) | |
+| Proposed: urgent leaver (R89) | `GroupMember.ReadWrite.All` (as cloud-only groups), `Policy.Read.All` to confirm the customer's policy exists (question Q11) | |
+| Proposed, off by default: OneDrive handover and sharing links (R84, R85) | `Sites.FullControl.All` (question Q12) | |
 
 ### 6.3 The certificate
 
@@ -276,3 +282,10 @@ and belong in the customer's SSP.
 | Q7 | Certificate storage: accept a CSP certificate in the service account's store (required by Exchange Online), with yearly rotation from the console? | Yes; revisit if Exchange Online accepts CNG or TPM keys later |
 | Q8 | Test estate: who provides the test domain, tenants and hybrid Exchange lab? | Needed before D2 |
 | Q9 | Release workflow timing: repository rule 1 asks for `release-<tool>.yml`; there is nothing to release before D2 | Add `release-directory.yml` in D7 with the first package |
+| Q10 | The November 2026 feature review (research 8) added runbook ideas R47 to R117 with proposed slices. Accept them into those slices? Several are read-only and could join D1's CLI (R52, R58's AD dates, R59, R60, R61, R99) | Accept the slices as proposed; add only R59 and R60 to D1, because they are two constructed attributes on reads D1 already makes, and keep D1's exit condition otherwise unchanged |
+| Q11 | Urgent leaver (R89): may the tool rely on a customer-owned Conditional Access policy that blocks a cloud-only group, and add leavers to that group? The group cannot be role-assignable (the app would then need `RoleManagement.ReadWrite.Directory`), so anyone with group rights could also block users | Yes, as an opt-in feature: the risk is denial of service, not elevation; break-glass accounts are excluded from the policy |
+| Q12 | OneDrive handover and sharing links (R84, R85) need `Sites.FullControl.All`, far wider than any other permission the app holds | Off by default; a separate feature the customer switches on, otherwise a recorded manual step |
+| Q13 | Removing a leaver's app consents (R87) needs `DelegatedPermissionGrant.ReadWrite.All`, which can grant any delegated permission | List them in the snapshot; removal stays manual |
+| Q14 | Rule-based groups (R92): may an approved rule apply its additions and removals unattended within the bulk cap, or does every run wait for a person? | Every run waits for a person until D5 has run at a customer; revisit then |
+| Q15 | PSA tickets (R75, R117): direct integration would send data outside Microsoft 365 (principle 7) | Copy-ready note only (R75) in v1 |
+| Q16 | Changes made outside the tool (R98) need the DC Security logs, directory service change auditing and SACLs on the managed OUs | Yes, with the same Event Log Readers access as R30; setup shows missing audit policy and SACLs as findings and never changes them unasked |

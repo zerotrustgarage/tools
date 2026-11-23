@@ -1,6 +1,6 @@
 # ZTG Directory: research
 
-Status (October 22, 2026): research for the design in [design.md](design.md) and the workflows in
+Status (October 22, 2026; section 8 added November 23, 2026): research for the design in [design.md](design.md) and the workflows in
 [runbook.md](runbook.md). Facts are cited; statements marked "assessment" are ZTG's reading and should be
 rechecked against the product before they are repeated to a client. Vendor pages are marketing and are marked
 as such.
@@ -182,3 +182,74 @@ a customer.
 | CM.L2-3.4.3 Track and review changes | L2 | Plans and records are reviewable and exportable |
 | PS.L2-3.9.2 Personnel actions | L2 | The leaver workflow: defined process [a], consistent execution [b], protection after transfer [c] ([NDISAC](https://ndisac.org/dibscc/cyberassist/cybersecurity-maturity-model-certification/level-2/ps-l2-3-9-2/)); the control sets no fixed time limit, the organization defines it |
 | SC.L2-3.13.8 Transmission confidentiality | L2 | Signed and sealed LDAP or LDAPS; TLS to Microsoft 365 |
+
+## 8. Feature review (November 2026)
+
+Status (November 23, 2026): a review of comparable tools for features that make everyday administration easier
+(search, viewing, adding and changing users, sync status, creation data and reports) and for gaps in the
+workflows. The resulting ideas are R47 to R117 in [runbook.md](runbook.md); the owner's decisions are Q10 to Q16
+in [design.md](design.md). Product capabilities below are vendor claims unless the source is Microsoft or NIST.
+
+### 8.1 Products reviewed
+
+| Product | Ideas taken | Source |
+| --- | --- | --- |
+| ManageEngine ADManager Plus | Point-in-time rollback of AD and Entra objects (October 2025), access certification campaigns, rule-based dynamic groups (June 2025); just-in-time access listed as in development (R74, R91, R92, R27) | [Vendor](https://www.manageengine.com/products/ad-manager/admanagerplus-latest-features.html), [vendor](https://www.manageengine.com/products/ad-manager/identity-governance-administration/access-certification.html) |
+| ManageEngine ADAudit Plus | A lockout analyzer that names the cause: service, scheduled task, mapped drive, phone (R104) | [Vendor](https://www.manageengine.com/products/active-directory-audit/windows-ad-user-account-lockout-analyzer.html) |
+| Cayosoft Administrator and Guardian | Attribute-level rollback across AD and Entra; an audit trail with before and after values; license optimization (R98, R112). Its Entra rollback requires Global Administrator, which this design rejects | [Vendor](https://support.cayosoft.com/hc/en-us/articles/46551875654413-Rolling-back-changes) |
+| Semperis Directory Services Protector | Tracks AD changes even when security logging is off; Auto Undo rules (R98; automatic undo rejected) | [Vendor](https://www.semperis.com/blog/how-to-undo-risky-changes-in-active-directory/) |
+| Softerra Adaxes | Property patterns that enforce formats and generate values; business rules; approval on scheduled task operations (R78) | [Vendor](https://www.adaxes.com/info/features), [vendor](https://adaxes.com/active-directory_approval.htm) |
+| One Identity Active Roles | Temporal group membership with start and end times; rule-based dynamic groups (R27, R92) | [Vendor](https://support.oneidentity.com/technical-documents/active-roles/8.1.5/administration-guide/5) |
+| Netwrix Directory Manager | Smart Groups from LDAP queries; group expiry with owner attestation and its history (R91, R92) | [Vendor](https://docs-dev.netwrix.com/docs/directorymanager/11_1/portal/group/workingwithgroups/attestation) |
+| tenfold | Data owners recertify access on an interval (R91) | [Vendor](https://www.tenfold-security.com/en/re-certification-access-rights/) |
+| CIPP (open source, Microsoft 365 only) | Offboarding options: inbox rules, the leaver's mailbox and calendar permissions elsewhere, cancel meetings, OneDrive access, sharing links, admin roles, account-only mobile wipe; scheduled offboarding with a result for each step (R81 to R88) | [CIPP documentation](https://docs.cipp.app/user-documentation/identity/administration/offboarding-wizard) |
+| Easy365Manager | Microsoft 365 tabs inside ADUC: licenses, proxy addresses, mailbox delegation; confirms the mirror pane idea (R70) | [Listing](https://www.sourceforge.net/software/product/Easy365Manager) |
+| Specops Password Auditor, PingCastle | Password and posture audits; Specops compares password hashes, which needs replication rights (rejected; R100 instead) | [Vendor](https://specopssoft.com/product/specops-password-auditor/), [releases](https://github.com/netwrix/pingcastle/releases) |
+| Microsoft Entra Lifecycle Workflows | Cloud joiner, mover and leaver tasks triggered by `employeeHireDate` and `employeeLeaveDateTime`; needs Entra ID Governance licenses (R116) | [Learn](https://learn.microsoft.com/entra/id-governance/what-are-lifecycle-workflows) |
+
+What not to take (assessment): AI assistants that send requests and directory data to a model service, automatic
+undo, owner self-service portals, and audits that need Tier 0 rights (runbook section 10).
+
+### 8.2 Directory and Graph facts behind the new ideas
+
+- `msDS-ReplAttributeMetaData` and `msDS-ReplValueMetaData` are system-set attributes holding replication
+  metadata for each attribute and each linked value ([attribute](https://learn.microsoft.com/en-us/windows/win32/adschema/a-msds-replattributemetadata),
+  [value](https://learn.microsoft.com/en-us/windows/win32/adschema/a-msds-replvaluemetadata)). They name the
+  originating DC and the time, not the person (runbook R59, R60). Value metadata exists only for values written
+  after the forest used linked value replication, and whether an ordinary technician can read both attributes is
+  to confirm in D1 (assessment).
+- AD keeps no creator attribute for users; `mS-DS-CreatorSID` is set only on computers joined through the
+  machine account quota (assessment). Event 4720 on the DC that created the user is the native source while the
+  log holds it (R58).
+- `uSNChanged` is local to each DC, so change watermarks are kept per DC and reset when the DC's `invocationId`
+  changes after a restore (assessment, R98). Event 5136 records the old and new values of a directory change only
+  when "Audit Directory Service Changes" is enabled and the object's SACL audits the write (assessment, to confirm
+  in D6).
+- Graph `signInActivity.lastSuccessfulSignInDateTime` is the last successful interactive or non-interactive
+  sign-in, recorded since December 1, 2023 and not backfilled; `lastSignInDateTime` also counts failed attempts
+  ([Graph](https://learn.microsoft.com/en-us/graph/api/resources/signinactivity?view=graph-rest-1.0)). The
+  permission and licensing are to confirm in D2 (R63, R111).
+- For a synced user, `accountEnabled` is mastered in AD, so a cloud block waits for a sync cycle (assessment,
+  design 3 principle 6). R89 blocks through Conditional Access instead.
+
+### 8.3 Dates and requirements
+
+- Kerberos RC4: Microsoft said in December 2025 that by mid-2026 domain controllers would stop assuming RC4 for
+  accounts without explicit encryption types ([Windows Server blog](https://www.microsoft.com/windows-server/blog/2025/12/03/beyond-rc4-for-windows-authentication/)).
+  Reported phases: audit events from the January 13, 2026 updates
+  ([Tech Community](https://techcommunity.microsoft.com/t5/core-infrastructure-and-security/what-changed-in-rc4-with-the-january-2026-windows-update-and-why/ba-p/4504732)),
+  enforcement with manual rollback from April 2026
+  ([Tech Community](https://techcommunity.microsoft.com/discussions/windowsserver/phase-2-of-kerberos-rc4-hardening-begins-with-the-april-2026-windows-security-up/4511702)),
+  and final enforcement from the July 2026 update (secondary reporting; confirm against Microsoft's support
+  article before quoting it to a client). Accounts with `msDS-SupportedEncryptionTypes` set explicitly are not
+  affected by the default change (R99).
+- Entra Password Protection: the DC agent must run on every writable DC for consistent enforcement, and Audit
+  mode only logs ([Learn](https://learn.microsoft.com/entra/identity/authentication/howto-password-ban-bad-on-premises-deploy)).
+  The CIS Microsoft 365 benchmark expects Enforced
+  ([CIS item](https://tenable.com/audits/items/CIS_Microsoft_365_v3.1.0_E3_Level_1.audit:2d5238e32cdd07e999d8601478386d85)).
+  Licensing differs between the global and custom banned lists; confirm on Microsoft's licensing page (R100).
+- NIST SP 800-171 Rev 3 requirement 03.01.05 makes the frequency of privilege review an organization-defined
+  parameter ([NIST SP 800-171r3](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-171r3.pdf),
+  [summary](https://csf.tools/reference/nist-sp-800-171/r3-0/03-01/03-01-05/)). The Rev 2 assessment objectives
+  for 3.1.5 do not name a periodic review, although assessors commonly ask for one (assessment). The wording of
+  03.01.01 on account review was not confirmed; check the primary text before quoting it (R91).
