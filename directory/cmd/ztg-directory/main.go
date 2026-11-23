@@ -1,4 +1,6 @@
-// ztg-directory is a read-only command line client for Active Directory.
+// ztg-directory is the command line client for ZTG Directory: lookups as the
+// current Windows identity, and changes after an AD sign-in through the same
+// plans, rights checks and change records as the desktop console.
 package main
 
 import (
@@ -57,6 +59,9 @@ func run(ctx context.Context, args []string, out, errOut io.Writer, open clientF
 	case "search", "object", "groups", "last-logon":
 		return runDirectoryCommand(ctx, command, args, out, errOut, open)
 	default:
+		if manageCommands[command] {
+			return runManage(command, args, out, errOut)
+		}
 		return fmt.Errorf("unknown command %q; run 'ztg-directory help' for usage", command)
 	}
 }
@@ -270,18 +275,31 @@ func writeLastLogon(out io.Writer, result ad.LastLogonResult) error {
 }
 
 func usage(out io.Writer) {
-	fmt.Fprintln(out, `ztg-directory: read-only Active Directory lookups
+	fmt.Fprintln(out, `ztg-directory: Active Directory lookups and changes
 
 Usage:
   ztg-directory search --server HOST --base-dn DN --query TEXT [--limit N] [--ldaps] [--timeout DURATION] [--json]
   ztg-directory object --server HOST --base-dn DN [--ldaps] [--timeout DURATION] [--json] DISTINGUISHED_NAME
   ztg-directory groups --server HOST --base-dn DN [--ldaps] [--timeout DURATION] [--json] DISTINGUISHED_NAME
   ztg-directory last-logon --server HOST --base-dn DN [--ldaps] [--timeout DURATION] [--json] DISTINGUISHED_NAME
+
+Changes (sign in as an AD account; each shows its plan and asks for typed confirmation; flags come before the
+arguments; add --demo to try them on the in-memory lab.example directory):
+  ztg-directory set --user ACCOUNT [--ticket T] DN ATTRIBUTE VALUE [VALUE...]
+  ztg-directory clear --user ACCOUNT DN ATTRIBUTE
+  ztg-directory enable|disable|unlock|delete --user ACCOUNT DN
+  ztg-directory reset-password --user ACCOUNT [--no-must-change] DN
+  ztg-directory expires --user ACCOUNT --date YYYY-MM-DD DN
+  ztg-directory move --user ACCOUNT --to OU DN
+  ztg-directory rename --user ACCOUNT --name NEW DN
+  ztg-directory add-member|remove-member --user ACCOUNT GROUP_DN MEMBER_DN
+  ztg-directory new --user ACCOUNT --template NAME --field attribute=value ...
+  ztg-directory templates | records [--text T] [--days N] | verify-records
   ztg-directory check-updates [--json]
   ztg-directory version
   ztg-directory help
 
-LDAP uses the current Windows identity. This command does not accept credentials or perform writes.`)
+Lookups use the current Windows identity. Changes ask for the password at a console prompt; it is never accepted as a flag.`)
 	fmt.Fprintln(out, "Group results reflect the memberships returned by this lookup and do not describe all access granted by ACLs.")
 	fmt.Fprintln(out, "Last logon is queried from the selected DC; AD's non-replicated lastLogon value can be incomplete across DCs.")
 }
