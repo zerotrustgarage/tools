@@ -3,8 +3,10 @@
 ZTG Directory: installed at one customer, inside that customer's network, it manages on-premises Active
 Directory and the Microsoft 365 side of the same hybrid identity. A console with a Microsoft 365 mirror pane and
 **Sync now** on every object, onboarding and offboarding workflows, and a Windows service that runs approved and
-scheduled workflows. Status: D1 in development; the read-only engine and CLI are implemented, with live
-Samba and Windows DC validation pending. Repository-wide conventions (one folder per tool,
+scheduled workflows. Status: D1 and D2 in development; the engine signs in as an AD account and writes
+through plans and change records (engine/plan, apply, record, template, auth), the console service runs in demo,
+setup and live modes, and the CLI has change commands. Nothing has run against a domain controller yet
+(docs/validation.md lists the D1 and D2 lab checks). Repository-wide conventions (one folder per tool,
 GitHub-hosted runners, actions pinned by SHA, dependencies public for at least 14 days, explicit update checks)
 are in the root `CLAUDE.md`.
 
