@@ -334,8 +334,11 @@ func serveLDAPFixture(listener net.Listener, accepted chan<- net.Conn, respond f
 				return fmt.Errorf("unexpected LDAP write operation tag %#x", operationTag)
 			}
 			result := write(ldapWriteRequest{tag: operationTag, operation: operation, message: message})
-			// Each response tag is its request tag plus one.
-			if err := writeLDAPMessage(conn, ldapMessage(id, ldapResult(operationTag+1, result))); err != nil {
+			// RFC 4511 response tags. DelRequest is a primitive [APPLICATION 10]
+			// (0x4a) but DelResponse is a constructed [APPLICATION 11] (0x6b), so
+			// "request tag plus one" holds for the others but not for delete.
+			responseTag := map[byte]byte{0x66: 0x67, 0x68: 0x69, 0x4a: 0x6b, 0x6c: 0x6d}[operationTag]
+			if err := writeLDAPMessage(conn, ldapMessage(id, ldapResult(responseTag, result))); err != nil {
 				return err
 			}
 		default:
