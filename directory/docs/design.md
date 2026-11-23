@@ -5,11 +5,30 @@ building. The initial read-only engine and CLI use the recommended Go/no-cgo sta
 open. Owner decisions of November 23, 2026: AD writes are the next slice (D2, section 12), and the tool runs either
 installed on a domain controller or other server, or from a technician's workstation like RSAT tools (section 4).
 The app requires a sign-in with an AD account checked by a DC, and acts with that account's rights (section 6.5).
+
+Build status (November 23, 2026), slice D2 in development ahead of the D1 lab evidence at the owner's request: the
+engine has AD writes as the signed-in account (Windows LDAP), the plan, apply, change record and template engines,
+the sign-in package (Kerberos-only bind check, roles, Duo and RADIUS, credential prompt, DPAPI), the console
+service with demo, setup and live modes, and CLI change commands. The desktop console is being built. Nothing has
+yet run against a real domain controller; [validation.md](validation.md) lists what the D2 lab must prove. Open
+items found while building:
+
+- The session credential is held in process memory and wiped on sign-out, lock replacement and expiry, but is not
+  yet encrypted with `CryptProtectMemory` between uses as section 6.5 step 7 requires.
+- Duo Authentication Proxy's default `failmode` is "safe", which lets a sign-in through when Duo cannot be reached;
+  customers using Duo for IA.L2-3.5.3 should set `failmode = secure` on the proxy section the app uses.
+- With an explicit credential the Windows LDAP client's automatic reconnect is off, so a dropped connection needs a
+  new sign-in.
 Unresolved decisions in section 14 remain open for their relevant slices; each slice is reviewed before the next
 begins, as for ZTG TFTP. See [validation.md](validation.md) for current limits. The ideas behind each feature
 are in [runbook.md](runbook.md) and the facts in [research.md](research.md).
 
 ## 1. Purpose
+
+The core of the service (owner, November 23, 2026): replace Active Directory Users and Computers with something
+more powerful, more intuitive and faster, and richer than ADUC for hybrid environments. Search comes first, one
+object page replaces ADUC's tabbed property dialogs, every change is planned and recorded, and the Microsoft 365
+side of each object sits beside the AD side.
 
 ZTG Directory manages a customer's on-premises Active Directory and the Microsoft 365 side of the same hybrid
 identity from one application installed inside that customer's network. A technician opens an AD user and sees
