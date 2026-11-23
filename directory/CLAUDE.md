@@ -3,8 +3,10 @@
 ZTG Directory: installed at one customer, inside that customer's network, it manages on-premises Active
 Directory and the Microsoft 365 side of the same hybrid identity. A console with a Microsoft 365 mirror pane and
 **Sync now** on every object, onboarding and offboarding workflows, and a Windows service that runs approved and
-scheduled workflows. Status: D1 in development; the read-only engine and CLI are implemented, with live
-Samba and Windows DC validation pending. Repository-wide conventions (one folder per tool,
+scheduled workflows. Status: D1 and D2 in development; the engine signs in as an AD account and writes
+through plans and change records (engine/plan, apply, record, template, auth), the console service runs in demo,
+setup and live modes, and the CLI has change commands. Nothing has run against a domain controller yet
+(docs/validation.md lists the D1 and D2 lab checks). Repository-wide conventions (one folder per tool,
 GitHub-hosted runners, actions pinned by SHA, dependencies public for at least 14 days, explicit update checks)
 are in the root `CLAUDE.md`.
 
@@ -13,10 +15,12 @@ Read `docs/design.md` before building anything here, `docs/runbook.md` for the w
 
 1. Plan before apply: every change is computed, shown and confirmed or approved before anything is written;
    findings are never remediated automatically.
-2. Narrow identities: interactive edits as the technician; workflow steps as the service's gMSA with rights
-   delegated only on the managed OUs and groups; cloud steps as the customer's single-tenant app registration
-   with only the permissions of enabled features. Never Domain Admin or Global Administrator, no client secrets,
-   no stored passwords, nothing secret accepted as a command-line flag.
+2. Narrow identities: everyone signs in to the app with their own AD account, checked by a DC, by the customer's
+   method (design 6.5), and interactive edits run as that account; workflow steps as the service's gMSA, never
+   beyond the requester's own rights, with rights delegated only on the managed OUs and groups; cloud steps as
+   the customer's single-tenant app registration with only the permissions of enabled features. Never Domain
+   Admin or Global Administrator, no client secrets, no stored passwords (the optional RADIUS shared secret is
+   the one stored secret, DPAPI-protected), nothing secret accepted as a command-line flag.
 3. LDAP is signed and sealed (Negotiate through `wldap32.dll`) or carried over LDAPS, also on a DC.
 4. Tier 0 objects are outside every workflow; bulk plans are capped.
 5. Every change record names the requester, approver and technician, even when the gMSA or the app wrote.
@@ -27,8 +31,10 @@ Read `docs/design.md` before building anything here, `docs/runbook.md` for the w
 Directory and tenant data are untrusted input in the console: insert them with `textContent` only, as in Scanner.
 Exchange cmdlets run from a fixed script with parameters passed as JSON, never spliced into command text.
 Dependencies: standard library first; justify each new one in the commit message. Writing style: no em dashes.
-Slices D1 to D7 are built one at a time, each reviewed before the next starts. `release-directory.yml` arrives
-with the first package in D7 (design question Q9).
+Slices D1 to D8 are built one at a time, each reviewed before the next starts. `release-directory.yml` arrives
+with the first package in D8 (design question Q9). AD writes are D2, right after D1
+(owner decision, November 23, 2026). The tool runs installed on a DC or other server, or from a technician's
+workstation like RSAT tools, as that technician (design 4).
 
 ## Checks
 

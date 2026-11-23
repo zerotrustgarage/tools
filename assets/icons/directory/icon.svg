@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 64 64" role="img" aria-label="ZTG Directory">
+  <title>ZTG Directory: directory tree and ZTG cursor</title>
+  <g fill="none" stroke="#64748b" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="17" y="6" width="18" height="13" rx="3"/>
+    <path d="M26 19v8M13 35v-8h26v8"/>
+    <rect x="5" y="35" width="16" height="13" rx="3"/>
+  </g>
+  <rect x="31" y="35" width="16" height="13" rx="3" fill="none" stroke="#00FF41" stroke-width="4.5" stroke-linejoin="round"/>
+  <path d="M55 38h3.5v18.25H55Z" fill="#00FF41"/>
+</svg>

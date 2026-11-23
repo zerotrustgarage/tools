@@ -130,12 +130,16 @@ dnsmasq, Open TFTP Server, their CVE history and the gaps across them) is in
 D1 is in development: a read-only Windows LDAP engine and CLI, portable fake tests and path-filtered CI.
 Live Samba and Windows Server 2025 acceptance remains open (`directory/docs/validation.md`).
 The workflows and ideas, with priorities and slices, are in `directory/docs/runbook.md`;
-slices D1 to D7 and the owner's open questions (Q1 to Q9) are in `directory/docs/design.md`.
+slices D1 to D8 and the owner's open questions (Q1 to Q16) are in `directory/docs/design.md`.
 
 | # | Item | Priority | Status |
 | --- | --- | --- | --- |
 | DR1 | Owner decisions Q1 to Q9 (host, stack, Exchange Online method, approvals, console location, RADIUS, certificate storage, test estate, release timing) | High | Open |
 | DR2 | D1, read-only engine and CLI with signed and sealed LDAP | High | In development; live lab validation pending |
+| DR6 | D2, AD changes as the signed-in account: sign-in (Kerberos-only bind check, roles, Duo and RADIUS, credential prompt, encrypted session credential), Windows LDAP writes, plans with rights preview, Tier 0 fence and bulk cap, apply with verification, hash-chained change records, templates, console service with demo, setup and live modes, CLI change commands | High | Engine, console service and CLI built and tested on Linux and in Windows unit tests; desktop window in progress; DC lab checks pending (`directory/docs/validation.md`) |
+| DR4 | Owner decisions (November 23, 2026): AD writes are the next slice (D2, AD changes as the technician), Microsoft 365 moves to D3 and later slices to D4 to D8; the tool runs installed on a DC or other server, or from a technician's workstation like RSAT tools with their own delegated rights; new questions Q17 (Microsoft 365 sign-in from a workstation) and Q18 (workstation change records) | High | Design updated; D2 starts after the D1 lab evidence is reviewed |
+| DR5 | Owner decision (November 23, 2026): the app requires a sign-in with an AD account checked by a DC, by the customer's method (Kerberos, smart card, RADIUS second factor), and acts with that account's rights; roles from AD groups, idle lock, sign-in records (design 6.5, runbook R120 to R128); Q19 to Q21 answered (scheduled work in the service; every step gated by the requester's own rights; MFA from what the customer runs, chiefly Duo through its Authentication Proxy); Q22 open | High | Design updated; built in D2 and D6 |
+| DR3 | Feature review (November 2026, `directory/docs/research.md` section 8): runbook ideas R47 to R117 for search, the object page (lifecycle timeline, attribute and membership history), editing and bulk changes, onboarding, offboarding gaps, urgent leavers, access reviews, sync status, hygiene (changes made outside the tool, Kerberos RC4 readiness, Entra Password Protection) and reports; owner decisions Q10 to Q16 | High | Proposed; awaiting owner review |
 
 ## 7. Questions answered
 

@@ -10,9 +10,29 @@ import (
 	"unsafe"
 )
 
-func TestOpenRejectsMissingSettingsBeforeBinding(t *testing.T) {
-	if _, err := Open(context.Background(), Config{}); err == nil {
-		t.Fatal("Open accepted an empty config")
+// An empty Config is valid on Windows (DC locator and rootDSE), so these
+// configurations are rejected before the locator or any network call.
+func TestOpenRejectsInvalidSettingsBeforeBinding(t *testing.T) {
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	for name, tc := range map[string]struct {
+		ctx context.Context
+		cfg Config
+	}{
+		"negative timeout": {context.Background(), Config{Timeout: -1}},
+		"empty user":       {context.Background(), Config{Credential: &Credential{Password: []byte("x")}}},
+		"empty password":   {context.Background(), Config{Credential: &Credential{User: "alex", Domain: "EXAMPLE"}}},
+		"canceled context": {canceled, Config{}},
+		"writer, no user":  {context.Background(), Config{Credential: &Credential{}}},
+		"writer, canceled": {canceled, Config{Server: "dc.invalid"}},
+	} {
+		open := Open
+		if name == "writer, no user" || name == "writer, canceled" {
+			open = func(ctx context.Context, cfg Config) (Client, error) { return OpenWriter(ctx, cfg) }
+		}
+		if c, err := open(tc.ctx, tc.cfg); err == nil || c != nil {
+			t.Errorf("%s: Open accepted the config", name)
+		}
 	}
 }
 
@@ -25,7 +45,8 @@ func TestSystemLDAPEntryPoints(t *testing.T) {
 	for _, proc := range []*syscall.LazyProc{ldapInit, ldapSetOption, ldapBind,
 		ldapConnect, ldapSearch, ldapFirstEntry, ldapNextEntry, ldapGetDN,
 		ldapGetValues, ldapGetValuesLen, ldapValuesFree, ldapValuesFreeLen,
-		ldapMemFree, ldapMsgFree, ldapUnbind, ldapFirstAttribute, ldapNextAttribute, berFree} {
+		ldapMemFree, ldapMsgFree, ldapUnbind, ldapFirstAttribute, ldapNextAttribute, berFree,
+		ldapGetOption, ldapAdd, ldapModify, ldapDelete, ldapRename} {
 		if err := proc.Find(); err != nil {
 			t.Errorf("resolve %s: %v", proc.Name, err)
 		}

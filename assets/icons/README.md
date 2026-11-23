@@ -1,7 +1,7 @@
 # ZTG application icons
 
-Original vector glyphs for Scanner (radar), Copy (duplicate pages), TFTP (transfer arrows) and
-Readout (open book). Each carries the green cursor from the official compact ZTG wordmark in
+Original vector glyphs for Scanner (radar), Copy (duplicate pages), TFTP (transfer arrows),
+Readout (open book) and Directory (directory tree). Each carries the green cursor from the official compact ZTG wordmark in
 `zerotrustgarage/ztg`, `public/brand/zero-trust-garage-ztg-white-green.svg`. The main cursor keeps
 the wordmark's 28:146 aspect ratio. Small variants widen it to survive Windows display scaling.
 The glyphs use `dim2` (`#64748b`) and `acc` (`#00FF41`) from the canonical `design-tokens.json`.
@@ -17,7 +17,8 @@ There is no background tile, black border, baked-in shadow or font dependency.
 Scanner's EXEs and MSI share `scanner/installer/icon.ico`; Readout's Tauri EXE, NSIS installer,
 MSI, file associations and shortcuts use `readout/src-tauri/icons/`. Both browser favicons are
 updated too. TFTP now uses its transfer-arrow ICO in both executables and the MSI, plus its
-small PNG in the desktop frontend. Copy is at RC0; its desktop and installer consumers remain
+small PNG in the desktop frontend. Directory's console and CLI embed `directory/icon.ico` and its frontend
+uses the 32 pixel PNG as `directory/app/frontend/favicon.png`. Copy is at RC0; its desktop and installer consumers remain
 future work. None of these applications currently
 implements a notification-area menu; providing tray assets does not introduce background behavior.
 
@@ -26,6 +27,8 @@ checks (`playwright@1.56.1`). No new build or shipping dependency is added:
 
 ```sh
 NODE_PATH=$(npm root --global) node scripts/icons/build.mjs
+# Export only some tools, leaving the other committed exports untouched:
+NODE_PATH=$(npm root --global) node scripts/icons/build.mjs directory
 # To use an installed Chromium instead of Playwright's browser:
 NODE_PATH=$(npm root --global) CHROMIUM=/usr/bin/chromium node scripts/icons/build.mjs
 node scripts/ci/check-icons.mjs

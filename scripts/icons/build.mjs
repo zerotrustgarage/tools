@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Export original SVG masters to transparent PNGs and Windows multi-resolution ICOs.
 // Uses the same optional Playwright installation as scanner/app/uitest; no shipping dependency.
+// Name tools as arguments to export only those (node scripts/icons/build.mjs directory).
 import { createRequire } from 'node:module';
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +11,7 @@ const root = new URL('../../', import.meta.url);
 const sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256];
 const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
 const save = (path, data) => writeFile(new URL(path, root), data);
+const only = process.argv.slice(2);
 
 function ico(frames) {
   const header = Buffer.alloc(6 + frames.length * 16);
@@ -29,7 +31,8 @@ function ico(frames) {
 }
 
 try {
-  for (const name of ['scanner', 'copy', 'tftp', 'readout']) {
+  for (const name of ['scanner', 'copy', 'tftp', 'readout', 'directory']) {
+    if (only.length && !only.includes(name)) continue;
     const dir = `assets/icons/${name}`;
     const page = await browser.newPage({ deviceScaleFactor: 1 });
     const frames = new Map();
@@ -53,6 +56,7 @@ try {
       await save('tftp/installer/icon.ico', ico(sizes.map(size => frames.get(size))));
       await save('tftp/app/frontend/favicon.png', frames.get(32).png);
     }
+    if (name === 'directory') await save('directory/app/frontend/favicon.png', frames.get(32).png);
     if (name === 'readout') {
       for (const [file, size] of Object.entries({ '32x32': 32, '64x64': 64, '128x128': 128, '128x128@2x': 256, icon: 512 }))
         await save(`readout/src-tauri/icons/${file}.png`, frames.get(size).png);

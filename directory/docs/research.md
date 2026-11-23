@@ -1,6 +1,6 @@
 # ZTG Directory: research
 
-Status (October 22, 2026): research for the design in [design.md](design.md) and the workflows in
+Status (October 22, 2026; section 8 added November 23, 2026): research for the design in [design.md](design.md) and the workflows in
 [runbook.md](runbook.md). Facts are cited; statements marked "assessment" are ZTG's reading and should be
 rechecked against the product before they are repeated to a client. Vendor pages are marketing and are marked
 as such.
@@ -76,7 +76,7 @@ delegated only on the OUs it manages (design 6).
   ([existing tenant](https://learn.microsoft.com/en-us/entra/identity/hybrid/connect/how-to-connect-install-existing-tenant)).
   `onPremisesSecurityIdentifier` (the AD `objectSid`) is a second key. Filtering on these properties may need
   Graph advanced query headers (`ConsistencyLevel: eventual`, `$count`) ([advanced queries](https://learn.microsoft.com/en-us/graph/aad-advanced-queries));
-  to confirm per property in D2.
+  to confirm per property in D3.
 - Matching rules: soft match on UPN or primary SMTP address, hard match on sourceAnchor. Since July 1, 2026 a
   hard match is blocked when the cloud account already has `onPremisesObjectIdentifier`, or holds or is
   eligible for a privileged role. `BlockSoftMatchEnabled` and `BlockCloudObjectTakeoverThroughHardMatchEnabled`
@@ -96,7 +96,7 @@ delegated only on the OUs it manages (design 6).
 | Revoke sessions | `POST /users/{id}/revokeSignInSessions` | `User.RevokeSessions.All` ([Graph](https://learn.microsoft.com/en-us/graph/api/user-revokesigninsessions?view=graph-rest-1.0)); takes "a few minutes" |
 | Add or remove licenses | `POST /users/{id}/assignLicense` | `LicenseAssignment.ReadWrite.All` ([Graph](https://learn.microsoft.com/en-us/graph/api/user-assignlicense?view=graph-rest-1.0)) |
 | Provision one object now (Cloud Sync) | `provisionOnDemand` | `Application.ReadWrite.OwnedBy` or `Synchronization.ReadWrite.All` (section 3) |
-| Read users, licenses, sync state | `GET /users`, `/subscribedSkus`, `/organization` | `User.Read.All`, `Organization.Read.All` (assessment, to confirm per call in D2) |
+| Read users, licenses, sync state | `GET /users`, `/subscribedSkus`, `/organization` | `User.Read.All`, `Organization.Read.All` (assessment, to confirm per call in D3) |
 | Remove authentication methods | `/users/{id}/authentication/...` | `UserAuthenticationMethod.ReadWrite.All` (assessment, to confirm) |
 
   Both `revokeSignInSessions` and `assignLicense` are available in US Government L4 (GCC High) and L5 (DoD).
@@ -145,9 +145,63 @@ delegated only on the OUs it manages (design 6).
   `LDAP_OPT_ENCRYPT` is set before `ldap_bind_s`
   ([ldap_set_option](https://learn.microsoft.com/en-us/windows/win32/api/winldap/nf-winldap-ldap_set_option)).
   This works the same whether the tool runs on a DC (binding to itself) or on a member server.
+- Writing a password: a DC accepts a `unicodePwd` modify only over SSL/TLS or a SASL layer with at least
+  128-bit encryption; a connection with neither is refused
+  ([MS-ADTS 3.1.1.3.1.5.1](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/6e803168-f140-4d23-b2d3-c3a8ab5917d2)).
+  The sealed Negotiate bind (above) is such a layer; whether signing alone would pass is not relied on.
+- Rights before writing: `allowedAttributesEffective` and `allowedChildClassesEffective` are constructed
+  attributes that list, for the identity reading them, the attributes it may write on an object and the classes it
+  may create under it, computed from the security descriptor
+  ([allowedAttributesEffective](https://learn.microsoft.com/en-us/windows/win32/adschema/a-allowedattributeseffective),
+  [allowedChildClassesEffective](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-ada1/25c49171-5980-46f2-9a99-ad718103bf47)).
+  They do not cover extended rights such as Reset Password or moves between OUs, which need the security
+  descriptor or the attempt itself (assessment, to confirm in D2).
+- Finding a DC from a workstation: `DsGetDcNameW` returns a DC for the domain, and flags request a writable DC
+  in the caller's site ([DsGetDcNameW](https://learn.microsoft.com/en-us/windows/win32/api/dsgetdc/nf-dsgetdc-dsgetdcnamew)).
+  RSAT's ADUC and the `ActiveDirectory` module are clients of the same directory; the tool needs neither, because
+  `wldap32.dll` ships with Windows (assessment).
+- Windows 10 reached end of support on October 14, 2025
+  ([lifecycle](https://learn.microsoft.com/en-us/lifecycle/products/windows-10-home-and-pro)); workstation mode
+  targets Windows 11 and Windows Server 2019 or later (design 4.2).
 - RADIUS (for example Windows NPS) answers one question, "may this user authenticate", against AD. It cannot
   read or change directory objects, so it is not a management channel (assessment, from the protocol's scope in
   RFC 2865). It could serve as an extra factor for technicians signing in to the console (design Q6).
+- Signing in with explicit credentials: `SEC_WINNT_AUTH_IDENTITY_EX` carries a user, domain and password to the
+  Negotiate package, and its `PackageList` can exclude NTLM with `!ntlm`
+  ([SSPI](https://learn.microsoft.com/windows/win32/api/sspi/ns-sspi-sec_winnt_auth_identity_exw)). Whether
+  `ldap_bind_sW` honours the extended structure, or only `SEC_WINNT_AUTH_IDENTITY`, is to confirm in D2; the
+  fallback is to acquire the SSPI credential with the package list first (assessment).
+- The Windows credential prompt returns a packed buffer; for a smart card the unpacked user name is a marshaled
+  certificate credential and the password field holds the PIN, and from Windows 10 version 1809 Windows Hello
+  credentials are packed as smart card credentials
+  ([CredUIPromptForWindowsCredentials](https://learn.microsoft.com/en-us/windows/win32/api/wincred/nf-wincred-creduipromptforwindowscredentialsa),
+  [CredPackAuthenticationBuffer](https://learn.microsoft.com/en-gb/windows/win32/api/wincred/nf-wincred-credpackauthenticationbuffera)).
+  Whether a marshaled certificate credential binds directly through `wldap32.dll` is to confirm in D2.
+- RADIUS hardening: CVE-2024-3596 (BlastRADIUS) forges responses through an MD5 collision. Microsoft's guidance
+  for NPS is to require the Message-Authenticator attribute on Access-Request packets and to drop responses
+  without it (`requireMsgAuth`); both are off by default
+  ([KB5040268](https://support.microsoft.com/help/5040268)). The app sends Message-Authenticator and rejects
+  responses without it.
+- Duo Authentication for Windows Logon adds a second factor to console, RDP and credentialed UAC logons on the
+  machine where it is installed; it does not prompt for non-interactive logons (services, scheduled tasks, drive
+  mappings) or PowerShell remoting, and installing it on a DC does not protect logons elsewhere
+  ([Duo](https://duo.com/docs/rdp), [FAQ](https://duo.com/docs/rdp-faq)). The app's LDAP bind is a network
+  logon, so Duo for Windows Logon does not cover it (assessment).
+- Duo Authentication Proxy: Duo asks RADIUS deployments to run version 6.5.1 or later; version 6.4.2 (October 21,
+  2024) added `force_message_authenticator`; the Duo-only RADIUS mode performs the second factor without primary
+  authentication ([RADIUS](https://duo.com/docs/radius), [Duo-only](https://duo.com/docs/radius-duo-only),
+  [release notes](https://duo.com/docs/authproxy-notes)). How the factor is passed (push, phone or passcode in
+  the password attribute) is to confirm in D2.
+- Requester rights in the service: `AuthzInitializeContextFromSid` builds a user's authorization context from
+  `tokenGroupsGlobalAndUniversal`; the calling account needs read access to it, for example through the Windows
+  Authorization Access Group, or the call fails with access denied
+  ([Authz](https://learn.microsoft.com/windows/win32/api/authz/nf-authz-authzinitializecontextfromsid),
+  [Learn](https://learn.microsoft.com/cs-cz/troubleshoot/windows-server/identity/apps-apis-require-access)).
+- NIST SP 800-171 Rev 2 3.5.3: "Use multifactor authentication for local and network access to privileged
+  accounts and for network access to non-privileged accounts"
+  ([SP 800-171r2](https://nvlpubs.nist.gov/nistpubs/specialpublications/nist.sp.800-171r2.pdf)). Signing in to
+  the app authenticates the account to a DC over the network, so the design treats it as network access
+  (assessment).
 
 ## 6. Security facts worth surfacing
 
@@ -182,3 +236,74 @@ a customer.
 | CM.L2-3.4.3 Track and review changes | L2 | Plans and records are reviewable and exportable |
 | PS.L2-3.9.2 Personnel actions | L2 | The leaver workflow: defined process [a], consistent execution [b], protection after transfer [c] ([NDISAC](https://ndisac.org/dibscc/cyberassist/cybersecurity-maturity-model-certification/level-2/ps-l2-3-9-2/)); the control sets no fixed time limit, the organization defines it |
 | SC.L2-3.13.8 Transmission confidentiality | L2 | Signed and sealed LDAP or LDAPS; TLS to Microsoft 365 |
+
+## 8. Feature review (November 2026)
+
+Status (November 23, 2026): a review of comparable tools for features that make everyday administration easier
+(search, viewing, adding and changing users, sync status, creation data and reports) and for gaps in the
+workflows. The resulting ideas are R47 to R117 in [runbook.md](runbook.md); the owner's decisions are Q10 to Q16
+in [design.md](design.md). Product capabilities below are vendor claims unless the source is Microsoft or NIST.
+
+### 8.1 Products reviewed
+
+| Product | Ideas taken | Source |
+| --- | --- | --- |
+| ManageEngine ADManager Plus | Point-in-time rollback of AD and Entra objects (October 2025), access certification campaigns, rule-based dynamic groups (June 2025); just-in-time access listed as in development (R74, R91, R92, R27) | [Vendor](https://www.manageengine.com/products/ad-manager/admanagerplus-latest-features.html), [vendor](https://www.manageengine.com/products/ad-manager/identity-governance-administration/access-certification.html) |
+| ManageEngine ADAudit Plus | A lockout analyzer that names the cause: service, scheduled task, mapped drive, phone (R104) | [Vendor](https://www.manageengine.com/products/active-directory-audit/windows-ad-user-account-lockout-analyzer.html) |
+| Cayosoft Administrator and Guardian | Attribute-level rollback across AD and Entra; an audit trail with before and after values; license optimization (R98, R112). Its Entra rollback requires Global Administrator, which this design rejects | [Vendor](https://support.cayosoft.com/hc/en-us/articles/46551875654413-Rolling-back-changes) |
+| Semperis Directory Services Protector | Tracks AD changes even when security logging is off; Auto Undo rules (R98; automatic undo rejected) | [Vendor](https://www.semperis.com/blog/how-to-undo-risky-changes-in-active-directory/) |
+| Softerra Adaxes | Property patterns that enforce formats and generate values; business rules; approval on scheduled task operations (R78) | [Vendor](https://www.adaxes.com/info/features), [vendor](https://adaxes.com/active-directory_approval.htm) |
+| One Identity Active Roles | Temporal group membership with start and end times; rule-based dynamic groups (R27, R92) | [Vendor](https://support.oneidentity.com/technical-documents/active-roles/8.1.5/administration-guide/5) |
+| Netwrix Directory Manager | Smart Groups from LDAP queries; group expiry with owner attestation and its history (R91, R92) | [Vendor](https://docs-dev.netwrix.com/docs/directorymanager/11_1/portal/group/workingwithgroups/attestation) |
+| tenfold | Data owners recertify access on an interval (R91) | [Vendor](https://www.tenfold-security.com/en/re-certification-access-rights/) |
+| CIPP (open source, Microsoft 365 only) | Offboarding options: inbox rules, the leaver's mailbox and calendar permissions elsewhere, cancel meetings, OneDrive access, sharing links, admin roles, account-only mobile wipe; scheduled offboarding with a result for each step (R81 to R88) | [CIPP documentation](https://docs.cipp.app/user-documentation/identity/administration/offboarding-wizard) |
+| Easy365Manager | Microsoft 365 tabs inside ADUC: licenses, proxy addresses, mailbox delegation; confirms the mirror pane idea (R70) | [Listing](https://www.sourceforge.net/software/product/Easy365Manager) |
+| Specops Password Auditor, PingCastle | Password and posture audits; Specops compares password hashes, which needs replication rights (rejected; R100 instead) | [Vendor](https://specopssoft.com/product/specops-password-auditor/), [releases](https://github.com/netwrix/pingcastle/releases) |
+| Microsoft Entra Lifecycle Workflows | Cloud joiner, mover and leaver tasks triggered by `employeeHireDate` and `employeeLeaveDateTime`; needs Entra ID Governance licenses (R116) | [Learn](https://learn.microsoft.com/entra/id-governance/what-are-lifecycle-workflows) |
+
+What not to take (assessment): AI assistants that send requests and directory data to a model service, automatic
+undo, owner self-service portals, and audits that need Tier 0 rights (runbook section 10).
+
+### 8.2 Directory and Graph facts behind the new ideas
+
+- `msDS-ReplAttributeMetaData` and `msDS-ReplValueMetaData` are system-set attributes holding replication
+  metadata for each attribute and each linked value ([attribute](https://learn.microsoft.com/en-us/windows/win32/adschema/a-msds-replattributemetadata),
+  [value](https://learn.microsoft.com/en-us/windows/win32/adschema/a-msds-replvaluemetadata)). They name the
+  originating DC and the time, not the person (runbook R59, R60). Value metadata exists only for values written
+  after the forest used linked value replication, and whether an ordinary technician can read both attributes is
+  to confirm in D1 (assessment).
+- AD keeps no creator attribute for users; `mS-DS-CreatorSID` is set only on computers joined through the
+  machine account quota (assessment). Event 4720 on the DC that created the user is the native source while the
+  log holds it (R58).
+- `uSNChanged` is local to each DC, so change watermarks are kept per DC and reset when the DC's `invocationId`
+  changes after a restore (assessment, R98). Event 5136 records the old and new values of a directory change only
+  when "Audit Directory Service Changes" is enabled and the object's SACL audits the write (assessment, to confirm
+  in D7).
+- Graph `signInActivity.lastSuccessfulSignInDateTime` is the last successful interactive or non-interactive
+  sign-in, recorded since December 1, 2023 and not backfilled; `lastSignInDateTime` also counts failed attempts
+  ([Graph](https://learn.microsoft.com/en-us/graph/api/resources/signinactivity?view=graph-rest-1.0)). The
+  permission and licensing are to confirm in D3 (R63, R111).
+- For a synced user, `accountEnabled` is mastered in AD, so a cloud block waits for a sync cycle (assessment,
+  design 3 principle 6). R89 blocks through Conditional Access instead.
+
+### 8.3 Dates and requirements
+
+- Kerberos RC4: Microsoft said in December 2025 that by mid-2026 domain controllers would stop assuming RC4 for
+  accounts without explicit encryption types ([Windows Server blog](https://www.microsoft.com/windows-server/blog/2025/12/03/beyond-rc4-for-windows-authentication/)).
+  Reported phases: audit events from the January 13, 2026 updates
+  ([Tech Community](https://techcommunity.microsoft.com/t5/core-infrastructure-and-security/what-changed-in-rc4-with-the-january-2026-windows-update-and-why/ba-p/4504732)),
+  enforcement with manual rollback from April 2026
+  ([Tech Community](https://techcommunity.microsoft.com/discussions/windowsserver/phase-2-of-kerberos-rc4-hardening-begins-with-the-april-2026-windows-security-up/4511702)),
+  and final enforcement from the July 2026 update (secondary reporting; confirm against Microsoft's support
+  article before quoting it to a client). Accounts with `msDS-SupportedEncryptionTypes` set explicitly are not
+  affected by the default change (R99).
+- Entra Password Protection: the DC agent must run on every writable DC for consistent enforcement, and Audit
+  mode only logs ([Learn](https://learn.microsoft.com/entra/identity/authentication/howto-password-ban-bad-on-premises-deploy)).
+  The CIS Microsoft 365 benchmark expects Enforced
+  ([CIS item](https://tenable.com/audits/items/CIS_Microsoft_365_v3.1.0_E3_Level_1.audit:2d5238e32cdd07e999d8601478386d85)).
+  Licensing differs between the global and custom banned lists; confirm on Microsoft's licensing page (R100).
+- NIST SP 800-171 Rev 3 requirement 03.01.05 makes the frequency of privilege review an organization-defined
+  parameter ([NIST SP 800-171r3](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-171r3.pdf),
+  [summary](https://csf.tools/reference/nist-sp-800-171/r3-0/03-01/03-01-05/)). The Rev 2 assessment objectives
+  for 3.1.5 do not name a periodic review, although assessors commonly ask for one (assessment). The wording of
+  03.01.01 on account review was not confirmed; check the primary text before quoting it (R91).

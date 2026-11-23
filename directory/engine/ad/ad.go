@@ -1,4 +1,5 @@
-// Package ad provides read-only Active Directory lookups.
+// Package ad provides Active Directory lookups (Client) and, through Writer,
+// changes made as the signed-in account.
 package ad
 
 import (
@@ -29,7 +30,7 @@ func searchLimit(limit int) int {
 }
 
 // Config selects one domain controller and the search root. Server may be a
-// host name or host:port. Credentials are always the current Windows identity.
+// host name or host:port, or empty to use the DC locator with Domain.
 // Timeout limits native network waits. Windows calls are synchronous; manual
 // cancellation is observed after the current native call returns. Negotiate
 // binding has a timeout per response roundtrip rather than a strict total limit.
@@ -38,6 +39,17 @@ type Config struct {
 	BaseDN  string
 	LDAPS   bool
 	Timeout time.Duration
+	// Domain is the DNS domain used by the DC locator when Server is empty
+	// (runbook R119).
+	Domain string
+	// Credential is the account signed in to the app (design 6.5). Nil uses
+	// the current Windows identity, which only the D1 read-only CLI does.
+	// Open copies nothing from it into logs and never retains the password
+	// beyond the bind; callers keep and Wipe the Credential.
+	Credential *Credential
+	// KerberosOnly removes NTLM from the Negotiate package list ("!ntlm"),
+	// so a bind that cannot use Kerberos fails (runbook R121).
+	KerberosOnly bool
 }
 
 // Client deliberately exposes only read operations.
@@ -54,6 +66,20 @@ type SearchRequest struct {
 	// identity fields using bounded substring matching.
 	Query string
 	Limit int
+	// Class narrows the search to users, groups, computers, contacts or
+	// containers; empty searches every class.
+	Class Class
+	// Filters are named quick filters (runbook R47), combined with AND.
+	Filters []QuickFilter
+	// CreatedAfter keeps objects created at or after this time.
+	CreatedAfter time.Time
+	// InactiveSince keeps objects whose replicated last logon is older than
+	// this time, or that never logged on.
+	InactiveSince time.Time
+	// Under limits the search to this DN, which must lie within the
+	// configured base. OneLevel returns only its direct children (OU tree).
+	Under    string
+	OneLevel bool
 }
 
 type SearchResult struct {

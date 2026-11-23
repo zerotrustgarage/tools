@@ -36,8 +36,8 @@ without a partial success result. These are read operations, not an atomic snaps
 
 ## Isolated AD lab
 
-Use a disposable domain and an ordinary delegated technician account. Run from both a member Windows server
-and the domain controller, using the current logon identity. No credential is accepted as a CLI flag.
+Use a disposable domain and an ordinary delegated technician account. Run from a member Windows server, a
+domain-joined Windows 11 workstation and the domain controller, using the current logon identity. No credential is accepted as a CLI flag.
 Use a Windows Server 2025 DC requiring LDAP signing and record its channel-binding policy. Repeat the semantic
 lookups against Samba AD from a domain-joined Windows client. The client uses Windows LDAP on both paths.
 
@@ -75,7 +75,8 @@ sanitized output. Compare results to ADUC or documented AD PowerShell queries fo
 - Inspect the account and directory after the run to confirm no object changed.
 
 This lab matrix has not been executed as part of the initial implementation. Keep D1 open until evidence is
-available; Q8's tenant and hybrid Exchange estate is separately needed before D2.
+available; D2 (AD writes) also needs a delegated, non-admin technician and a domain-joined Windows 11
+workstation in the lab, and Q8's tenant and hybrid Exchange estate is needed before D3.
 
 ## Working assumptions
 
@@ -83,3 +84,28 @@ The request to begin building is treated as authorization for D1. It does not se
 policy for later slices. The implementation follows the documented Go/no-cgo recommendation (Q2); live reads
 use the technician's existing Windows identity. No service, installer, app registration or tenant permission is
 created. Q1 and Q3 through Q9 remain decisions to confirm for their relevant slices.
+
+## D2 lab checks (AD changes as the signed-in account)
+
+D2 code exists and passes its portable and Windows unit tests, but none of it has run against a domain
+controller. In an isolated lab, with a delegated technician who is not a domain admin, on the DC and on a
+domain-joined Windows 11 workstation, confirm and record:
+
+1. Sign-in: a correct password signs in; a wrong password fails with LDAP 49 (not a client-side code) and counts
+   toward lockout; an account outside ZTG Directory Operators and Approvers is refused.
+2. Kerberos only: with `kerberosOnly` on, the bind's negotiated package reads as Kerberos; connecting by IP
+   address (which forces NTLM) is refused rather than silently using NTLM. Check behaviour over LDAPS too.
+3. Duo: with a Duo Authentication Proxy in `radius_server_duo_only` mode (6.5.1 or later,
+   `force_message_authenticator=true`, `failmode=secure`), push, phone and passcode succeed, a denied push fails,
+   and a response without Message-Authenticator is rejected.
+4. Each change type from the console and the CLI: create from a template, set and clear attributes, membership,
+   move, rename, enable, disable, unlock, password reset (sealed connection detected, change at next logon set),
+   account expiry, delete, Recycle Bin restore. Each is read back, and each appears in the change record with the
+   technician, DC and device.
+5. Rights: a change outside the technician's delegation is refused at plan time with the attribute named
+   (`allowedAttributesEffective`), and Reset Password without the extended right fails cleanly at run time.
+6. Tier 0: a plan touching a privileged account or group needs the second confirmation; the demo delegation
+   pattern (no rights on the Admins OU) is refused.
+7. Records: `verify-records` reports the chain intact; editing or deleting a line is detected.
+8. DC locator: with no server configured the console binds to a writable DC in the site and names it.
+
