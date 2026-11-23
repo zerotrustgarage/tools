@@ -192,8 +192,10 @@ only for the unattended service and arrives with it in D6.
 Initial delegated permissions (least privileged, to confirm on the test tenant): `User.Read.All` and
 `Organization.Read.All` (mirror pane, sync state, licenses), `GroupMember.Read.All` (cloud groups),
 `Device.Read.All` (registered devices), `UserAuthenticationMethod.Read.All` (sign-in method count),
-`AuditLog.Read.All` (last cloud sign-in; Entra ID P1), and `Synchronization.ReadWrite.All` only when Cloud Sync
-**Sync now** is switched on (the technician also needs the Hybrid Identity Administrator role). Endpoints follow
+`AuditLog.Read.All` (last cloud sign-in; Entra ID P1), and, only when Cloud Sync is switched on,
+`Application.Read.All` (to find the Cloud Sync service principal), `Synchronization.Read.All` (job health) and
+`Synchronization.ReadWrite.All` (**Sync now** by provisioning on demand; the technician also needs the Hybrid Identity
+Administrator role). Endpoints follow
 the customer's cloud: commercial, GCC High or DoD.
 
 Connect Sync **Sync now** runs `Start-ADSyncSyncCycle -PolicyType Delta` through PowerShell remoting to the sync
