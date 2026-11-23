@@ -182,6 +182,21 @@ delegated only on the OUs it manages (design 6).
   without it (`requireMsgAuth`); both are off by default
   ([KB5040268](https://support.microsoft.com/help/5040268)). The app sends Message-Authenticator and rejects
   responses without it.
+- Duo Authentication for Windows Logon adds a second factor to console, RDP and credentialed UAC logons on the
+  machine where it is installed; it does not prompt for non-interactive logons (services, scheduled tasks, drive
+  mappings) or PowerShell remoting, and installing it on a DC does not protect logons elsewhere
+  ([Duo](https://duo.com/docs/rdp), [FAQ](https://duo.com/docs/rdp-faq)). The app's LDAP bind is a network
+  logon, so Duo for Windows Logon does not cover it (assessment).
+- Duo Authentication Proxy: Duo asks RADIUS deployments to run version 6.5.1 or later; version 6.4.2 (October 21,
+  2024) added `force_message_authenticator`; the Duo-only RADIUS mode performs the second factor without primary
+  authentication ([RADIUS](https://duo.com/docs/radius), [Duo-only](https://duo.com/docs/radius-duo-only),
+  [release notes](https://duo.com/docs/authproxy-notes)). How the factor is passed (push, phone or passcode in
+  the password attribute) is to confirm in D2.
+- Requester rights in the service: `AuthzInitializeContextFromSid` builds a user's authorization context from
+  `tokenGroupsGlobalAndUniversal`; the calling account needs read access to it, for example through the Windows
+  Authorization Access Group, or the call fails with access denied
+  ([Authz](https://learn.microsoft.com/windows/win32/api/authz/nf-authz-authzinitializecontextfromsid),
+  [Learn](https://learn.microsoft.com/cs-cz/troubleshoot/windows-server/identity/apps-apis-require-access)).
 - NIST SP 800-171 Rev 2 3.5.3: "Use multifactor authentication for local and network access to privileged
   accounts and for network access to non-privileged accounts"
   ([SP 800-171r2](https://nvlpubs.nist.gov/nistpubs/specialpublications/nist.sp.800-171r2.pdf)). Signing in to

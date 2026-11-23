@@ -14,7 +14,8 @@ slice after D1 (D2), ahead of Microsoft 365 (now D3); later slices moved up by o
 installed on a domain controller or other server, or from a technician's workstation the way RSAT tools do, with
 the technician's own delegated rights (design 4). R118 and R119 were added for that. The app requires a sign-in
 with an AD account checked by a DC, and that account's rights and groups decide what it may do (design 6.5; R120 to
-R128).
+R129). Every workflow step, including those the service runs, is gated by the requester's own rights (Q20);
+scheduled work runs in the service (Q19); the second factor is what the customer already runs, chiefly Duo (Q21).
 
 Priority: **High** is part of the first useful release; **Medium** is clearly worth doing; **Low** waits for
 demand. Controls are CMMC 2.0 Level 2 with NIST SP 800-171 Rev 2 numbering unless marked L1.
@@ -280,12 +281,13 @@ uses on its network, and the account that signs in is the account whose rights a
 | R120 | Sign-in at every start of the console and the CLI with an AD account checked by a DC, even when Windows is already signed in; the app then acts only as that account, so a technician can keep a daily Windows account and sign in to the app with a separate administrative account | Windows credential prompt; Negotiate bind with the explicit identity, signed and sealed | AC.L2-3.1.1, AC.L2-3.1.6 | High | D2 |
 | R121 | Kerberos only by default: a sign-in that would fall back to NTLM is refused; NTLM only where the customer allows it, shown on every record | Negotiate package list with `!ntlm` | IA.L2-3.5.4 (assessment) | High | D2 |
 | R122 | Smart card or PIV sign-in, a second factor in one step | Credential prompt with certificate credentials; Kerberos PKINIT at the DC | IA.L2-3.5.3 | High | D2 |
-| R123 | RADIUS second factor after the AD password, for customers whose MFA is behind RADIUS (for example NPS with an MFA extension, or an MFA vendor's proxy); Message-Authenticator required both ways | RADIUS client in the app; shared secret protected with DPAPI (design Q21) | IA.L2-3.5.3 | High | D2 |
+| R123 | Duo as the second factor where the customer has it: the DC checks the password through the Kerberos bind, then the app asks the customer's Duo Authentication Proxy (Duo-only RADIUS mode) for push, phone call or passcode, so the password never goes over RADIUS; other RADIUS MFA (for example NPS with an MFA extension) the same way. Message-Authenticator required both ways | RADIUS client in the app; proxy 6.5.1 or later; shared secret per machine, protected with DPAPI (design 6.5, Q21) | IA.L2-3.5.3 | High | D2 |
 | R124 | System use notice shown and acknowledged before the credential prompt, with the customer's text | Settings | AC.L2-3.1.9 | Medium | D2 |
 | R125 | Idle lock (default 15 minutes) that needs the credential again, and a maximum session (default 8 hours) after which the credential is erased | Credential held encrypted in memory only (`CryptProtectMemory`) | AC.L2-3.1.10, AC.L2-3.1.11 | High | D2 |
 | R126 | App roles from AD groups: Operators and Approvers read from the signed-in account's groups (nesting included); refused when the groups cannot be read; no approving one's own request | `tokenGroups` | AC.L2-3.1.4, AC.L2-3.1.5 | High | D2 (roles), D6 (approvals) |
 | R127 | Sign-in events in the record: sign-in, failure (never the password), lock, unlock, sign-out, with account, method, DC and device | Change record | AU.L2-3.3.1 | High | D2 |
-| R128 | The service recognizes the person signed in to the console through a Kerberos handshake on the named pipe, not the pipe's Windows session, and checks a requester's own rights on each target before running a workflow (design Q20) | `AcceptSecurityContext`; `AuthzAccessCheck` | AC.L2-3.1.5, AU.L2-3.3.2 | High | D6 |
+| R128 | The service recognizes the person signed in to the console through a Kerberos handshake on the named pipe, not the pipe's Windows session. Every workflow step is gated by the requester's own rights, checked when the plan is built and again just before the step runs; templates never grant rights (design Q20) | `AcceptSecurityContext`; `AuthzInitializeContextFromSid` and `AuthzAccessCheck` | AC.L2-3.1.5, AU.L2-3.3.2 | High | D6 |
+| R129 | MFA status in the record: each sign-in names its method (Duo, other RADIUS, smart card, password only); the evidence pack (R115) lists sign-ins without MFA as an open IA.L2-3.5.3 item for the customer's POA&M | Change record; evidence pack | IA.L2-3.5.3, CA.L2-3.12.2 | High | D2 (record), D7 (evidence pack) |
 
 ## 9. Later
 
