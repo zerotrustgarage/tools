@@ -55,7 +55,7 @@ func Scopes(s Settings) ([]string, error) {
 	}
 	names := append([]string(nil), graphScopes...)
 	if s.CloudSync {
-		names = append(names, "Synchronization.ReadWrite.All")
+		names = append(names, "Application.Read.All", "Synchronization.Read.All", "Synchronization.ReadWrite.All")
 	}
 	out := make([]string, 0, len(names)+len(oidcScopes))
 	for _, n := range names {

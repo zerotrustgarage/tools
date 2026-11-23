@@ -139,7 +139,7 @@ type CloudWiring struct {
 	// m365.DefaultOpenBrowser.
 	OpenBrowser func(url string) error
 	// SyncRunner runs the fixed Connect Sync scripts through PowerShell
-	// remoting; nil leaves Connect Sync unavailable in this build.
+	// remoting; nil uses dirsync.PowerShellRunner (Windows only).
 	SyncRunner dirsync.Runner
 }
 
@@ -169,6 +169,9 @@ func (s *Service) CloudSignIn() (CloudStatus, error) {
 	err := b.CloudSignIn(ctx)
 	cs := b.CloudStatus()
 	if err != nil {
+		if !st.SignedIn {
+			return cs, err // nothing to attribute: the AD sign-in comes first
+		}
 		s.log.Append(record.Entry{Kind: record.KindSignInFailed, Technician: st.Account, Device: s.cfg.Device, Method: "Microsoft 365 (delegated)",
 			Note: "Microsoft 365 sign-in", Error: err.Error()})
 		return cs, err

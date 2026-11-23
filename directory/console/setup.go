@@ -39,7 +39,9 @@ func (SetupBackend) CloudStatus() CloudStatus {
 func (SetupBackend) CloudSignIn(context.Context) error { return errors.New("complete the setup first") }
 func (SetupBackend) CloudSignOut()                     {}
 func (SetupBackend) Tenant() (m365.Tenant, error)      { return nil, errors.New("complete the setup first") }
-func (SetupBackend) Syncer() (dirsync.Syncer, error)   { return nil, errors.New("complete the setup first") }
+func (SetupBackend) Syncer() (dirsync.Syncer, error) {
+	return nil, errors.New("complete the setup first")
+}
 
 // SetupRequest is the first-run form.
 type SetupRequest struct {

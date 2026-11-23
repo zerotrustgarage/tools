@@ -280,3 +280,14 @@ func TestUnsupportedKinds(t *testing.T) {
 		t.Fatalf("group: %+v %v", v, err)
 	}
 }
+
+func TestFind(t *testing.T) {
+	ctx := context.Background()
+	if u, err := Find(ctx, tenant(cloudUser()), adUser(lastSync)); err != nil || u == nil || u.ID != "u1" {
+		t.Fatalf("find by anchor: %+v %v", u, err)
+	}
+	cloudOnly := m365.User{ID: "c1", UserPrincipalName: "bea.okafor@contoso-labs.example"}
+	if u, err := Find(ctx, tenant(cloudOnly), adUser(lastSync)); err != nil || u != nil {
+		t.Fatalf("a possible match is not linked: %+v %v", u, err)
+	}
+}

@@ -29,6 +29,9 @@ type LiveBackend struct {
 	cwiring  CloudWiring
 	tenant   m365.Tenant
 	cloudEnd func()
+	// cloudSync is the Cloud Sync driver over the signed-in Graph client;
+	// nil while signed out (or when the tenant is not a Graph client).
+	cloudSync dirsync.Syncer
 	// cloudSignIn runs the delegated sign-in; tests replace it.
 	cloudSignIn func(ctx context.Context, s m365.Settings, w CloudWiring) (m365.Tenant, func(), error)
 }
@@ -54,6 +57,14 @@ func (l *LiveBackend) UseCloud(c CloudSettings, w CloudWiring) error {
 	l.CloudSignOut()
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if c.Sync.Kind == dirsync.KindCloud && c.M365 != nil && !c.M365.CloudSync {
+		m := *c.M365
+		m.CloudSync = true // request the Cloud Sync permissions at sign-in
+		c.M365 = &m
+	}
+	if w.SyncRunner == nil {
+		w.SyncRunner = dirsync.PowerShellRunner{}
+	}
 	l.cloud, l.cwiring = c, w
 	return nil
 }
@@ -106,7 +117,8 @@ func (l *LiveBackend) CloudStatus() CloudStatus {
 			cs.Cloud = string(m365.CloudCommercial)
 		}
 	}
-	cs.SyncReady = c.Sync.Kind == dirsync.KindConnect && l.cwiring.SyncRunner != nil
+	cs.SyncReady = (c.Sync.Kind == dirsync.KindConnect && l.cwiring.SyncRunner != nil) ||
+		(c.Sync.Kind == dirsync.KindCloud && l.tenant != nil && l.cloudSync != nil)
 	switch {
 	case c.M365 == nil:
 		cs.Note = "Microsoft 365 is not set up for this console: add the tenant ID and the app registration's client ID in the setup."
@@ -120,11 +132,13 @@ func (l *LiveBackend) CloudStatus() CloudStatus {
 	case dirsync.KindNone:
 		cs.Note += " No sync method is configured."
 	case dirsync.KindConnect:
-		if !cs.SyncReady {
-			cs.Note += " Connect Sync (Sync now and sync health) is not available in this build yet."
-		}
+		cs.Note += " Sync now starts a Connect Sync delta cycle on " + c.Sync.Server + " as your AD account."
 	case dirsync.KindCloud:
-		cs.Note += " Cloud Sync provisioning on demand is not available in this build yet."
+		if cs.SyncReady {
+			cs.Note += " Sync now provisions the object on demand with Cloud Sync."
+		} else {
+			cs.Note += " Cloud Sync (Sync now and sync health) needs the Microsoft 365 sign-in."
+		}
 	}
 	return cs
 }
@@ -154,6 +168,9 @@ func (l *LiveBackend) CloudSignIn(ctx context.Context) error {
 	}
 	l.cloudSignOutLocked()
 	l.tenant, l.cloudEnd = t, end
+	if g, ok := t.(dirsync.GraphDoer); ok {
+		l.cloudSync = dirsync.NewCloud(g)
+	}
 	return nil
 }
 
@@ -167,7 +184,7 @@ func (l *LiveBackend) cloudSignOutLocked() {
 	if l.cloudEnd != nil {
 		l.cloudEnd()
 	}
-	l.tenant, l.cloudEnd = nil, nil
+	l.tenant, l.cloudEnd, l.cloudSync = nil, nil, nil
 }
 
 func (l *LiveBackend) Tenant() (m365.Tenant, error) {
@@ -182,9 +199,9 @@ func (l *LiveBackend) Tenant() (m365.Tenant, error) {
 	return l.tenant, nil
 }
 
-// Syncer returns Connect Sync driven through PowerShell remoting as the
-// signed-in AD account, when the app wires a script runner. Cloud Sync
-// provisioning on demand is not built yet.
+// Syncer returns Connect Sync, driven through PowerShell remoting to the sync
+// server as the signed-in AD account, or Cloud Sync, driven through Graph as
+// the technician signed in to Microsoft 365.
 func (l *LiveBackend) Syncer() (dirsync.Syncer, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -194,12 +211,15 @@ func (l *LiveBackend) Syncer() (dirsync.Syncer, error) {
 	}
 	switch l.cloud.Sync.Kind {
 	case dirsync.KindConnect:
-		if l.cwiring.SyncRunner == nil {
-			return nil, errors.New("Connect Sync is not available in this build yet")
-		}
 		return dirsync.NewConnect(l.cloud.Sync.Server, l.cwiring.SyncRunner, sess), nil
 	case dirsync.KindCloud:
-		return nil, errors.New("Cloud Sync provisioning on demand is not available in this build yet")
+		if l.tenant == nil {
+			return nil, errors.New("Cloud Sync runs through Microsoft 365: sign in to Microsoft 365 first")
+		}
+		if l.cloudSync == nil {
+			return nil, errors.New("Cloud Sync needs the Microsoft Graph connection, which this sign-in does not provide")
+		}
+		return l.cloudSync, nil
 	}
 	return nil, dirsync.ErrNotConfigured
 }

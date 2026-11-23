@@ -371,8 +371,10 @@ func TestScopesPerCloud(t *testing.T) {
 					t.Errorf("%s: missing %s/%s in %v", c.cloud, c.host, p, sc)
 				}
 			}
-			if strings.Contains(joined, c.host+"/Synchronization.ReadWrite.All") != sync {
-				t.Errorf("%s CloudSync=%v: %v", c.cloud, sync, sc)
+			for _, p := range []string{"Application.Read.All", "Synchronization.Read.All", "Synchronization.ReadWrite.All"} {
+				if strings.Contains(joined, " "+c.host+"/"+p+" ") != sync {
+					t.Errorf("%s CloudSync=%v: %s in %v", c.cloud, sync, p, sc)
+				}
 			}
 			for _, o := range []string{" openid ", " profile ", " offline_access "} {
 				if !strings.Contains(joined, o) {
