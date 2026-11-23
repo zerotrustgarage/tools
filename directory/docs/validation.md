@@ -36,8 +36,8 @@ without a partial success result. These are read operations, not an atomic snaps
 
 ## Isolated AD lab
 
-Use a disposable domain and an ordinary delegated technician account. Run from both a member Windows server
-and the domain controller, using the current logon identity. No credential is accepted as a CLI flag.
+Use a disposable domain and an ordinary delegated technician account. Run from a member Windows server, a
+domain-joined Windows 11 workstation and the domain controller, using the current logon identity. No credential is accepted as a CLI flag.
 Use a Windows Server 2025 DC requiring LDAP signing and record its channel-binding policy. Repeat the semantic
 lookups against Samba AD from a domain-joined Windows client. The client uses Windows LDAP on both paths.
 
@@ -75,7 +75,8 @@ sanitized output. Compare results to ADUC or documented AD PowerShell queries fo
 - Inspect the account and directory after the run to confirm no object changed.
 
 This lab matrix has not been executed as part of the initial implementation. Keep D1 open until evidence is
-available; Q8's tenant and hybrid Exchange estate is separately needed before D2.
+available; D2 (AD writes) also needs a delegated, non-admin technician and a domain-joined Windows 11
+workstation in the lab, and Q8's tenant and hybrid Exchange estate is needed before D3.
 
 ## Working assumptions
 

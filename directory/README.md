@@ -1,7 +1,8 @@
 # ZTG Directory
 
-Active Directory and Microsoft 365 management for one customer, installed inside that customer's network: on a
-domain controller, on the Entra Connect server or on a management server.
+Active Directory and Microsoft 365 management for one customer, inside that customer's network: installed on a
+domain controller, the Entra Connect server or a management server, or run from a technician's workstation the
+way RSAT tools are, with that technician's own delegated permissions. It reads and writes AD.
 
 - Open an AD user and see the Microsoft 365 user that mirrors it beside it: sign-in state, licenses, mailbox,
   last sync, sync errors and every synced attribute compared.
@@ -18,8 +19,9 @@ the permissions of the features in use; the on-premises side through a group man
 rights on the chosen OUs only.
 
 Status: D1 in development. The initial Go engine and CLI support read-only AD lookups using the current
-Windows identity. Live Samba and Windows Server 2025 validation is still required. Microsoft 365, the desktop
-console, writes, workflows, service and installer belong to later slices.
+Windows identity. Live Samba and Windows Server 2025 validation is still required. AD writes made as the technician
+(create, edit, move, groups, unlock, password reset, delete and restore) and the desktop console are the next
+slice, D2; Microsoft 365, workflows, service and installer follow (design section 12).
 
 ## Build and use the D1 CLI
 
@@ -30,7 +32,8 @@ go test -race ./...
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o ztg-directory.exe ./cmd/ztg-directory
 ```
 
-Run the executable on a domain-joined Windows host as the technician. Flags must precede the distinguished
+Run the executable as the technician on a domain-joined Windows host: a DC, a member server or a workstation
+(Windows 11, or Windows Server 2019 or later). RSAT is not required. Flags must precede the distinguished
 name. These PowerShell examples use an isolated example domain:
 
 ```powershell
@@ -59,13 +62,13 @@ responses return an incomplete-result error instead of a partial list. These rea
 concurrent directory changes can affect the values returned.
 
 `check-updates` currently reports `unreleased` locally. It makes no network request and does not establish
-that a build is up to date. The shared release checker source is vendored for D7, when `directory-v` selection
+that a build is up to date. The shared release checker source is vendored for D8, when `directory-v` selection
 and the signed installer contract are added. See [docs/validation.md](docs/validation.md) for the lab checks
 and open decisions before continuing to D2.
 
 | Document | What it holds |
 | --- | --- |
-| [docs/design.md](docs/design.md) | Parts, principles, deployment, identities and permissions, the mirror pane, workflows, slices D1 to D7 and open questions |
+| [docs/design.md](docs/design.md) | Parts, principles, deployment, identities and permissions, the mirror pane, workflows, slices D1 to D8 and open questions |
 | [docs/runbook.md](docs/runbook.md) | What the tool does step by step: everyday work, onboarding, offboarding, the three mailbox models, role change, sync, lookups |
 | [docs/research.md](docs/research.md) | Tools in use today and the Microsoft facts the design rests on |
 

@@ -1,7 +1,9 @@
 # ZTG Directory: design
 
-Status (October 23, 2026): D1 in development following the owner's request to begin building. The initial
-read-only engine and CLI use the recommended Go/no-cgo stack; live D1 lab validation remains open.
+Status (October 23, 2026; updated November 23, 2026): D1 in development following the owner's request to begin
+building. The initial read-only engine and CLI use the recommended Go/no-cgo stack; live D1 lab validation remains
+open. Owner decisions of November 23, 2026: AD writes are the next slice (D2, section 12), and the tool runs either
+installed on a domain controller or other server, or from a technician's workstation like RSAT tools (section 4).
 Unresolved decisions in section 14 remain open for their relevant slices; each slice is reviewed before the next
 begins, as for ZTG TFTP. See [validation.md](validation.md) for current limits. The ideas behind each feature
 are in [runbook.md](runbook.md) and the facts in [research.md](research.md).
@@ -22,10 +24,10 @@ multi-tenant console and not a cloud service.
 
 | Part | What it does |
 | --- | --- |
-| Console (desktop app) | Browse and search AD; object pages with the Microsoft 365 mirror pane (section 7); edit attributes, groups and OU through plans; start workflows; approve pending ones; read change records |
-| Service (Windows service) | Runs workflows after they are approved, now or at a scheduled time; runs later stages (for example license removal 30 days after a leaver); holds the Microsoft 365 connection; writes change records |
-| CLI `ztg-directory` | The same operations for scripts and for troubleshooting: lookups, `plan`, `apply`, `sync`, `check-updates` |
-| Setup | Installs the service, creates the group managed service account, delegates its AD rights on the chosen OUs, creates the app registration in the customer's tenant and its certificate (section 6) |
+| Console (desktop app) | Browse and search AD; object pages with the Microsoft 365 mirror pane (section 7); create, edit, move, rename and delete users, groups and contacts, and change group membership, through plans; start workflows; approve pending ones; read change records. Runs on a server installation or on a technician's workstation (section 4) |
+| Service (Windows service) | Server installation only. Runs workflows after they are approved, now or at a scheduled time; runs later stages (for example license removal 30 days after a leaver); holds the Microsoft 365 connection; writes change records |
+| CLI `ztg-directory` | The same operations for scripts and for troubleshooting: lookups, `plan`, `apply`, `sync`, `check-updates`; on a server or a workstation |
+| Setup | Server installation only. Installs the service, creates the group managed service account, delegates its AD rights on the chosen OUs, creates the app registration in the customer's tenant and its certificate (section 6). Workstation mode needs no setup |
 
 ## 3. Principles
 
@@ -56,27 +58,72 @@ multi-tenant console and not a cloud service.
 
 ## 4. Deployment
 
+The tool reads and writes AD in both ways of running it (owner decision, November 23, 2026): installed on a
+domain controller or another server, or run from a technician's own device the way RSAT tools are, with that
+technician's delegated permissions.
+
+### 4.1 Server installation
+
+The service, the console and the CLI are installed together. Workflows that run unattended, wait for another
+person's approval, run at a scheduled time or run in stages need a server installation.
+
 | Host | Fits | Notes |
 | --- | --- | --- |
-| The Microsoft Entra Connect server | Customers using Connect Sync | Recommended where it exists: forcing a sync is local (no remote PowerShell), and the server is already managed as Tier 0 |
-| A domain controller | Small sites with one server | Supported. LDAP still binds signed and sealed, to the local DC. Adds software to a DC, so the customer's SSP should list it |
+| A domain controller | Any site; the simplest install where there is one server | Supported. LDAP still binds signed and sealed, to the local DC. Adds software to a DC, so the customer's SSP should list it |
+| The Microsoft Entra Connect server | Customers using Connect Sync | Forcing a sync is local (no remote PowerShell), and the server is already managed as Tier 0 |
 | A member management server | Larger sites, or Cloud Sync customers | LDAP to the DCs; forcing a Connect Sync cycle uses PowerShell remoting to the sync server |
 
-Requirements (assessment, to confirm in D1 and D2): Windows Server 2019 or later, domain joined; Windows
+Requirements (assessment, to confirm in D1 and D3): Windows Server 2019 or later, domain joined; Windows
 PowerShell 5.1 with the Exchange Online PowerShell module (V3) for mailbox steps; Exchange Server 2019 CU12 or
 later management tools where the customer has hybrid Exchange; outbound HTTPS to the Microsoft 365 endpoints of
 the customer's cloud (commercial, GCC High or DoD).
 
-The console runs on the same host (by remote desktop) and talks to the service over a local named pipe whose
-ACL admits two AD groups the setup creates: **ZTG Directory Operators** (run lookups, edit, start workflows) and
-**ZTG Directory Approvers** (approve workflows that require it). A console on a technician's workstation talking
-to the service over the network is a later option (question Q5).
+In a server installation the console on the host talks to the service over a local named pipe whose ACL admits
+two AD groups the setup creates: **ZTG Directory Operators** (run lookups, edit, start workflows) and **ZTG
+Directory Approvers** (approve workflows that require it).
+
+### 4.2 Workstation mode (remote, like RSAT)
+
+The console and the CLI run on any domain-joined Windows 11 or Windows Server 2019 (or later) machine, the way
+ADUC and the other RSAT tools do: no service, no setup in AD and nothing installed on a domain controller. Every
+read and write runs as the signed-in technician over signed and sealed LDAP (or LDAPS) to a domain controller,
+and AD's own delegation decides what that person may change.
+
+- RSAT is not required. The tool uses the Windows LDAP client (`wldap32.dll`) that is part of every Windows
+  edition; RSAT can be installed beside it and nothing depends on it.
+- Domain controller: the DC locator picks a writable DC in the technician's site, or the technician pins one. A
+  plan reads, writes and verifies through that one DC, so its checks see its own writes despite replication
+  delay; the plan and the record name the DC (runbook R119).
+- Rights: before a plan is shown, the tool reads what the technician may write on each target and refuses a
+  change outside their delegation at plan time, naming the attribute (runbook R118).
+- Passwords: a reset writes `unicodePwd`, which a DC accepts only over TLS or an encrypted SASL layer of at least
+  128 bits; the sealed Negotiate bind meets that, so a reset never falls back to a weaker connection (research 5).
+- A device that is not domain joined: start the tool under `runas /netonly`, so Windows holds the credential and
+  the tool never sees it (principle 2); the DC must then be pinned (assessment, to confirm in D2).
+- Without a server installation, a workflow runs in the technician's session, as the technician, from start to
+  finish. Approval by another person, scheduled and staged workflows and steps run as the gMSA are refused with
+  the reason.
+- Microsoft 365 from a workstation uses the technician's own delegated sign-in, never the server's app
+  certificate, which does not leave the server (question Q17).
+- Change records: each workstation writes its own hash-chained file to the customer's protected share (section
+  9; question Q18).
+- Supported systems: Windows 11, and Windows Server 2019 or later. Windows 10 reached end of support on
+  October 14, 2025, so it is not supported except where the customer pays for Extended Security Updates
+  (assessment).
+- A workstation that administers AD is a Security Protection Asset in the customer's SSP. Microsoft's tiering
+  model expects Tier 0 objects (principle 4) to be changed only from a privileged access workstation or a DC;
+  the tool warns when a Tier 0 change is planned from any other device (SC.L2-3.13.3, AC.L2-3.1.7; assessment).
+
+A workstation console that submits workflows to a server installation's service over the network stays a later
+option (question Q5).
 
 ## 5. Architecture
 
 ```
 engine/
-  ad/          LDAP sessions through wldap32.dll (Negotiate, sign and seal; LDAPS option); schema cache; Tier 0 map
+  ad/          LDAP sessions through wldap32.dll (Negotiate, sign and seal; LDAPS option); DC locator; reads and
+               writes (add, modify, rename, delete, undelete) on one session per plan; rights preview; schema
+               cache; Tier 0 map
   m365/        Microsoft Graph client: certificate token, per-feature permissions, cloud endpoints
   exo/         Exchange Online steps: runs a fixed script in Windows PowerShell with the ExchangeOnlineManagement
                module and app-only authentication; parameters passed as JSON on standard input, never spliced
@@ -101,7 +148,7 @@ and service APIs, no cgo (question Q2). `go-ldap` is not used because its Window
 
 | Identity | Used for | Rights |
 | --- | --- | --- |
-| Technician (signed in to the console) | Interactive edits and lookups | Whatever AD already delegates to that person |
+| Technician (signed in to the console, on a server or a workstation) | Interactive edits and lookups; every step of a workflow run in workstation mode | Whatever AD already delegates to that person; the rights preview (R118) shows a missing right before anything is written |
 | Service gMSA `ztg-directory$` | Workflow steps | Delegated by setup on the managed user OUs and groups only: create and delete user objects, reset password, write the attributes the templates use, write `member` on the managed groups, move between managed OUs. Setup shows the delegation as a plan before writing it |
 
 A gMSA has no password anyone knows; AD rotates it. The service never asks for, stores or accepts a password.
@@ -119,12 +166,12 @@ that sign-in is not kept. Permissions are added only for the features the custom
 | Licenses | `LicenseAssignment.ReadWrite.All` | |
 | Sessions and sign-in methods | `User.RevokeSessions.All`, `UserAuthenticationMethod.ReadWrite.All` | |
 | Cloud-only groups | `GroupMember.ReadWrite.All` | |
-| Devices (retire or wipe company data) | Intune managed device permissions (to confirm in D5) | |
+| Devices (retire or wipe company data) | Intune managed device permissions (to confirm in D6) | |
 | Mailboxes | Office 365 Exchange Online `Exchange.ManageAsApp` | Exchange Recipient Administrator, or a custom role group with a write scope limited to the customer's user mailboxes (recommended) |
-| Proposed: cloud sign-in activity, sign-in failures for lockouts, MFA registration (runbook R63, R103, R104) | `AuditLog.Read.All` (licensing to confirm in D2) | |
+| Proposed: cloud sign-in activity, sign-in failures for lockouts, MFA registration (runbook R63, R103, R104) | `AuditLog.Read.All` (licensing to confirm in D3) | |
 | Proposed: risk level (R103) | `IdentityRiskyUser.Read.All` (Entra ID P2) | |
 | Proposed: Entra role check for leavers (R86) | `RoleManagement.Read.Directory` | |
-| Proposed: app consents in the leaver snapshot (R87) | `DelegatedPermissionGrant.Read.All` and a read of app role assignments (least privileged permissions to confirm in D4) | |
+| Proposed: app consents in the leaver snapshot (R87) | `DelegatedPermissionGrant.Read.All` and a read of app role assignments (least privileged permissions to confirm in D5) | |
 | Proposed: urgent leaver (R89) | `GroupMember.ReadWrite.All` (as cloud-only groups), `Policy.Read.All` to confirm the customer's policy exists (question Q11) | |
 | Proposed, off by default: OneDrive handover and sharing links (R84, R85) | `Sites.FullControl.All` (question Q12) | |
 
@@ -135,7 +182,7 @@ a CSP key provider, not CNG (research 4.2), so the certificate is created with a
 service account's certificate store; the tool never exports the private key. Lifetime one year; the console warns
 30 days before expiry and rotates by adding a new certificate to the app registration, switching, then removing
 the old one. Whether the gMSA's own store works for the Exchange module, and whether a non-exportable key is
-accepted, is tested in D2 (question Q7). Anyone who holds the private key can act as the app, so the certificate
+accepted, is tested in D3 (question Q7). Anyone who holds the private key can act as the app, so the certificate
 is listed in the customer's SSP as a credential.
 
 ### 6.4 The sync server
@@ -215,7 +262,9 @@ moves the OU, and lists groups outside both templates for a decision. Licenses f
 
 ## 9. Change records
 
-One JSON Lines file per month on the host (location configurable, for example a protected share). Each line holds
+One JSON Lines file per month for each writer: the server installation and each workstation (section 4.2) keep their
+own chain, so two machines never append to one chain at once, and the export merges them by time. The location is
+configurable, for example a protected share. Each line holds
 the job, the plan hash, the step, before and after values, the result, the requester, the approver, the
 technician, the identity that performed the write (technician, gMSA or app) and a hash of the previous line.
 Records are never rewritten. Passwords, LAPS values and recovery keys never enter a record; that they were set
@@ -230,13 +279,14 @@ and belong in the customer's SSP.
 
 | Control | Provided by |
 | --- | --- |
-| AC.L1-b.1.i, AC.L2-3.1.1 | Onboarding from approved templates, plan and record (D3) |
-| AC.L2-3.1.5, AC.L2-3.1.7 | Narrow identities (section 6), Tier 0 fence, recorded privileged actions (D1 to D3) |
-| AC.L2-3.1.8 | Lockout investigation (D6) |
-| IA.L2-3.5.6, IA.L2-3.5.9 | Stale accounts (D6); temporary passwords (D3) |
-| AU.L2-3.3.1, AU.L2-3.3.2, AU.L2-3.3.8 | Change records naming people (D3) |
-| CM.L2-3.4.3 | Plans and records (D3) |
-| PS.L2-3.9.2 | Offboarding workflow and evidence export (D4) |
+| AC.L1-b.1.i, AC.L2-3.1.1 | Onboarding from approved templates, plan and record (D4) |
+| AC.L2-3.1.5, AC.L2-3.1.7 | Narrow identities (section 6), rights preview, Tier 0 fence, recorded privileged actions (D1, D2) |
+| AC.L2-3.1.8 | Lockout investigation (D7) |
+| IA.L2-3.5.6, IA.L2-3.5.9 | Stale accounts (D7); temporary passwords on every reset (D2) |
+| AU.L2-3.3.1, AU.L2-3.3.2, AU.L2-3.3.8 | Change records naming people (D2) |
+| CM.L2-3.4.3 | Plans and records (D2) |
+| SC.L2-3.13.3 | Workstation mode warns on Tier 0 changes from a device that is not a privileged access workstation or DC (D2, assessment) |
+| PS.L2-3.9.2 | Offboarding workflow and evidence export (D5) |
 | SC.L2-3.13.8 | Signed and sealed LDAP or LDAPS (D1) |
 
 ## 11. Testing
@@ -250,16 +300,20 @@ and belong in the customer's SSP.
 
 ## 12. Slices
 
+Order changed on November 23, 2026 at the owner's request: AD changes made as the technician come straight after
+D1, ahead of Microsoft 365, and the later slices each moved up by one.
+
 | Slice | Scope | Exit condition |
 | --- | --- | --- |
 | D0 | This plan | Approved by the owner |
-| D1 | Engine and CLI, read-only AD: signed and sealed bind on a DC or a member server, search, object view, effective groups, last logon, `check-updates` | Works against Samba and a Server 2025 DC that requires signing; nothing can write |
-| D2 | Microsoft 365 connection and mirror: setup of the app registration and certificate, mirror pane, sync status, **Sync now** (Connect and Cloud Sync), sync server health; console read-only | The pane matches the Entra admin center for synced and cloud-only users on the test tenant |
-| D3 | Changes and onboarding: plans for edits, moves and group changes; onboarding workflow (8.2) with templates; change records | A starter created from a template appears licensed with a mailbox in the test tenant, with a complete record |
-| D4 | Offboarding workflow (8.3) with all three mailbox models, mailbox access, license removal and transfer; evidence export | A leaver run on the test estate leaves the expected state in AD, Entra and Exchange for each mailbox model |
-| D5 | Service: approvals, scheduled leavers, staged steps, device retirement, role change workflow (8.4) | A scheduled leaver runs unattended at its time, approved beforehand, and stage 2 runs on its due date |
-| D6 | Lookups and hygiene: lockout investigation, password expiry, stale accounts, privileged group review, LAPS lookup | Agrees with PingCastle on a test domain for the overlapping checks |
-| D7 | Packaging and release: MSI with the service, signing, `release-directory.yml`, `directory-v` tag in the shared update checker | First signed release |
+| D1 | Engine and CLI, read-only AD: signed and sealed bind on a DC, a member server or a workstation, search, object view, effective groups, last logon, `check-updates` | Works against Samba and a Server 2025 DC that requires signing, run on the DC and from a domain-joined workstation; nothing can write |
+| D2 | AD changes as the technician: the desktop console for AD (search, object page, OU tree), plans and change records, rights preview (R118), DC selection (R119); create, edit, rename, move, group membership, enable and disable, unlock, password reset, delete and Recycle Bin restore; on a DC and in workstation mode (section 4.2) | Each change type applied in the lab by a delegated technician who is not a domain admin, both on the DC and from a workstation; a change outside the technician's rights is refused at plan time; the Tier 0 fence and bulk cap hold; every change has a complete record |
+| D3 | Microsoft 365 connection and mirror: setup of the app registration and certificate, delegated sign-in in workstation mode (Q17), mirror pane, sync status, **Sync now** (Connect and Cloud Sync), sync server health | The pane matches the Entra admin center for synced and cloud-only users on the test tenant |
+| D4 | Onboarding: role templates, naming and hybrid checks, onboarding workflow (8.2) | A starter created from a template appears licensed with a mailbox in the test tenant, with a complete record |
+| D5 | Offboarding workflow (8.3) with all three mailbox models, mailbox access, license removal and transfer; evidence export | A leaver run on the test estate leaves the expected state in AD, Entra and Exchange for each mailbox model |
+| D6 | Service: approvals, scheduled leavers, staged steps, device retirement, role change workflow (8.4) | A scheduled leaver runs unattended at its time, approved beforehand, and stage 2 runs on its due date |
+| D7 | Lookups and hygiene: lockout investigation, password expiry, stale accounts, privileged group review, LAPS lookup | Agrees with PingCastle on a test domain for the overlapping checks |
+| D8 | Packaging and release: MSI with the service, a workstation package without it, signing, `release-directory.yml`, `directory-v` tag in the shared update checker | First signed release |
 
 ## 13. Not in scope
 
@@ -273,19 +327,21 @@ and belong in the customer's SSP.
 
 | # | Question | Recommendation |
 | --- | --- | --- |
-| Q1 | Default host: the Entra Connect server where one exists, else a DC or a member server (section 4)? | Yes, in that order |
+| Q1 | Default host: the Entra Connect server where one exists, else a DC or a member server (section 4)? | Answered by the owner (November 23, 2026): install on a DC, or run from another device with the technician's own permissions (section 4) |
 | Q2 | Stack: Go with a Wails console (as Scanner)? | Yes: one toolchain with Scanner and TFTP, no cgo |
 | Q3 | Exchange Online steps through the Exchange Online PowerShell module (a supported, documented path) rather than undocumented REST calls? | Yes; the installer checks for the module and its version |
 | Q4 | Approvals: which workflows need an approver by default? | Offboarding scheduled in advance and any privileged change; onboarding and immediate offboarding without |
-| Q5 | Console only on the host (remote desktop) for v1, network console later? | Yes; a network API is a new attack surface and can wait |
-| Q6 | RADIUS: was it meant as the way to reach AD (it cannot manage objects), or as an extra sign-in factor for technicians (for example NPS with MFA)? | Treat as a possible extra factor for console sign-in, after D5 |
+| Q5 | Console only on the host (remote desktop) for v1, network console later? | Answered in part by the owner (November 23, 2026): the console and CLI also run on a technician's workstation, acting directly as the technician (section 4.2). Still recommended for later: a workstation console that talks to a server's service over the network, a new attack surface |
+| Q6 | RADIUS: was it meant as the way to reach AD (it cannot manage objects), or as an extra sign-in factor for technicians (for example NPS with MFA)? | Treat as a possible extra factor for console sign-in, after D6 |
 | Q7 | Certificate storage: accept a CSP certificate in the service account's store (required by Exchange Online), with yearly rotation from the console? | Yes; revisit if Exchange Online accepts CNG or TPM keys later |
-| Q8 | Test estate: who provides the test domain, tenants and hybrid Exchange lab? | Needed before D2 |
-| Q9 | Release workflow timing: repository rule 1 asks for `release-<tool>.yml`; there is nothing to release before D2 | Add `release-directory.yml` in D7 with the first package |
+| Q8 | Test estate: who provides the test domain, tenants and hybrid Exchange lab? | A test domain with a delegated, non-admin technician and a domain-joined Windows 11 workstation before D2; the tenants and hybrid Exchange lab before D3 |
+| Q9 | Release workflow timing: repository rule 1 asks for `release-<tool>.yml`; there is nothing to release before D2 | Add `release-directory.yml` in D8 with the first package |
 | Q10 | The November 2026 feature review (research 8) added runbook ideas R47 to R117 with proposed slices. Accept them into those slices? Several are read-only and could join D1's CLI (R52, R58's AD dates, R59, R60, R61, R99) | Accept the slices as proposed; add only R59 and R60 to D1, because they are two constructed attributes on reads D1 already makes, and keep D1's exit condition otherwise unchanged |
 | Q11 | Urgent leaver (R89): may the tool rely on a customer-owned Conditional Access policy that blocks a cloud-only group, and add leavers to that group? The group cannot be role-assignable (the app would then need `RoleManagement.ReadWrite.Directory`), so anyone with group rights could also block users | Yes, as an opt-in feature: the risk is denial of service, not elevation; break-glass accounts are excluded from the policy |
 | Q12 | OneDrive handover and sharing links (R84, R85) need `Sites.FullControl.All`, far wider than any other permission the app holds | Off by default; a separate feature the customer switches on, otherwise a recorded manual step |
 | Q13 | Removing a leaver's app consents (R87) needs `DelegatedPermissionGrant.ReadWrite.All`, which can grant any delegated permission | List them in the snapshot; removal stays manual |
-| Q14 | Rule-based groups (R92): may an approved rule apply its additions and removals unattended within the bulk cap, or does every run wait for a person? | Every run waits for a person until D5 has run at a customer; revisit then |
+| Q14 | Rule-based groups (R92): may an approved rule apply its additions and removals unattended within the bulk cap, or does every run wait for a person? | Every run waits for a person until D6 has run at a customer; revisit then |
 | Q15 | PSA tickets (R75, R117): direct integration would send data outside Microsoft 365 (principle 7) | Copy-ready note only (R75) in v1 |
 | Q16 | Changes made outside the tool (R98) need the DC Security logs, directory service change auditing and SACLs on the managed OUs | Yes, with the same Event Log Readers access as R30; setup shows missing audit policy and SACLs as findings and never changes them unasked |
+| Q17 | Microsoft 365 in workstation mode (section 4.2): the server's app certificate must stay on the server, so a workstation needs the technician's own sign-in | A public client app registration with no secret: authorization code with PKCE in the system browser, so the customer's Conditional Access and MFA apply; tokens kept in memory only; delegated Graph permissions consented once by an administrator, and the technician's own Entra and Exchange roles limit what it can do |
+| Q18 | Workstation change records (section 9): a technician who can append to their own chain on the share could also delete it | Accept, with mitigations: an NTFS ACL on the share that allows creating and appending but not deleting or overwriting (assessment, to confirm in D2), and the comparison of directory changes with the records (R98) |

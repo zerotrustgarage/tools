@@ -27,8 +27,10 @@ Read `docs/design.md` before building anything here, `docs/runbook.md` for the w
 Directory and tenant data are untrusted input in the console: insert them with `textContent` only, as in Scanner.
 Exchange cmdlets run from a fixed script with parameters passed as JSON, never spliced into command text.
 Dependencies: standard library first; justify each new one in the commit message. Writing style: no em dashes.
-Slices D1 to D7 are built one at a time, each reviewed before the next starts. `release-directory.yml` arrives
-with the first package in D7 (design question Q9).
+Slices D1 to D8 are built one at a time, each reviewed before the next starts. `release-directory.yml` arrives
+with the first package in D8 (design question Q9). AD writes are D2, right after D1
+(owner decision, November 23, 2026). The tool runs installed on a DC or other server, or from a technician's
+workstation like RSAT tools, as that technician (design 4).
 
 ## Checks
 

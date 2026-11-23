@@ -10,7 +10,7 @@ import (
 )
 
 // DirectoryCommand exposes the explicit update action before Directory has a
-// package. The shared checker's directory-v selection contract arrives in D7.
+// package. The shared checker's directory-v selection contract arrives in D8.
 // No network request, installer download or background check is made here.
 func DirectoryCommand(ctx context.Context, current string, args []string, out, errOut io.Writer) error {
 	fs := flag.NewFlagSet("check-updates", flag.ContinueOnError)
@@ -32,6 +32,6 @@ func DirectoryCommand(ctx context.Context, current string, args []string, out, e
 	if *jsonOut {
 		return json.NewEncoder(out).Encode(r)
 	}
-	_, err := fmt.Fprintf(out, "ZTG Directory: unreleased (installed %s).\nRelease checking will be enabled with the first signed package in D7.\n%s\n", current, r.ReleaseURL)
+	_, err := fmt.Fprintf(out, "ZTG Directory: unreleased (installed %s).\nRelease checking will be enabled with the first signed package in D8.\n%s\n", current, r.ReleaseURL)
 	return err
 }

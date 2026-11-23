@@ -13,7 +13,7 @@ implementation checks versions and opens official downloads for the user to inst
 | Readout | **Check for updates** in the status bar, in desktop and browser builds | Implemented |
 | TFTP | **Check for updates** in the desktop header; `ztg-tftp check-updates [--json]` | Implemented |
 | Copy | **Check for updates** in the desktop toolbar; `ztg-copy check-updates [--json]` | Implemented |
-| Directory | `ztg-directory check-updates [--json]` reports `unreleased` locally in D1, with no network request; shared source is vendored, and `directory-v` selection arrives with the first package (D7) | Initial CLI; no release check until D7 (`directory/docs/design.md`) |
+| Directory | `ztg-directory check-updates [--json]` reports `unreleased` locally in D1, with no network request; shared source is vendored, and `directory-v` selection arrives with the first package (D8) | Initial CLI; no release check until D8 (`directory/docs/design.md`) |
 
 The shared standalone checker also supports all four products, including Copy's desktop and CLI previews. From `scripts/updates/`, with the pinned Go toolchain:
 

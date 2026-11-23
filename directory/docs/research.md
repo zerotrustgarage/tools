@@ -76,7 +76,7 @@ delegated only on the OUs it manages (design 6).
   ([existing tenant](https://learn.microsoft.com/en-us/entra/identity/hybrid/connect/how-to-connect-install-existing-tenant)).
   `onPremisesSecurityIdentifier` (the AD `objectSid`) is a second key. Filtering on these properties may need
   Graph advanced query headers (`ConsistencyLevel: eventual`, `$count`) ([advanced queries](https://learn.microsoft.com/en-us/graph/aad-advanced-queries));
-  to confirm per property in D2.
+  to confirm per property in D3.
 - Matching rules: soft match on UPN or primary SMTP address, hard match on sourceAnchor. Since July 1, 2026 a
   hard match is blocked when the cloud account already has `onPremisesObjectIdentifier`, or holds or is
   eligible for a privileged role. `BlockSoftMatchEnabled` and `BlockCloudObjectTakeoverThroughHardMatchEnabled`
@@ -96,7 +96,7 @@ delegated only on the OUs it manages (design 6).
 | Revoke sessions | `POST /users/{id}/revokeSignInSessions` | `User.RevokeSessions.All` ([Graph](https://learn.microsoft.com/en-us/graph/api/user-revokesigninsessions?view=graph-rest-1.0)); takes "a few minutes" |
 | Add or remove licenses | `POST /users/{id}/assignLicense` | `LicenseAssignment.ReadWrite.All` ([Graph](https://learn.microsoft.com/en-us/graph/api/user-assignlicense?view=graph-rest-1.0)) |
 | Provision one object now (Cloud Sync) | `provisionOnDemand` | `Application.ReadWrite.OwnedBy` or `Synchronization.ReadWrite.All` (section 3) |
-| Read users, licenses, sync state | `GET /users`, `/subscribedSkus`, `/organization` | `User.Read.All`, `Organization.Read.All` (assessment, to confirm per call in D2) |
+| Read users, licenses, sync state | `GET /users`, `/subscribedSkus`, `/organization` | `User.Read.All`, `Organization.Read.All` (assessment, to confirm per call in D3) |
 | Remove authentication methods | `/users/{id}/authentication/...` | `UserAuthenticationMethod.ReadWrite.All` (assessment, to confirm) |
 
   Both `revokeSignInSessions` and `assignLicense` are available in US Government L4 (GCC High) and L5 (DoD).
@@ -145,6 +145,24 @@ delegated only on the OUs it manages (design 6).
   `LDAP_OPT_ENCRYPT` is set before `ldap_bind_s`
   ([ldap_set_option](https://learn.microsoft.com/en-us/windows/win32/api/winldap/nf-winldap-ldap_set_option)).
   This works the same whether the tool runs on a DC (binding to itself) or on a member server.
+- Writing a password: a DC accepts a `unicodePwd` modify only over SSL/TLS or a SASL layer with at least
+  128-bit encryption; a connection with neither is refused
+  ([MS-ADTS 3.1.1.3.1.5.1](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/6e803168-f140-4d23-b2d3-c3a8ab5917d2)).
+  The sealed Negotiate bind (above) is such a layer; whether signing alone would pass is not relied on.
+- Rights before writing: `allowedAttributesEffective` and `allowedChildClassesEffective` are constructed
+  attributes that list, for the identity reading them, the attributes it may write on an object and the classes it
+  may create under it, computed from the security descriptor
+  ([allowedAttributesEffective](https://learn.microsoft.com/en-us/windows/win32/adschema/a-allowedattributeseffective),
+  [allowedChildClassesEffective](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-ada1/25c49171-5980-46f2-9a99-ad718103bf47)).
+  They do not cover extended rights such as Reset Password or moves between OUs, which need the security
+  descriptor or the attempt itself (assessment, to confirm in D2).
+- Finding a DC from a workstation: `DsGetDcNameW` returns a DC for the domain, and flags request a writable DC
+  in the caller's site ([DsGetDcNameW](https://learn.microsoft.com/en-us/windows/win32/api/dsgetdc/nf-dsgetdc-dsgetdcnamew)).
+  RSAT's ADUC and the `ActiveDirectory` module are clients of the same directory; the tool needs neither, because
+  `wldap32.dll` ships with Windows (assessment).
+- Windows 10 reached end of support on October 14, 2025
+  ([lifecycle](https://learn.microsoft.com/en-us/lifecycle/products/windows-10-home-and-pro)); workstation mode
+  targets Windows 11 and Windows Server 2019 or later (design 4.2).
 - RADIUS (for example Windows NPS) answers one question, "may this user authenticate", against AD. It cannot
   read or change directory objects, so it is not a management channel (assessment, from the protocol's scope in
   RFC 2865). It could serve as an extra factor for technicians signing in to the console (design Q6).
@@ -224,11 +242,11 @@ undo, owner self-service portals, and audits that need Tier 0 rights (runbook se
 - `uSNChanged` is local to each DC, so change watermarks are kept per DC and reset when the DC's `invocationId`
   changes after a restore (assessment, R98). Event 5136 records the old and new values of a directory change only
   when "Audit Directory Service Changes" is enabled and the object's SACL audits the write (assessment, to confirm
-  in D6).
+  in D7).
 - Graph `signInActivity.lastSuccessfulSignInDateTime` is the last successful interactive or non-interactive
   sign-in, recorded since December 1, 2023 and not backfilled; `lastSignInDateTime` also counts failed attempts
   ([Graph](https://learn.microsoft.com/en-us/graph/api/resources/signinactivity?view=graph-rest-1.0)). The
-  permission and licensing are to confirm in D2 (R63, R111).
+  permission and licensing are to confirm in D3 (R63, R111).
 - For a synced user, `accountEnabled` is mastered in AD, so a cloud block waits for a sync cycle (assessment,
   design 3 principle 6). R89 blocks through Conditional Access instead.
 
