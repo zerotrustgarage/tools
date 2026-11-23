@@ -148,11 +148,13 @@ func NewDirectory() *ad.FakeClient {
 	add(adminDN, map[string][]string{"objectClass": {"top", "person", "organizationalPerson", "user"}, "cn": {"Admin Riley Chen"},
 		"displayName": {"Admin Riley Chen"}, "givenName": {"Riley"}, "sn": {"Chen"}, "sAMAccountName": {"adm.riley.chen"},
 		"userPrincipalName": {"adm.riley.chen@lab.example"}, "userAccountControl": {strconv.Itoa(ad.UACNormalAccount)}, "adminCount": {"1"},
-		"description": {"Tier 0 administrative account"}, "lastLogonTimestamp": {ad.ToFileTime(Now.AddDate(0, 0, -1))}})
+		"description": {"Tier 0 administrative account"}, "lastLogonTimestamp": {ad.ToFileTime(Now.AddDate(0, 0, -1))},
+		"objectGUID": {"6f1c2a90-4b7d-4e2a-9c1e-0a5b3c7d1090"}, "objectSid": {"S-1-5-21-1004336348-1177238915-682003330-1190"}})
 	techDN := "CN=ZTG Tech," + admins
 	add(techDN, map[string][]string{"objectClass": {"top", "person", "organizationalPerson", "user"}, "cn": {"ZTG Tech"}, "displayName": {"ZTG Tech"},
 		"sAMAccountName": {"ztg.tech"}, "userPrincipalName": {"ztg.tech@lab.example"}, "userAccountControl": {strconv.Itoa(ad.UACNormalAccount)},
-		"description": {"Delegated help desk account used in demo mode"}, "lastLogonTimestamp": {ad.ToFileTime(Now)}})
+		"description": {"Delegated help desk account used in demo mode"}, "lastLogonTimestamp": {ad.ToFileTime(Now)},
+		"objectGUID": {"6f1c2a91-4b7d-4e2a-9c1e-0a5b3c7d1091"}, "objectSid": {"S-1-5-21-1004336348-1177238915-682003330-1191"}})
 	add("CN=krbtgt,CN=Users,"+Base, map[string][]string{"objectClass": {"top", "person", "organizationalPerson", "user"}, "cn": {"krbtgt"},
 		"sAMAccountName": {"krbtgt"}, "userAccountControl": {strconv.Itoa(ad.UACNormalAccount | ad.UACAccountDisable)}, "description": {"Key Distribution Center Service Account"}})
 
@@ -202,6 +204,13 @@ func NewDirectory() *ad.FakeClient {
 					f.Objects[i].Attributes["directreports"] = append(f.Objects[i].Attributes["directreports"], dnOf[p.given+" "+p.sur])
 				}
 			}
+		}
+	}
+	// Ivan Petrov's title was changed in AD ten minutes ago, after the last
+	// sync cycle, so the mirror shows it waiting for sync (tenant.go).
+	for i := range f.Objects {
+		if strings.EqualFold(f.Objects[i].DN, dnOf[WaitingUser]) {
+			f.Objects[i].Attributes["whenchanged"] = []string{Now.Add(-10 * time.Minute).Format("20060102150405.0Z")}
 		}
 	}
 	// The demo technician has delegated rights everywhere except Admins and

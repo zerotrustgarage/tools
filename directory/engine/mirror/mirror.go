@@ -157,35 +157,11 @@ func Mirror(ctx context.Context, t m365.Tenant, o ad.Object, opts ...Option) (Vi
 		v.Reason = "The Microsoft 365 mirror covers users in this version; groups and contacts follow."
 		return v, nil
 	}
-	anchors := sourceAnchors(o, &v.Anchor)
-	v.Anchor.SID = o.First("objectsid")
-
-	var u *m365.User
-	for _, a := range anchors {
-		found, err := t.UserByImmutableID(ctx, a.id)
-		if err != nil {
-			return View{}, lookupErr(err)
-		}
-		if found != nil {
-			u = found
-			v.Match = MatchAnchor
-			v.Anchor.Attribute, v.Anchor.GUID, v.Anchor.ImmutableID = a.attr, a.guid, a.id
-			v.Reason = "onPremisesImmutableId equals the Base64 of " + a.attr + "."
-			break
-		}
+	u, match, reason, err := linked(ctx, t, o, &v.Anchor)
+	if err != nil {
+		return View{}, err
 	}
-	if u == nil && v.Anchor.SID != "" {
-		found, err := t.UserBySID(ctx, v.Anchor.SID)
-		if err != nil {
-			return View{}, lookupErr(err)
-		}
-		if found != nil {
-			u = found
-			v.Match = MatchSID
-			v.Reason = "onPremisesSecurityIdentifier equals objectSid, but onPremisesImmutableId (" + quoteOr(found.OnPremisesImmutableID, "empty") +
-				") is not the Base64 of this object's source anchor: the tenant may use another source anchor, or the anchor changed."
-		}
-	}
+	v.Match, v.Reason = match, reason
 	if u == nil {
 		cands, err := candidates(ctx, t, o)
 		if err != nil {
@@ -232,7 +208,43 @@ func Mirror(ctx context.Context, t m365.Tenant, o ad.Object, opts ...Option) (Vi
 	return v, nil
 }
 
+// Find returns the cloud user linked to o by source anchor or SID, or nil
+// when none is linked (a possible match is never returned). It is the cheap
+// part of Mirror, used to read the last sync time around Sync now.
+func Find(ctx context.Context, t m365.Tenant, o ad.Object) (*m365.User, error) {
+	var a Anchor
+	u, _, _, err := linked(ctx, t, o, &a)
+	return u, err
+}
+
+func linked(ctx context.Context, t m365.Tenant, o ad.Object, a *Anchor) (*m365.User, string, string, error) {
+	anchors := sourceAnchors(o, a)
+	a.SID = o.First("objectsid")
+	for _, c := range anchors {
+		found, err := t.UserByImmutableID(ctx, c.id)
+		if err != nil {
+			return nil, "", "", lookupErr(err)
+		}
+		if found != nil {
+			a.Attribute, a.GUID, a.ImmutableID = c.attr, c.guid, c.id
+			return found, MatchAnchor, "onPremisesImmutableId equals the Base64 of " + c.attr + ".", nil
+		}
+	}
+	if a.SID == "" {
+		return nil, "", "", nil
+	}
+	found, err := t.UserBySID(ctx, a.SID)
+	if err != nil || found == nil {
+		return nil, "", "", lookupErr(err)
+	}
+	return found, MatchSID, "onPremisesSecurityIdentifier equals objectSid, but onPremisesImmutableId (" + quoteOr(found.OnPremisesImmutableID, "empty") +
+		") is not the Base64 of this object's source anchor: the tenant may use another source anchor, or the anchor changed.", nil
+}
+
 func lookupErr(err error) error {
+	if err == nil {
+		return nil
+	}
 	if errors.Is(err, m365.ErrForbidden) {
 		return fmt.Errorf("finding the cloud user: %w (the mirror needs User.Read.All)", err)
 	}

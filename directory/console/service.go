@@ -56,6 +56,8 @@ type Backend interface {
 	// locked or expired.
 	Writer() (ad.Writer, error)
 	BaseDN() string
+	// CloudBackend is the Microsoft 365 and sync side (cloud.go).
+	CloudBackend
 }
 
 // Config holds the console's folders.
@@ -181,7 +183,7 @@ func (s *Service) SignOut() Status {
 	if st.SignedIn {
 		s.log.Append(record.Entry{Kind: record.KindSignOut, Technician: st.Account, DC: st.DC, Device: s.cfg.Device})
 	}
-	s.backend().SignOut()
+	s.backend().SignOut() // also ends the Microsoft 365 sign-in
 	s.mu.Lock()
 	s.plans, s.planOrder = map[string]plan.Plan{}, nil
 	s.mu.Unlock()
@@ -374,6 +376,7 @@ func (s *Service) Object(dn string) (ObjectView, error) {
 		v.RightsWarning = "Your effective rights could not be read, so editing is off for this object: " + rerr.Error()
 	}
 	s.readiness(ctx, w, o, &v)
+	v.CloudNote = cloudNote(s.backend().CloudStatus(), v.Kind)
 	if entries, err := record.Read(s.cfg.RecordsDir, record.Filter{Text: o.DN, Kind: record.KindChange, Limit: 50}); err == nil {
 		for _, e := range entries {
 			if e.Step == 0 || !strings.EqualFold(e.DN, o.DN) {
@@ -453,8 +456,7 @@ func (s *Service) Deleted(text string) ([]Row, error) {
 }
 
 func buildView(o ad.Object, rights ad.Rights, base string) ObjectView {
-	v := ObjectView{DN: o.DN, Name: Name(o), Kind: KindOf(o), Location: Location(o.DN, base),
-		CloudNote: "The Microsoft 365 mirror (cloud sign-in state, licenses, mailbox, sync status and Sync now) arrives with the Microsoft 365 connection in slice D3."}
+	v := ObjectView{DN: o.DN, Name: Name(o), Kind: KindOf(o), Location: Location(o.DN, base)}
 	defs := ouSections
 	switch v.Kind {
 	case "user":

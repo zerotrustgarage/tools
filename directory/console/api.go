@@ -6,6 +6,8 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/zerotrustgarage/tools/directory/engine/dirsync"
+	"github.com/zerotrustgarage/tools/directory/engine/mirror"
 	"github.com/zerotrustgarage/tools/directory/engine/record"
 	"github.com/zerotrustgarage/tools/directory/engine/template"
 	"github.com/zerotrustgarage/tools/directory/internal/update"
@@ -64,3 +66,11 @@ func (a *API) PlanTemplate(name string, form map[string]string, ticket string) (
 	return a.s.PlanTemplate(name, form, ticket)
 }
 func (a *API) SaveTemplate(t template.Template) (TemplateInfo, error) { return a.s.SaveTemplate(t) }
+
+// Microsoft 365 and directory synchronization (cloud.go).
+func (a *API) CloudStatus() CloudStatus                { return a.s.CloudStatus() }
+func (a *API) CloudSignIn() (CloudStatus, error)       { return a.s.CloudSignIn() }
+func (a *API) CloudSignOut() CloudStatus               { return a.s.CloudSignOut() }
+func (a *API) Mirror(dn string) (mirror.View, error)   { return a.s.Mirror(dn) }
+func (a *API) SyncHealth() (dirsync.Health, error)     { return a.s.SyncHealth() }
+func (a *API) SyncNow(dn string) (SyncResponse, error) { return a.s.SyncNow(dn) }

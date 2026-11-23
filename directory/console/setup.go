@@ -11,6 +11,8 @@ import (
 
 	"github.com/zerotrustgarage/tools/directory/engine/ad"
 	"github.com/zerotrustgarage/tools/directory/engine/auth"
+	"github.com/zerotrustgarage/tools/directory/engine/dirsync"
+	"github.com/zerotrustgarage/tools/directory/engine/m365"
 )
 
 // SetupBackend is used until the sign-in settings exist: it signs nobody in
@@ -31,6 +33,13 @@ func (SetupBackend) Unlock(context.Context, []byte) error {
 func (SetupBackend) Touch()                     {}
 func (SetupBackend) Writer() (ad.Writer, error) { return nil, errors.New("complete the setup first") }
 func (SetupBackend) BaseDN() string             { return "" }
+func (SetupBackend) CloudStatus() CloudStatus {
+	return CloudStatus{Note: "Complete the setup first."}
+}
+func (SetupBackend) CloudSignIn(context.Context) error { return errors.New("complete the setup first") }
+func (SetupBackend) CloudSignOut()                     {}
+func (SetupBackend) Tenant() (m365.Tenant, error)      { return nil, errors.New("complete the setup first") }
+func (SetupBackend) Syncer() (dirsync.Syncer, error)   { return nil, errors.New("complete the setup first") }
 
 // SetupRequest is the first-run form.
 type SetupRequest struct {
@@ -48,6 +57,28 @@ type SetupRequest struct {
 	ApproversGroup    string `json:"approversGroup"`
 	IdleLockMinutes   int    `json:"idleLockMinutes"`
 	Notice            string `json:"notice"`
+	// Microsoft 365 (optional; saved in cloud.json beside settings.json).
+	TenantID string `json:"tenantId"` // GUID or verified domain
+	ClientID string `json:"clientId"` // the public client app registration
+	Cloud    string `json:"cloud"`    // commercial (default), gcchigh or dod
+	// SyncKind "cloud" also turns on Cloud Sync provisioning on demand.
+	SyncKind   string `json:"syncKind"`   // "", connect or cloud
+	SyncServer string `json:"syncServer"` // Connect Sync server DNS name
+}
+
+// cloudSettings turns the form's Microsoft 365 fields into CloudSettings;
+// ok is false when none is filled in.
+func (r SetupRequest) cloudSettings() (CloudSettings, bool) {
+	var c CloudSettings
+	tid, cid := strings.TrimSpace(r.TenantID), strings.TrimSpace(r.ClientID)
+	if tid != "" || cid != "" {
+		c.M365 = &m365.Settings{TenantID: tid, ClientID: cid, Cloud: m365.Cloud(strings.TrimSpace(r.Cloud)), CloudSync: r.SyncKind == string(dirsync.KindCloud)}
+		if c.M365.Cloud == "" {
+			c.M365.Cloud = m365.CloudCommercial
+		}
+	}
+	c.Sync = SyncSettings{Kind: dirsync.Kind(strings.TrimSpace(r.SyncKind)), Server: strings.TrimSpace(r.SyncServer)}
+	return c, c.M365 != nil || c.Sync.Kind != dirsync.KindNone
 }
 
 // Live wiring used by Configure; set by the desktop app (OpenWriter is
@@ -56,12 +87,15 @@ type LiveWiring struct {
 	SettingsPath string
 	Open         auth.Opener
 	Protect      func([]byte) ([]byte, error)
+	// Cloud wires the Microsoft 365 sign-in and Connect Sync.
+	Cloud CloudWiring
 }
 
 var wiringMu sync.Mutex
 
-// Configure saves sign-in settings (and a DPAPI-protected RADIUS secret) and
-// switches the console to the live domain.
+// Configure saves sign-in settings (and a DPAPI-protected RADIUS secret), the
+// optional Microsoft 365 and sync settings in cloud.json, and switches the
+// console to the live domain.
 func (s *Service) Configure(w LiveWiring, req SetupRequest) (Status, error) {
 	st := auth.DefaultSettings()
 	st.Domain, st.Server, st.BaseDN, st.LDAPS = strings.TrimSpace(req.Domain), strings.TrimSpace(req.Server), strings.TrimSpace(req.BaseDN), req.LDAPS
@@ -106,9 +140,22 @@ func (s *Service) Configure(w LiveWiring, req SetupRequest) (Status, error) {
 	if err := st.Validate(); err != nil {
 		return s.Status(), err
 	}
+	cloud, withCloud := req.cloudSettings()
+	if err := cloud.Validate(); err != nil {
+		return s.Status(), err
+	}
 	b, err := NewLiveBackend(st, w.Open)
 	if err != nil {
 		return s.Status(), err
+	}
+	if err := b.UseCloud(cloud, w.Cloud); err != nil {
+		return s.Status(), err
+	}
+	// cloud.json first: settings.json is what switches a later start to live.
+	if withCloud {
+		if err := SaveCloudSettings(CloudSettingsPath(w.SettingsPath), cloud); err != nil {
+			return s.Status(), err
+		}
 	}
 	raw, _ := json.MarshalIndent(st, "", "  ")
 	if err := os.WriteFile(w.SettingsPath, append(raw, '\n'), 0o640); err != nil {

@@ -96,7 +96,7 @@ type ObjectView struct {
 	CanUnlock     bool      `json:"canUnlock"`
 	CanExpire     bool      `json:"canExpire"`
 	Privileged    string    `json:"privileged,omitempty"`
-	CloudNote     string    `json:"cloudNote"`
+	CloudNote     string    `json:"cloudNote"` // whether Microsoft 365 is connected; the pane itself comes from Mirror
 	RightsWarning string    `json:"rightsWarning,omitempty"`
 }
 

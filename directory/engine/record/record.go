@@ -30,6 +30,9 @@ const (
 	KindSignOut      = "sign-out"
 	KindRefused      = "plan-refused"
 	KindTemplate     = "template"
+	// KindSync records a Sync now: the technician, the DC, the object and
+	// the result (design 7).
+	KindSync = "sync"
 )
 
 // Entry is one line of the record.
