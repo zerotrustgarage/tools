@@ -19,6 +19,7 @@ type winAPI struct {
 	credIsMarshaled                                 *syscall.LazyProc
 	lsaConnectUntrusted, lsaLookupPackage, lsaClose *syscall.LazyProc
 	cryptProtectData, cryptUnprotectData            *syscall.LazyProc
+	cryptProtectMemory, cryptUnprotectMemory        *syscall.LazyProc
 }
 
 var (
@@ -45,18 +46,20 @@ func loadAPI() (*winAPI, error) {
 		secur32 := syscall.NewLazyDLL(dir + "secur32.dll")
 		crypt32 := syscall.NewLazyDLL(dir + "crypt32.dll")
 		api = winAPI{
-			getConsoleMode:      kernel32.NewProc("GetConsoleMode"),
-			setConsoleMode:      kernel32.NewProc("SetConsoleMode"),
-			localFree:           kernel32.NewProc("LocalFree"),
-			credUIPrompt:        credui.NewProc("CredUIPromptForWindowsCredentialsW"),
-			credUnPack:          credui.NewProc("CredUnPackAuthenticationBufferW"),
-			coTaskMemFree:       ole32.NewProc("CoTaskMemFree"),
-			credIsMarshaled:     advapi32.NewProc("CredIsMarshaledCredentialW"),
-			lsaConnectUntrusted: secur32.NewProc("LsaConnectUntrusted"),
-			lsaLookupPackage:    secur32.NewProc("LsaLookupAuthenticationPackage"),
-			lsaClose:            secur32.NewProc("LsaDeregisterLogonProcess"),
-			cryptProtectData:    crypt32.NewProc("CryptProtectData"),
-			cryptUnprotectData:  crypt32.NewProc("CryptUnprotectData"),
+			getConsoleMode:       kernel32.NewProc("GetConsoleMode"),
+			setConsoleMode:       kernel32.NewProc("SetConsoleMode"),
+			localFree:            kernel32.NewProc("LocalFree"),
+			credUIPrompt:         credui.NewProc("CredUIPromptForWindowsCredentialsW"),
+			credUnPack:           credui.NewProc("CredUnPackAuthenticationBufferW"),
+			coTaskMemFree:        ole32.NewProc("CoTaskMemFree"),
+			credIsMarshaled:      advapi32.NewProc("CredIsMarshaledCredentialW"),
+			lsaConnectUntrusted:  secur32.NewProc("LsaConnectUntrusted"),
+			lsaLookupPackage:     secur32.NewProc("LsaLookupAuthenticationPackage"),
+			lsaClose:             secur32.NewProc("LsaDeregisterLogonProcess"),
+			cryptProtectData:     crypt32.NewProc("CryptProtectData"),
+			cryptUnprotectData:   crypt32.NewProc("CryptUnprotectData"),
+			cryptProtectMemory:   crypt32.NewProc("CryptProtectMemory"),
+			cryptUnprotectMemory: crypt32.NewProc("CryptUnprotectMemory"),
 		}
 	})
 	if apiErr != nil {

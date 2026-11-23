@@ -13,8 +13,6 @@ service with demo, setup and live modes, and CLI change commands. The desktop co
 yet run against a real domain controller; [validation.md](validation.md) lists what the D2 lab must prove. Open
 items found while building:
 
-- The session credential is held in process memory and wiped on sign-out, lock replacement and expiry, but is not
-  yet encrypted with `CryptProtectMemory` between uses as section 6.5 step 7 requires.
 - Duo Authentication Proxy's default `failmode` is "safe", which lets a sign-in through when Duo cannot be reached;
   customers using Duo for IA.L2-3.5.3 should set `failmode = secure` on the proxy section the app uses.
 - With an explicit credential the Windows LDAP client's automatic reconnect is off, so a dropped connection needs a

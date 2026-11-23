@@ -141,7 +141,7 @@ func TestSignInSuccess(t *testing.T) {
 	if !bytes.Equal(factor, make([]byte, 4)) {
 		t.Fatal("factor not wiped")
 	}
-	if string(cred.Password) != goodPassword {
+	if got := sessionPassword(t, sess); got != goodPassword {
 		t.Fatal("the session must keep the credential while it lasts")
 	}
 	cfg := dir.configs[0]
@@ -313,7 +313,7 @@ func TestUnlock(t *testing.T) {
 	if err := sess.Unlock(context.Background(), wrong); err == nil {
 		t.Fatal("wrong password unlocked")
 	}
-	if !bytes.Equal(wrong, make([]byte, 4)) || !sess.Locked() || string(cred.Password) != goodPassword {
+	if !bytes.Equal(wrong, make([]byte, 4)) || !sess.Locked() || sessionPassword(t, sess) != goodPassword {
 		t.Fatal("wrong password: not wiped, unlocked, or the old credential changed")
 	}
 	clk.advance(30 * time.Minute)
@@ -395,7 +395,7 @@ func TestClose(t *testing.T) {
 }
 
 func TestConnect(t *testing.T) {
-	sess, cred, dir, _ := signedIn(t)
+	sess, _, dir, _ := signedIn(t)
 	defer sess.Close()
 	w, err := sess.Connect(context.Background(), "pdc.example.com")
 	if err != nil {
@@ -405,7 +405,7 @@ func TestConnect(t *testing.T) {
 	if got := dir.configs[len(dir.configs)-1]; got.Server != "pdc.example.com" {
 		t.Fatalf("server %q", got.Server)
 	}
-	if string(cred.Password) != goodPassword {
+	if sessionPassword(t, sess) != goodPassword {
 		t.Fatal("Connect changed the session credential")
 	}
 }
@@ -430,4 +430,17 @@ func TestSessionConcurrentUse(t *testing.T) {
 	wg.Add(1)
 	go func() { defer wg.Done(); sess.Unlock(context.Background(), []byte(goodPassword)) }()
 	wg.Wait()
+}
+
+// sessionPassword decrypts the session's protected credential (memprotect.go).
+func sessionPassword(t *testing.T, s *Session) string {
+	t.Helper()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	pw, err := revealPassword(s.cred.Password, s.pwLen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wipe(pw)
+	return string(pw)
 }

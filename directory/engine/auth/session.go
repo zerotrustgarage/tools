@@ -54,7 +54,8 @@ type Session struct {
 	mu         sync.Mutex
 	settings   Settings
 	open       Opener
-	cred       *ad.Credential
+	cred       *ad.Credential // Password holds the CryptProtectMemory blob (memprotect.go)
+	pwLen      int
 	w          ad.Writer
 	roles      []Role
 	dc         string
@@ -127,8 +128,15 @@ func SignIn(ctx context.Context, s Settings, cred *ad.Credential, factor []byte,
 			return nil, fmt.Errorf("second factor: %w", err)
 		}
 	}
+	blob, n, err := protectPassword(cred.Password)
+	if err != nil {
+		return nil, fmt.Errorf("protect the session credential in memory: %w", err)
+	}
+	wipe(cred.Password)
+	cred.Password = blob
 	now := s.now()
 	return &Session{
+		pwLen:       n,
 		Account:     cred.Account(),
 		DN:          acct.DN,
 		DisplayName: acct.DisplayName,
@@ -194,8 +202,12 @@ func (s *Session) Connect(ctx context.Context, server string) (ad.Writer, error)
 		s.mu.Unlock()
 		return nil, err
 	}
-	cfg := s.settings.config(&ad.Credential{User: s.cred.User, Domain: s.cred.Domain,
-		Password: append([]byte(nil), s.cred.Password...)})
+	pw, err := revealPassword(s.cred.Password, s.pwLen)
+	if err != nil {
+		s.mu.Unlock()
+		return nil, err
+	}
+	cfg := s.settings.config(&ad.Credential{User: s.cred.User, Domain: s.cred.Domain, Password: pw})
 	open := s.open
 	s.mu.Unlock()
 	defer cfg.Credential.Wipe()
@@ -321,8 +333,14 @@ func (s *Session) Unlock(ctx context.Context, password []byte) error {
 	if s.w != nil {
 		s.w.Close()
 	}
+	blob, n, perr := protectPassword(cred.Password)
+	if perr != nil {
+		return fail(fmt.Errorf("protect the session credential in memory: %w", perr))
+	}
+	wipe(cred.Password)
+	cred.Password = blob
 	s.cred.Wipe()
-	s.w, s.cred, s.roles, s.dc = w, cred, roles, w.DC()
+	s.w, s.cred, s.pwLen, s.roles, s.dc = w, cred, n, roles, w.DC()
 	s.locked = false
 	s.lastActive = s.settings.now()
 	return nil
