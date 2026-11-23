@@ -15,3 +15,6 @@ func Open(_ context.Context, cfg Config) (Client, error) {
 	}
 	return nil, ErrUnsupportedPlatform
 }
+
+// OpenWriter is available only on Windows.
+func OpenWriter(context.Context, Config) (Writer, error) { return nil, ErrUnsupportedPlatform }
